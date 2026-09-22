@@ -6,4 +6,4 @@ Visit [softrng](https://github.com/sysaulab/softrng), my RNG playground, to read
 
 Look at my [hexwife](https://github.com/sysaulab/hexwife), a hex viewer with 128 bit internals for when you want to look at a syntheticly generated file...
 
-Use [fuzzydict](https://github.com/sysaulab/fuzzydict) to enable cheap fuzzy matching dictionnary that is alphabet aware.
+Use [fuzzydict](https://github.com/sysaulab/fuzzy_dict) to enable cheap fuzzy matching dictionnary that is alphabet aware.
