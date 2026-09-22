@@ -735,20 +735,29 @@ const ENEMIES = {
   dragon_red:   { difficulty: 500 },
 };
 
+// ---------------------------------------------------------------------------
+// DROPS
+// ---------------------------------------------------------------------------
+// `food` drops only from overworld enemies (plains/forest/desert/dead_plain/
+// cemetery/valley/cave).  Dungeon and shrine enemies never drop food.
+
 const DROPS = {
-  octorok_blue: { items: { wood: [0, 1] } },
-  bat_blue:     { items: { wood: [0, 1] } },
-  spider_blue:  { items: { wood: [0, 1] } },
-  fan:          { items: { wood: [0, 1] } },
-  rhinos:       { items: { wood: [0, 1], rock: [0, 1] } },
-  knight_blue:  { items: { wood: [0, 1], rock: [0, 1] } },
-  octorok_red:  { items: { wood: [0, 1], rock: [0, 1] } },
-  bat_red:      { items: { wood: [0, 1] } },
-  spider_red:   { items: { wood: [0, 1], rock: [0, 1] } },
-  fan_red:      { items: { wood: [0, 1], rock: [0, 1], bomb: [0, 1] } },
-  rhinos_red:   { items: { wood: [0, 1], rock: [0, 1], bomb: [0, 1] } },
-  knight_red:   { items: { wood: [0, 1], rock: [0, 1], bomb: [0, 1] } },
-  ghosts:       { items: { wood: [0, 1], rock: [0, 1], bomb: [0, 1] } },
+  // ---- overworld enemies (drop food) ----
+  octorok_blue: { items: { wood: [0, 1], food: [0, 1] } },
+  bat_blue:     { items: { wood: [0, 1], food: [0, 1] } },
+  spider_blue:  { items: { wood: [0, 1], food: [0, 1] } },
+  fan:          { items: { wood: [0, 1], food: [0, 1] } },
+  rhinos:       { items: { wood: [0, 1], rock: [0, 1], food: [0, 1] } },
+  knight_blue:  { items: { wood: [0, 1], rock: [0, 1], food: [0, 1] } },
+  octorok_red:  { items: { wood: [0, 1], rock: [0, 1], food: [0, 1] } },
+  bat_red:      { items: { wood: [0, 1], food: [0, 1] } },
+  spider_red:   { items: { wood: [0, 1], rock: [0, 1], food: [0, 1] } },
+  fan_red:      { items: { wood: [0, 1], rock: [0, 1], bomb: [0, 1], food: [0, 1] } },
+  rhinos_red:   { items: { wood: [0, 1], rock: [0, 1], bomb: [0, 1], food: [0, 1] } },
+  knight_red:   { items: { wood: [0, 1], rock: [0, 1], bomb: [0, 1], food: [0, 1] } },
+  ghosts:       { items: { wood: [0, 1], rock: [0, 1], bomb: [0, 1], food: [0, 1] } },
+
+  // ---- dungeon / shrine enemies (no food) ----
   stalfos:      { items: { wood: [0, 1], rock: [0, 1], bomb: [0, 1] } },
   darknut:      { items: { wood: [0, 1], rock: [0, 1], bomb: [0, 1] } },
   wizzrobe:     { items: { wood: [0, 1], rock: [0, 1], bomb: [0, 1] } },
@@ -758,12 +767,14 @@ const DROPS = {
 
 const RECIPES = [
   { inputs: { wood: 2 },                    output: { item: "fire" } },
-  { inputs: { rock: 2 },                    output: { item: "blunt_knife" } },
-  { inputs: { blunt_knife: 1, wood: 1 },    output: { item: "plank" } },
+  { inputs: { rock: 2 },                    output: { item: "tool" } },
+  { inputs: { tool: 1, wood: 1 },           output: { item: "plank" } },
   { inputs: { plank: 2 },                   output: { item: "shelter" } },
   { inputs: { fire: 1, wood: 1 },           output: { item: "coal" } },
+  { inputs: { coal: 2 },                    output: { item: "grill" } },
+  { inputs: { grill: 1, food: 1 },          output: { item: "meal" } },
   { inputs: { coal: 1, ore: 1 },            output: { item: "steel" } },
-  { inputs: { blunt_knife: 1, steel: 1 },   output: { item: "sword" } },
+  { inputs: { tool: 1, steel: 1 },          output: { item: "sword" } },
 ];
 
 const TERRAINS = {
@@ -1711,6 +1722,7 @@ class Session {
     const heartItem   = this.combat.heart_item;
     const shelterItem = this.combat.shelter_item;
     const fireItem    = this.combat.fire_item;
+    const mealItem    = this.combat.meal_item;
 
     if (item === fireItem) {
       if (dir) return { ok: false, msg: "Fire doesn't take a direction." };
@@ -1725,6 +1737,12 @@ class Session {
       this.player.removeItem(shelterItem, 1);
       this.player.healFull();
       return { ok: true, msg: "You rest by the fire and recover your strength." };
+    }
+    if (item === mealItem) {
+      if (!this.player.hasItem(mealItem)) return { ok: false, msg: `You have no ${mealItem}.` };
+      this.player.removeItem(mealItem, 1);
+      this.player.hp = Math.min(this.player.hp + 2, this.player.maxHp);
+      return { ok: true, msg: "You eat the meal. (+1 HP)" };
     }
     if (item === heartItem) {
       if (!this.player.hasItem(heartItem)) return { ok: false, msg: `You have no ${heartItem}.` };
@@ -1798,10 +1816,11 @@ class Session {
     const heartItem   = this.combat.heart_item;
     const shelterItem = this.combat.shelter_item;
     const fireItem    = this.combat.fire_item;
+    const mealItem    = this.combat.meal_item;
     const isFight = action === "fight" || (action === "use" && parts[1] === "fight");
     const isFlee  = action === "flee" || action === "avoid"
                  || (action === "use" && ["avoidance", "flee", "avoid"].includes(parts[1]));
-    const isHeal  = action === "use" && [heartItem, shelterItem].includes(parts[1]);
+    const isHeal  = action === "use" && [heartItem, shelterItem, mealItem].includes(parts[1]);
     const isFire  = action === "use" && parts[1] === fireItem;
     const isMeta  = isHeal || isFire;
     if (!isFight && !isFlee && !isMeta) {
@@ -2027,7 +2046,8 @@ function isUsableItem(name) {
   const c = currentSession.combat;
   return name === c.fire_item
       || name === c.shelter_item
-      || name === c.heart_item;
+      || name === c.heart_item
+      || name === c.meal_item;
 }
 
 function renderStatus(state) {
@@ -2134,7 +2154,7 @@ function classify(line) {
   if (line.includes("VICTORY")) return "title";
   if (low.includes("victory") || low.includes("defeat the") || low.includes("you take")
       || low.includes("you combine") || low.includes("you rest") || low.includes("you collect")
-      || low.includes("you hurl")) return "good";
+      || low.includes("you hurl") || low.includes("you eat")) return "good";
   if (low.includes("driven back") || low.includes("fail") || low.includes("need ")
       || low.includes("collapse") || low.includes("cannot") || low.includes("unknown")
       || low.includes("don't") || low.includes("can't carry")) return "bad";
@@ -2341,6 +2361,7 @@ function buildFullConfig({ name, width, height, seed }) {
       damage_per_fail: 1,
       heart_item: "heart",
       shelter_item: "shelter",
+      meal_item: "meal",
       fire_item: "fire",
       death: { restore_hp: true },
     },
