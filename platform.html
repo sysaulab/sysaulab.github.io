@@ -115,7 +115,7 @@ let prevJumpHeld = false;                                  // for edge detection
 
 /* ---------- touch pointers ---------- */
 const activePointers = new Map();   // pointerId -> 'left' | 'right' | 'jump'
-//const zoneGlow = { left: 0, right: 0, jump: 0 };
+const zoneGlow = { left: 0, right: 0, jump: 0 };
 let touchHintTime = 0;
 
 /* ============================================================
@@ -176,7 +176,7 @@ function reset() {
   activePointers.clear();
   tkeys.left = tkeys.right = tkeys.jump = false;
   prevJumpHeld = keys.jump;
-  //zoneGlow.left = zoneGlow.right = zoneGlow.jump = 0;
+  zoneGlow.left = zoneGlow.right = zoneGlow.jump = 0;
   touchHintTime = touchUI ? TOUCH_HINT_TIME : 0;
 
   platforms.push({ x: -1400, y: 460, w: 2000, h: 70, moving: false, dx: 0 });
@@ -312,12 +312,12 @@ function update(dt) {
   }
   prevJumpHeld = input.jump;
 
-  /* ---------- touch zone glow (touch input only) ---------- 
+  /* ---------- touch zone glow ---------- */
   for (const z of ['left', 'right', 'jump']) {
-    const active = tkeys[z] ? 1 : 0;
+    const active = input[z] ? 1 : 0;
     zoneGlow[z] += (active - zoneGlow[z]) * Math.min(1, dt * 14);
     if (zoneGlow[z] < 0.002) zoneGlow[z] = 0;
-  }*/
+  }
 
   /* ---------- GAME OVER ---------- */
   if (state === 'gameover') {
@@ -619,44 +619,6 @@ function render() {
    TOUCH ZONE OVERLAY
    ============================================================ */
 function drawTouchZones() {
-  const hintAlpha = touchUI ? clamp(touchHintTime / 1.2, 0, 1) : 0;
-  if (hintAlpha <= 0.01) return;
-
-  ctx.save();
-
-  ctx.fillStyle = `rgba(255, 255, 255, ${0.07 * hintAlpha})`;
-  ctx.fillRect(0, 0, W, H);
-
-  ctx.strokeStyle = `rgba(255, 255, 255, ${0.45 * hintAlpha})`;
-  ctx.lineWidth = 2;
-  ctx.setLineDash([10, 10]);
-  ctx.beginPath();
-  ctx.moveTo(0, H / 3);     ctx.lineTo(W, H / 3);
-  ctx.moveTo(W / 2, H / 3); ctx.lineTo(W / 2, H);
-  ctx.stroke();
-  ctx.setLineDash([]);
-
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-
-  const pulse = 0.7 + 0.3 * Math.sin(performance.now() / 260);
-
-  ctx.fillStyle = `rgba(255, 255, 255, ${0.80 * hintAlpha * pulse})`;
-  ctx.font = 'bold 26px ui-sans-serif, system-ui, sans-serif';
-  ctx.fillText('JUMP', W / 2, H / 6);
-
-  ctx.font = 'bold 44px ui-sans-serif, system-ui, sans-serif';
-  ctx.fillText('◀', W * 0.25, H / 3 + (H * 2 / 3) / 2);
-  ctx.fillText('▶', W * 0.75, H / 3 + (H * 2 / 3) / 2);
-
-  ctx.font = '600 13px ui-sans-serif, system-ui, sans-serif';
-  ctx.fillStyle = `rgba(255, 255, 255, ${0.55 * hintAlpha})`;
-  ctx.fillText('LEFT',  W * 0.25, H / 3 + (H * 2 / 3) / 2 + 46);
-  ctx.fillText('RIGHT', W * 0.75, H / 3 + (H * 2 / 3) / 2 + 46);
-
-  ctx.restore();
-}
-
   const glowMax = Math.max(zoneGlow.jump, zoneGlow.left, zoneGlow.right);
   const hintAlpha = touchUI ? clamp(touchHintTime / 1.2, 0, 1) : 0;
 
@@ -717,7 +679,7 @@ function drawTouchZones() {
 
     ctx.restore();
   }
-
+}
 
 /* ---------- background ---------- */
 function drawClouds() {
