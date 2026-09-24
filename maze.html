@@ -1,0 +1,751 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>Stairwell — 9×9×3 Maze Escape</title>
+<style>
+  html,body{
+    margin:0;height:100%;background:#05070d;
+    display:flex;align-items:center;justify-content:center;
+    font-family:ui-monospace,Menlo,Consolas,monospace;
+    overflow:hidden; overscroll-behavior:none; touch-action:none;
+    -webkit-user-select:none; user-select:none;
+    -webkit-tap-highlight-color:transparent;
+  }
+  canvas{
+    display:block;border-radius:14px;touch-action:none;cursor:pointer;
+    box-shadow:0 0 70px rgba(60,120,255,.18), 0 0 0 1px #131c2e;
+  }
+</style>
+</head>
+<body>
+<canvas id="c" width="700" height="600"></canvas>
+<script>
+(() => {
+"use strict";
+
+/* ============================== CANVAS ================================= */
+const cv  = document.getElementById('c');
+const ctx = cv.getContext('2d');
+
+/* ============================== CONSTANTS ============================== */
+const COLS = 9, ROWS = 9, LAYERS = 3;
+
+const START = { x: 4, y: 4, layer: 0 };   // bottom floor, middle room
+const GOAL  = { x: 4, y: 4, layer: 2 };   // surface hatch, middle room
+
+const STAIRS_PER_GAP = 4;
+const LOOP_CHANCE    = 0.11;
+
+/* ---- layout (recomputed on resize) ---- */
+let W = 700, H = 600;                 // logical drawing size
+let CELL = 54, MX = 30, MY = 64;
+let DPR = 1;
+const view = { compact: false };
+
+const MINI = 12, SIDE_X = 554, SIDE_Y = 88;   // sidebar (wide layout only)
+
+/* ---- gesture tuning, in CSS pixels ---- */
+const TAP_SLOP = 12;
+const TAP_MS   = 350;
+const SWIPE_PX = 22;
+
+/* ============================== STATE ================================== */
+let grid, seen, visited;
+let player, won, moves, startTime, elapsed, bump, drag;
+
+const OPP  = { n:'s', s:'n', e:'w', w:'e' };
+const DIRS = [ ['n',0,-1], ['s',0,1], ['w',-1,0], ['e',1,0] ];
+const rndInt = n => Math.floor(Math.random() * n);
+
+/* ============================== GENERATION ============================= */
+function newCell(){ return { n:true, s:true, e:true, w:true, up:false, down:false }; }
+
+function carve(layer){
+  const vis = Array.from({length:ROWS}, () => new Array(COLS).fill(false));
+  const stack = [[0,0]];
+  vis[0][0] = true;
+
+  while (stack.length){
+    const [x,y] = stack[stack.length-1];
+    const opts = [];
+    for (const [d,dx,dy] of DIRS){
+      const nx = x+dx, ny = y+dy;
+      if (nx<0 || ny<0 || nx>=COLS || ny>=ROWS) continue;
+      if (vis[ny][nx]) continue;
+      opts.push([d,nx,ny]);
+    }
+    if (!opts.length){ stack.pop(); continue; }
+
+    const [d,nx,ny] = opts[rndInt(opts.length)];
+    layer[y][x][d] = false;
+    layer[ny][nx][OPP[d]] = false;
+    vis[ny][nx] = true;
+    stack.push([nx,ny]);
+  }
+}
+
+function addLoops(layer){
+  for (let y=0; y<ROWS; y++){
+    for (let x=0; x<COLS; x++){
+      if (Math.random() > LOOP_CHANCE) continue;
+      const opts = [];
+      for (const [d,dx,dy] of DIRS){
+        const nx = x+dx, ny = y+dy;
+        if (nx<0 || ny<0 || nx>=COLS || ny>=ROWS) continue;
+        opts.push([d,nx,ny]);
+      }
+      const [d,nx,ny] = opts[rndInt(opts.length)];
+      layer[y][x][d] = false;
+      layer[ny][nx][OPP[d]] = false;
+    }
+  }
+}
+
+function placeStairs(){
+  // Every floor is a connected maze, so one stair per gap keeps the cube solvable.
+  for (let l = 0; l < LAYERS-1; l++){
+    let placed = 0, guard = 0;
+    while (placed < STAIRS_PER_GAP && guard++ < 3000){
+      const x = rndInt(COLS), y = rndInt(ROWS);
+
+      if (l === START.layer && x === START.x && y === START.y) continue;
+      if (l+1 === GOAL.layer && x === GOAL.x && y === GOAL.y) continue;
+
+      const lo = grid[l][y][x];
+      const hi = grid[l+1][y][x];
+      if (lo.up || lo.down || hi.up || hi.down) continue;  // one stair per tile
+
+      lo.up = true;
+      hi.down = true;
+      placed++;
+    }
+  }
+}
+
+function generateMaze(){
+  grid = [];
+  for (let l = 0; l < LAYERS; l++){
+    const layer = [];
+    for (let y = 0; y < ROWS; y++){
+      const row = [];
+      for (let x = 0; x < COLS; x++) row.push(newCell());
+      layer.push(row);
+    }
+    carve(layer);
+    addLoops(layer);
+    grid.push(layer);
+  }
+  placeStairs();
+}
+
+/* ============================== LAYOUT ================================= */
+function updateLayout(){
+  const vw = window.innerWidth, vh = window.innerHeight;
+  const compact = vw < 640;
+  view.compact = compact;
+
+  if (compact){ W = 480; H = 620; CELL = 46; MY = 76; MX = Math.round((W - COLS*CELL)/2); }
+  else        { W = 700; H = 600; CELL = 54; MY = 64; MX = 30; }
+
+  DPR = Math.min(window.devicePixelRatio || 1, 2.5);
+  cv.width  = Math.round(W * DPR);
+  cv.height = Math.round(H * DPR);
+
+  // fit inside the viewport while preserving aspect
+  const scale = Math.min((vw * 0.98) / W, (vh * 0.96) / H);
+  cv.style.width  = (W * scale) + 'px';
+  cv.style.height = (H * scale) + 'px';
+}
+
+/* ============================== RESET ================================== */
+function reset(){
+  generateMaze();
+
+  player = { x: START.x, y: START.y, layer: START.layer };
+  won = false; moves = 0; startTime = null; elapsed = 0;
+  bump = null; drag = null;
+
+  seen = []; visited = [];
+  for (let l = 0; l < LAYERS; l++){
+    const s = [], v = [];
+    for (let y = 0; y < ROWS; y++){
+      s.push(new Array(COLS).fill(false));
+      v.push(new Array(COLS).fill(false));
+    }
+    seen.push(s); visited.push(v);
+  }
+  reveal();
+}
+
+function reveal(){
+  const L = player.layer;
+  visited[L][player.y][player.x] = true;
+  for (let dy = -1; dy <= 1; dy++){
+    for (let dx = -1; dx <= 1; dx++){
+      const x = player.x + dx, y = player.y + dy;
+      if (x < 0 || y < 0 || x >= COLS || y >= ROWS) continue;
+      seen[L][y][x] = true;
+    }
+  }
+}
+
+/* ============================== ACTIONS ================================ */
+function move(dx, dy){
+  if (won) return;
+  const c = grid[player.layer][player.y][player.x];
+
+  let blocked = false;
+  if      (dx === -1 && c.w) blocked = true;
+  else if (dx ===  1 && c.e) blocked = true;
+  else if (dy === -1 && c.n) blocked = true;
+  else if (dy ===  1 && c.s) blocked = true;
+
+  if (blocked){
+    bump = { dir: dx === -1 ? 'w' : dx === 1 ? 'e' : dy === -1 ? 'n' : 's',
+             t: performance.now() };
+    return;
+  }
+
+  player.x += dx;
+  player.y += dy;
+  moves++;
+  reveal();
+  checkWin();
+}
+
+function useStairs(){
+  if (won) return;
+  const c = grid[player.layer][player.y][player.x];
+  if (c.up){   player.layer++; moves++; reveal(); checkWin(); }
+  else if (c.down){ player.layer--; moves++; reveal(); checkWin(); }
+}
+
+function checkWin(){
+  if (player.layer === GOAL.layer && player.x === GOAL.x && player.y === GOAL.y){
+    won = true;
+  }
+}
+
+/* ============================== INPUT — KEYS =========================== */
+window.addEventListener('keydown', e => {
+  const k = e.key;
+  if (k === 'ArrowUp' || k === 'ArrowDown' || k === 'ArrowLeft' ||
+      k === 'ArrowRight' || k === ' ') e.preventDefault();
+
+  if      (k === 'ArrowUp'    || k === 'w' || k === 'W') move(0,-1);
+  else if (k === 'ArrowDown'  || k === 's' || k === 'S') move(0, 1);
+  else if (k === 'ArrowLeft'  || k === 'a' || k === 'A') move(-1,0);
+  else if (k === 'ArrowRight' || k === 'd' || k === 'D') move(1, 0);
+  else if (k === ' ' || k === 'Enter') useStairs();
+  else if (k === 'r' || k === 'R') reset();
+});
+
+/* ============================== INPUT — TOUCH ========================== */
+function toLogical(clientX, clientY){
+  const r = cv.getBoundingClientRect();
+  return {
+    x: (clientX - r.left) * (W / r.width),
+    y: (clientY - r.top ) * (H / r.height)
+  };
+}
+
+function stairButtonRect(){
+  if (view.compact) return { x: (W - 240) / 2, y: 512, w: 240, h: 46 };
+  return { x: 316, y: 562, w: 200, h: 34 };
+}
+
+function restartChip(){
+  if (!view.compact) return null;
+  return { x: W - MX - 16, y: 22, r: 21 };
+}
+
+function handleTap(clientX, clientY){
+  if (won){ reset(); return; }
+
+  const p = toLogical(clientX, clientY);
+
+  const rc = restartChip();
+  if (rc && Math.hypot(p.x - rc.x, p.y - rc.y) < rc.r){ reset(); return; }
+
+  const b = stairButtonRect();
+  if (p.x >= b.x && p.x <= b.x + b.w && p.y >= b.y && p.y <= b.y + b.h){
+    useStairs(); return;
+  }
+
+  const tx = Math.floor((p.x - MX) / CELL);
+  const ty = Math.floor((p.y - MY) / CELL);
+  if (tx < 0 || ty < 0 || tx >= COLS || ty >= ROWS) return;
+
+  // tapping your own room = take the stairs
+  if (tx === player.x && ty === player.y){ useStairs(); return; }
+
+  // otherwise: dominant axis from player toward the tapped room
+  const dx = tx - player.x, dy = ty - player.y;
+  if (Math.abs(dx) >= Math.abs(dy)) move(dx > 0 ? 1 : -1, 0);
+  else                              move(0, dy > 0 ? 1 : -1);
+}
+
+cv.addEventListener('pointerdown', e => {
+  if (e.button !== undefined && e.button !== 0) return;
+  try { cv.setPointerCapture(e.pointerId); } catch(_){}
+  drag = {
+    id: e.pointerId,
+    sx: e.clientX, sy: e.clientY,      // tap origin
+    ax: e.clientX, ay: e.clientY,      // swipe anchor (moves as you travel)
+    t: performance.now(),
+    moved: false
+  };
+  e.preventDefault();
+}, { passive: false });
+
+cv.addEventListener('pointermove', e => {
+  if (!drag || e.pointerId !== drag.id) return;
+
+  const dx = e.clientX - drag.ax;
+  const dy = e.clientY - drag.ay;
+  if (Math.hypot(dx, dy) < SWIPE_PX) return;
+
+  drag.moved = true;
+  if (Math.abs(dx) >= Math.abs(dy)) move(dx > 0 ? 1 : -1, 0);
+  else                              move(0, dy > 0 ? 1 : -1);
+
+  // re-anchor so continued dragging keeps stepping
+  drag.ax = e.clientX;
+  drag.ay = e.clientY;
+  e.preventDefault();
+}, { passive: false });
+
+function endPointer(e){
+  if (!drag || e.pointerId !== drag.id) return;
+  const d = drag;
+  drag = null;
+
+  const dist = Math.hypot(e.clientX - d.sx, e.clientY - d.sy);
+  const dt   = performance.now() - d.t;
+  if (!d.moved && dist < TAP_SLOP && dt < TAP_MS) handleTap(e.clientX, e.clientY);
+  e.preventDefault();
+}
+cv.addEventListener('pointerup', endPointer, { passive: false });
+cv.addEventListener('pointercancel', () => { drag = null; });
+cv.addEventListener('contextmenu', e => e.preventDefault());
+
+window.addEventListener('resize', updateLayout);
+window.addEventListener('orientationchange', () => setTimeout(updateLayout, 120));
+
+/* ============================== DRAW HELPERS =========================== */
+function roundRect(x, y, w, h, r){
+  ctx.beginPath();
+  if (ctx.roundRect){ ctx.roundRect(x, y, w, h, r); return; }
+  ctx.moveTo(x+r, y);
+  ctx.arcTo(x+w, y,   x+w, y+h, r);
+  ctx.arcTo(x+w, y+h, x,   y+h, r);
+  ctx.arcTo(x,   y+h, x,   y,   r);
+  ctx.arcTo(x,   y,   x+w, y,   r);
+  ctx.closePath();
+}
+
+function drawStairIcon(sx, sy, up, t){
+  const cx = sx + CELL/2, cy = sy + CELL/2;
+  const pulse = 0.6 + 0.4 * Math.sin(t / 300);
+  ctx.save();
+  ctx.shadowBlur  = 16 * pulse;
+  ctx.shadowColor = up ? '#37d6ff' : '#b06bff';
+  ctx.beginPath();
+  if (up){
+    ctx.moveTo(cx,      cy - 13);
+    ctx.lineTo(cx + 12, cy +  7);
+    ctx.lineTo(cx - 12, cy +  7);
+  } else {
+    ctx.moveTo(cx,      cy + 13);
+    ctx.lineTo(cx + 12, cy -  7);
+    ctx.lineTo(cx - 12, cy -  7);
+  }
+  ctx.closePath();
+  ctx.fillStyle = up ? 'rgba(70,220,255,0.9)' : 'rgba(180,115,255,0.9)';
+  ctx.fill();
+  ctx.restore();
+}
+
+function drawMiniStair(sx, sy, up){
+  const cx = sx + MINI/2, cy = sy + MINI/2;
+  ctx.beginPath();
+  if (up){
+    ctx.moveTo(cx,     cy - 4);
+    ctx.lineTo(cx + 4, cy + 3);
+    ctx.lineTo(cx - 4, cy + 3);
+  } else {
+    ctx.moveTo(cx,     cy + 4);
+    ctx.lineTo(cx + 4, cy - 3);
+    ctx.lineTo(cx - 4, cy - 3);
+  }
+  ctx.closePath();
+  ctx.fillStyle = up ? '#37d6ff' : '#b06bff';
+  ctx.fill();
+}
+
+/* ============================== HEADER ================================= */
+function drawHeader(mm, ss){
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'alphabetic';
+
+  if (view.compact){
+    ctx.fillStyle = '#e2ecff';
+    ctx.font = 'bold 16px ui-monospace,monospace';
+    ctx.fillText(`FLOOR ${player.layer+1} / 3`, MX, 28);
+
+    for (let i = 0; i < LAYERS; i++){
+      ctx.beginPath();
+      ctx.arc(MX + 130 + i*15, 22, 5, 0, Math.PI*2);
+      ctx.fillStyle = i === player.layer ? '#ffc25c' : '#212e45';
+      ctx.fill();
+    }
+
+    ctx.textAlign = 'right';
+    ctx.font = 'bold 12px ui-monospace,monospace';
+    const top = player.layer === LAYERS-1;
+    ctx.fillStyle = top ? '#5cff9d' : '#4a5b7a';
+    ctx.fillText(top ? 'AT THE SURFACE' : 'SURFACE ↑', W - MX - 42, 28);
+
+    const rc = restartChip();
+    ctx.beginPath();
+    ctx.arc(rc.x, rc.y, 13, 0, Math.PI*2);
+    ctx.fillStyle = 'rgba(255,255,255,0.04)';
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(90,110,150,0.5)';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+    ctx.textAlign = 'center';
+    ctx.fillStyle = '#7f8fb3';
+    ctx.font = '15px ui-monospace,monospace';
+    ctx.fillText('↻', rc.x, rc.y + 5);
+
+    ctx.textAlign = 'left';
+    ctx.fillStyle = '#5a6b8c';
+    ctx.font = '11px ui-monospace,monospace';
+    ctx.fillText(`MOVES ${moves}`, MX, 52);
+    ctx.fillText(`TIME ${mm}:${ss}`, MX + 112, 52);
+    return;
+  }
+
+  /* wide */
+  ctx.fillStyle = '#e2ecff';
+  ctx.font = 'bold 20px ui-monospace,monospace';
+  ctx.fillText('STAIRWELL', MX, 32);
+
+  ctx.fillStyle = '#4d5d7d';
+  ctx.font = '12px ui-monospace,monospace';
+  ctx.fillText('9 × 9 × 3  ·  climb from the bottom to the surface', MX + 142, 32);
+
+  ctx.fillStyle = '#7f8fb3';
+  ctx.font = '12px ui-monospace,monospace';
+  ctx.fillText(`FLOOR ${player.layer+1}/3     MOVES ${moves}     TIME ${mm}:${ss}`, MX, 54);
+}
+
+/* ============================== MAZE VIEW ============================== */
+function drawMaze(t){
+  const L = player.layer;
+
+  roundRect(MX - 8, MY - 8, COLS*CELL + 16, ROWS*CELL + 16, 12);
+  ctx.fillStyle = '#0b101d';
+  ctx.fill();
+  ctx.strokeStyle = '#182238';
+  ctx.lineWidth = 1;
+  ctx.stroke();
+
+  // floor tint
+  for (let y = 0; y < ROWS; y++){
+    for (let x = 0; x < COLS; x++){
+      const sx = MX + x*CELL, sy = MY + y*CELL;
+      if (visited[L][y][x]){
+        ctx.fillStyle = '#1a2540';
+        ctx.fillRect(sx+2, sy+2, CELL-4, CELL-4);
+      } else if (seen[L][y][x]){
+        ctx.fillStyle = '#0f1729';
+        ctx.fillRect(sx+2, sy+2, CELL-4, CELL-4);
+      }
+    }
+  }
+
+  // walls of walked rooms
+  ctx.strokeStyle = '#3d5b8f';
+  ctx.lineWidth = 3;
+  ctx.lineCap = 'square';
+  ctx.beginPath();
+  for (let y = 0; y < ROWS; y++){
+    for (let x = 0; x < COLS; x++){
+      if (!visited[L][y][x]) continue;
+      const c  = grid[L][y][x];
+      const sx = MX + x*CELL, sy = MY + y*CELL;
+      if (c.n){ ctx.moveTo(sx,      sy);      ctx.lineTo(sx+CELL, sy); }
+      if (c.s){ ctx.moveTo(sx,      sy+CELL); ctx.lineTo(sx+CELL, sy+CELL); }
+      if (c.w){ ctx.moveTo(sx,      sy);      ctx.lineTo(sx,      sy+CELL); }
+      if (c.e){ ctx.moveTo(sx+CELL, sy);      ctx.lineTo(sx+CELL, sy+CELL); }
+    }
+  }
+  ctx.stroke();
+
+  // stairs on glimpsed tiles
+  for (let y = 0; y < ROWS; y++){
+    for (let x = 0; x < COLS; x++){
+      if (!seen[L][y][x]) continue;
+      const c = grid[L][y][x];
+      if (c.up)   drawStairIcon(MX + x*CELL, MY + y*CELL, true,  t);
+      if (c.down) drawStairIcon(MX + x*CELL, MY + y*CELL, false, t);
+    }
+  }
+
+  // surface hatch
+  if (L === GOAL.layer){
+    const cx = MX + GOAL.x*CELL + CELL/2;
+    const cy = MY + GOAL.y*CELL + CELL/2;
+    const pulse = 0.5 + 0.5 * Math.sin(t / 420);
+    ctx.save();
+    ctx.shadowColor = '#5cff9d';
+    ctx.shadowBlur  = 22 + 22 * pulse;
+    ctx.beginPath();
+    ctx.arc(cx, cy, 15, 0, Math.PI*2);
+    ctx.fillStyle = `rgba(92,255,157,${0.20 + 0.25*pulse})`;
+    ctx.fill();
+    ctx.restore();
+    ctx.beginPath();
+    ctx.arc(cx, cy, 7, 0, Math.PI*2);
+    ctx.fillStyle = '#5cff9d';
+    ctx.fill();
+  }
+
+  // bump feedback on the wall you just walked into
+  if (bump && t - bump.t < 240){
+    const a = 1 - (t - bump.t) / 240;
+    const sx = MX + player.x*CELL, sy = MY + player.y*CELL;
+    ctx.save();
+    ctx.strokeStyle = `rgba(255,110,90,${a})`;
+    ctx.lineWidth = 6;
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    if (bump.dir === 'n'){ ctx.moveTo(sx+4, sy+2);           ctx.lineTo(sx+CELL-4, sy+2); }
+    if (bump.dir === 's'){ ctx.moveTo(sx+4, sy+CELL-2);      ctx.lineTo(sx+CELL-4, sy+CELL-2); }
+    if (bump.dir === 'w'){ ctx.moveTo(sx+2, sy+4);           ctx.lineTo(sx+2, sy+CELL-4); }
+    if (bump.dir === 'e'){ ctx.moveTo(sx+CELL-2, sy+4);      ctx.lineTo(sx+CELL-2, sy+CELL-4); }
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  // player
+  const px = MX + player.x*CELL + CELL/2;
+  const py = MY + player.y*CELL + CELL/2;
+  ctx.save();
+  ctx.shadowColor = '#ffb347';
+  ctx.shadowBlur  = 18;
+  ctx.beginPath();
+  ctx.arc(px, py, CELL*0.24, 0, Math.PI*2);
+  ctx.fillStyle = '#ffc25c';
+  ctx.fill();
+  ctx.restore();
+  ctx.beginPath();
+  ctx.arc(px, py, CELL*0.12, 0, Math.PI*2);
+  ctx.fillStyle = '#fff4dc';
+  ctx.fill();
+}
+
+/* ============================== SIDEBAR ================================ */
+function drawSidebar(t){
+  if (view.compact) return;
+
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'alphabetic';
+  ctx.fillStyle = '#4d5d7d';
+  ctx.font = 'bold 11px ui-monospace,monospace';
+  ctx.fillText('SCHEMATIC', SIDE_X, 68);
+
+  for (let i = 0; i < LAYERS; i++){
+    const l  = LAYERS - 1 - i;              // surface on top
+    const by = SIDE_Y + i * 134;
+    const isCurrent = (l === player.layer);
+
+    let label = `FLOOR ${l+1}`;
+    if (l === LAYERS-1) label += ' · SURFACE';
+    if (l === 0)        label += ' · START';
+    ctx.fillStyle = isCurrent ? '#9fd4ff' : '#42536f';
+    ctx.font = 'bold 11px ui-monospace,monospace';
+    ctx.fillText(label, SIDE_X, by - 6);
+
+    roundRect(SIDE_X - 4, by - 2, COLS*MINI + 8, ROWS*MINI + 8, 6);
+    ctx.fillStyle   = isCurrent ? '#101a2c' : '#0a0f1a';
+    ctx.fill();
+    ctx.strokeStyle = isCurrent ? '#2f5a8f' : '#182238';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+
+    for (let y = 0; y < ROWS; y++){
+      for (let x = 0; x < COLS; x++){
+        const sx = SIDE_X + x*MINI, sy = by + y*MINI;
+        if (visited[l][y][x])    ctx.fillStyle = '#2a4a7a';
+        else if (seen[l][y][x])  ctx.fillStyle = '#16233a';
+        else continue;
+        ctx.fillRect(sx, sy, MINI-1, MINI-1);
+      }
+    }
+
+    for (let y = 0; y < ROWS; y++){
+      for (let x = 0; x < COLS; x++){
+        if (!seen[l][y][x]) continue;
+        const c = grid[l][y][x];
+        const sx = SIDE_X + x*MINI, sy = by + y*MINI;
+        if (c.up)   drawMiniStair(sx, sy, true);
+        if (c.down) drawMiniStair(sx, sy, false);
+      }
+    }
+
+    if (l === GOAL.layer){
+      const gx = SIDE_X + GOAL.x*MINI + MINI/2;
+      const gy = by      + GOAL.y*MINI + MINI/2;
+      ctx.beginPath();
+      ctx.arc(gx, gy, 3.5, 0, Math.PI*2);
+      ctx.fillStyle = '#5cff9d';
+      ctx.fill();
+    }
+
+    if (l === player.layer){
+      const px = SIDE_X + player.x*MINI + MINI/2;
+      const py = by      + player.y*MINI + MINI/2;
+      ctx.beginPath();
+      ctx.arc(px, py, 4, 0, Math.PI*2);
+      ctx.fillStyle = '#ffc25c';
+      ctx.fill();
+      ctx.strokeStyle = '#fff4dc';
+      ctx.lineWidth = 1;
+      ctx.stroke();
+    }
+  }
+
+  /* legend */
+  const lx = SIDE_X;
+  let ly = 500;
+  ctx.font = '11px ui-monospace,monospace';
+  ctx.textAlign = 'left';
+
+  ctx.beginPath();
+  ctx.moveTo(lx+6, ly-10); ctx.lineTo(lx+12, ly); ctx.lineTo(lx, ly);
+  ctx.closePath(); ctx.fillStyle = '#37d6ff'; ctx.fill();
+  ctx.fillStyle = '#7f8fb3'; ctx.fillText('stairs up', lx+20, ly);
+
+  ly += 18;
+  ctx.beginPath();
+  ctx.moveTo(lx+6, ly+2); ctx.lineTo(lx+12, ly-8); ctx.lineTo(lx, ly-8);
+  ctx.closePath(); ctx.fillStyle = '#b06bff'; ctx.fill();
+  ctx.fillStyle = '#7f8fb3'; ctx.fillText('stairs down', lx+20, ly);
+
+  ly += 18;
+  ctx.beginPath(); ctx.arc(lx+6, ly-4, 5, 0, Math.PI*2);
+  ctx.fillStyle = '#5cff9d'; ctx.fill();
+  ctx.fillStyle = '#7f8fb3'; ctx.fillText('surface hatch', lx+20, ly);
+}
+
+/* ============================== FOOTER ================================= */
+function drawFooter(t){
+  const c = grid[player.layer][player.y][player.x];
+  const b = stairButtonRect();
+  const active = c.up || c.down;
+  const up = c.up;
+  const pulse = 0.5 + 0.5 * Math.sin(t / 380);
+
+  roundRect(b.x, b.y, b.w, b.h, b.h/2);
+  if (active){
+    ctx.fillStyle   = up ? `rgba(45,190,230,${0.16 + 0.12*pulse})`
+                         : `rgba(150,100,240,${0.16 + 0.12*pulse})`;
+    ctx.fill();
+    ctx.strokeStyle = up ? 'rgba(95,225,255,0.9)' : 'rgba(195,145,255,0.9)';
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+    ctx.fillStyle = up ? '#b6f0ff' : '#dcc4ff';
+  } else {
+    ctx.fillStyle   = 'rgba(255,255,255,0.02)';
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(90,110,150,0.35)';
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+    ctx.fillStyle = '#3a4a66';
+  }
+
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.font = `bold ${view.compact ? 14 : 12}px ui-monospace,monospace`;
+  ctx.fillText(active ? (up ? '▲  CLIMB UP' : '▼  GO DOWN') : 'NO STAIRS HERE',
+               b.x + b.w/2, b.y + b.h/2 + 1);
+  ctx.textBaseline = 'alphabetic';
+
+  ctx.textAlign = 'left';
+  ctx.font = '11px ui-monospace,monospace';
+  ctx.fillStyle = '#3d4d6b';
+  if (view.compact){
+    ctx.fillText('swipe to move · tap a direction · tap your room for stairs', MX, 594);
+  } else {
+    ctx.fillText('WASD / Arrows · SPACE · R', MX, 582);
+  }
+}
+
+/* ============================== WIN OVERLAY ============================ */
+function drawWinOverlay(mm, ss){
+  ctx.fillStyle = 'rgba(5,8,16,0.86)';
+  ctx.fillRect(0, 0, W, H);
+
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'alphabetic';
+
+  const cy = H * 0.42;
+
+  ctx.save();
+  ctx.shadowColor = '#5cff9d';
+  ctx.shadowBlur = 28;
+  ctx.fillStyle = '#7dffb0';
+  ctx.font = `bold ${view.compact ? 38 : 46}px ui-monospace,monospace`;
+  ctx.fillText('ESCAPED', W/2, cy);
+  ctx.restore();
+
+  ctx.fillStyle = '#9fb3d9';
+  ctx.font = '16px ui-monospace,monospace';
+  ctx.fillText(`Time  ${mm}:${ss}      Moves  ${moves}`, W/2, cy + 44);
+
+  ctx.fillStyle = '#5a6b8c';
+  ctx.font = '13px ui-monospace,monospace';
+  ctx.fillText('You reached the surface.', W/2, cy + 84);
+  ctx.fillText('Tap anywhere (or press R) to dive again', W/2, cy + 110);
+
+  ctx.textAlign = 'left';
+}
+
+/* ============================== MAIN RENDER ============================ */
+function render(t){
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  ctx.fillStyle = '#070a12';
+  ctx.fillRect(0, 0, W, H);
+
+  const mm = String(Math.floor(elapsed / 60000)).padStart(2,'0');
+  const ss = String(Math.floor(elapsed / 1000) % 60).padStart(2,'0');
+
+  drawHeader(mm, ss);
+  drawMaze(t);
+  drawSidebar(t);
+  drawFooter(t);
+  if (won) drawWinOverlay(mm, ss);
+}
+
+/* ============================== LOOP =================================== */
+function loop(now){
+  if (startTime === null) startTime = now;
+  if (!won) elapsed = now - startTime;
+  render(now);
+  requestAnimationFrame(loop);
+}
+
+/* ============================== BOOT =================================== */
+updateLayout();
+reset();
+requestAnimationFrame(loop);
+
+})();
+</script>
+</body>
+</html>
