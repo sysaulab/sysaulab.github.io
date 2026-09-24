@@ -115,7 +115,7 @@ let prevJumpHeld = false;                                  // for edge detection
 
 /* ---------- touch pointers ---------- */
 const activePointers = new Map();   // pointerId -> 'left' | 'right' | 'jump'
-const zoneGlow = { left: 0, right: 0, jump: 0 };
+//const zoneGlow = { left: 0, right: 0, jump: 0 };
 let touchHintTime = 0;
 
 /* ============================================================
@@ -176,7 +176,7 @@ function reset() {
   activePointers.clear();
   tkeys.left = tkeys.right = tkeys.jump = false;
   prevJumpHeld = keys.jump;
-  zoneGlow.left = zoneGlow.right = zoneGlow.jump = 0;
+  //zoneGlow.left = zoneGlow.right = zoneGlow.jump = 0;
   touchHintTime = touchUI ? TOUCH_HINT_TIME : 0;
 
   platforms.push({ x: -1400, y: 460, w: 2000, h: 70, moving: false, dx: 0 });
@@ -312,12 +312,12 @@ function update(dt) {
   }
   prevJumpHeld = input.jump;
 
-  /* ---------- touch zone glow ---------- */
+  /* ---------- touch zone glow (touch input only) ---------- 
   for (const z of ['left', 'right', 'jump']) {
-    const active = input[z] ? 1 : 0;
+    const active = tkeys[z] ? 1 : 0;
     zoneGlow[z] += (active - zoneGlow[z]) * Math.min(1, dt * 14);
     if (zoneGlow[z] < 0.002) zoneGlow[z] = 0;
-  }
+  }*/
 
   /* ---------- GAME OVER ---------- */
   if (state === 'gameover') {
