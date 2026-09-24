@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>pydventure</title>
+<title>adventure.html</title>
 <style>
 :root {
   --bg:       #0e1218;
@@ -166,7 +166,7 @@ body {
 }
 .center-panel .actions button:hover { background: #26394e; }
 .center-panel .actions button[data-cmd="fight"]    { color: var(--bad);  border-color: #3a1a1a; }
-.center-panel .actions button[data-cmd="flee"]     { color: var(--dim); }
+.center-panel .actions button[data-cmd="retreat"]  { color: var(--dim); }
 .center-panel .actions button[data-cmd="use fire"] { color: var(--good); border-color: #1a3a1a; }
 
 .center-panel .feedback {
@@ -618,7 +618,7 @@ body {
 <!-- ============================================================= welcome -->
 <div class="overlay welcome" id="ov-welcome">
   <div class="card">
-    <h1>pydventure</h1>
+    <h1>adventure.html</h1>
     <p class="sub" id="w-status"></p>
 
     <div class="form">
@@ -852,6 +852,8 @@ const DIR_NAMES = { N: "north", E: "east", S: "south", W: "west", U: "up", D: "d
 const FIRE_MIN_DAMAGE = 10;
 const FIRE_MAX_DAMAGE = 20;
 const MAX_ITEM_COUNT  = 10;
+const RESPAWN_DELAY_MS = 90 * 1000;                  // 90 seconds
+const RESPAWN_RATES    = { overworld: 0.15, dungeon: 0.35, shrine: 0.35 };
 
 // ============================================================================
 // RNG
@@ -1614,6 +1616,8 @@ class Session {
     this.combat = opts.combat || world.config.combat;
     this.goal = opts.goal || world.config.goal;
     this.deltas = opts.deltas || {};
+    this.lastRoom = opts.lastRoom || null;
+    this.freshEntry = true;
     this.roomState = null;
     this.loadCurrentRoom();
   }
@@ -1621,13 +1625,28 @@ class Session {
     const p = this.player;
     const key = `${p.map}|${p.x},${p.y},${p.z}`;
     let room = this.deltas[key];
+    const now = Date.now();
     if (!room) {
       const pristine = this.world.getRoom(p.map, p.x, p.y, p.z);
       if (!pristine) { this.roomState = null; return; }
       room = JSON.parse(JSON.stringify(pristine));
       this.deltas[key] = room;
+    } else if (room.lastVisited && now - room.lastVisited > RESPAWN_DELAY_MS) {
+      this.maybeRespawnEnemies(room);
     }
+    room.lastVisited = now;
     this.roomState = new RoomState(room, this.player);
+    this.freshEntry = true;
+  }
+
+  maybeRespawnEnemies(room) {
+    const level = this.world.levels[this.player.map];
+    if (!level) return;
+    const rate = RESPAWN_RATES[level.kind] ?? 0;
+    if (rate <= 0 || Math.random() >= rate) return;
+    const pristine = this.world.getRoom(room.map, room.x, room.y, room.z);
+    if (!pristine || !pristine.enemies.length) return;
+    room.enemies = pristine.enemies.map(e => ({ name: e.name, hp: enemyMaxHp(e.name) }));
   }
   neighborCoords(dir) {
     const [dx, dy, dz] = DELTA[dir] || [0, 0, 0];
@@ -1680,6 +1699,7 @@ class Session {
         return { ok: false, msg: `Unknown map '${t.map}'.` };
       const targetRoom = this.world.getRoom(t.map, t.x, t.y, t.z);
       if (!targetRoom) return { ok: false, msg: "Destination doesn't exist." };
+      this.lastRoom = { map: oldMap, x: oldX, y: oldY, z: oldZ };
       this.player.map = t.map;
       this.player.x = t.x; this.player.y = t.y; this.player.z = t.z;
       this.loadCurrentRoom();
@@ -1696,11 +1716,31 @@ class Session {
     const dims = this.world.dimensions(this.player.map);
     if (!(nx >= 0 && nx < dims.x && ny >= 0 && ny < dims.y && nz >= 0 && nz < dims.z))
       return { ok: false, msg: "Out of world." };
+    this.lastRoom = { map: oldMap, x: oldX, y: oldY, z: oldZ };
     if (consumedReq)
       this.unlockNeighbor(oldMap, nx, ny, nz, OPPOSITE[dir], consumedReq);
     this.player.x = nx; this.player.y = ny; this.player.z = nz;
     this.loadCurrentRoom();
     return { ok: true, msg: `You move ${dir}.` };
+  }
+  // Step back into the room we came from.  Swaps, so you can duck out and
+  // back in again.  Enemies in the current room still have to be slipped
+  // past (handled by the caller's enemyBlock).
+  retreat() {
+    if (!this.lastRoom) return { ok: false, msg: "There is nowhere to retreat to." };
+    const dest = this.lastRoom;
+    if (!this.world.getRoom(dest.map, dest.x, dest.y, dest.z))
+      return { ok: false, msg: "The way back is gone." };
+    const here = {
+      map: this.player.map, x: this.player.x, y: this.player.y, z: this.player.z,
+    };
+    this.player.map = dest.map;
+    this.player.x = dest.x;
+    this.player.y = dest.y;
+    this.player.z = dest.z;
+    this.lastRoom = here;
+    this.loadCurrentRoom();
+    return { ok: true, msg: `You retreat to ${dest.map} (${dest.x},${dest.y},${dest.z}).` };
   }
   openDoorWithItem(dir, itemName) {
     const rs = this.roomState;
@@ -1742,7 +1782,7 @@ class Session {
       if (!this.player.hasItem(mealItem)) return { ok: false, msg: `You have no ${mealItem}.` };
       this.player.removeItem(mealItem, 1);
       this.player.hp = Math.min(this.player.hp + 2, this.player.maxHp);
-      return { ok: true, msg: "You eat the meal. (+1 HP)" };
+      return { ok: true, msg: "You eat the meal. (+2 HP)" };
     }
     if (item === heartItem) {
       if (!this.player.hasItem(heartItem)) return { ok: false, msg: `You have no ${heartItem}.` };
@@ -1754,7 +1794,6 @@ class Session {
     if (!this.roomState) return { ok: false, msg: "No room." };
     const rs = this.roomState;
     if (item === "fight")     return rs.fightEnemies(this.combat);
-    if (item === "avoidance") return rs.avoidEnemies(this.combat);
     if (dir) return this.openDoorWithItem(dir, item);
     const candidates = [];
     for (const [d, di] of Object.entries(rs.room.doors))
@@ -1796,6 +1835,7 @@ class Session {
   checkDeath(emit) {
     if (this.player.hp > 0) return;
     emit("You collapse.");
+    this.lastRoom = null;
     if (this.combat.death.restore_hp) this.player.healFull();
     emit("You wake at the entrance.");
     if (this.player.map === "overworld") {
@@ -1818,12 +1858,19 @@ class Session {
     const fireItem    = this.combat.fire_item;
     const mealItem    = this.combat.meal_item;
     const isFight = action === "fight" || (action === "use" && parts[1] === "fight");
-    const isFlee  = action === "flee" || action === "avoid"
-                 || (action === "use" && ["avoidance", "flee", "avoid"].includes(parts[1]));
     const isHeal  = action === "use" && [heartItem, shelterItem, mealItem].includes(parts[1]);
     const isFire  = action === "use" && parts[1] === fireItem;
     const isMeta  = isHeal || isFire;
-    if (!isFight && !isFlee && !isMeta) {
+    // Retreat counts as a move: enemies still have to be slipped past.
+    const isRetreat = action === "retreat" || action === "back";
+    // Stepping back out the way you came is free if it's the very first
+    // thing you do on entering — you're still standing in the doorway.
+    // Any other action (or a retreat after you've already committed)
+    // has to get past the enemies.
+    const freeRetreat = isRetreat && this.freshEntry;
+    const mustRoll = !isFight && !isMeta && !freeRetreat;
+    this.freshEntry = false;
+    if (mustRoll) {
       if (!this.enemyBlock(emit)) { this.checkDeath(emit); return { lines: out, endedReason }; }
     }
     if (action === "move") {
@@ -1844,8 +1891,9 @@ class Session {
       emit(r.msg);
     } else if (action === "fight") {
       const r = this.useItem("fight"); emit(r.msg);
-    } else if (action === "flee" || action === "avoid") {
-      const r = this.useItem("avoidance"); emit(r.msg);
+    } else if (action === "retreat" || action === "back") {
+      const r = this.retreat();
+      emit(r.msg);
     } else if (action === "take") {
       if (parts.length < 2) { emit("Take what?"); this.checkDeath(emit); return { lines: out, endedReason }; }
       const name = parts[1];
@@ -1876,6 +1924,7 @@ class Session {
         world: this.world.config,
         player: this.player.toJSON(),
         deltas: this.deltas,
+        lastRoom: this.lastRoom,
       };
       localStorage.setItem("pydventure.save", JSON.stringify(data));
     } catch (e) {
@@ -1955,7 +2004,10 @@ function stateFromSession(session) {
       enemyPower,
       items,
       canFight: enemies.length > 0,
-      canFlee: enemies.length > 0,
+      canRetreat: !!session.lastRoom,
+      retreatTo: session.lastRoom
+        ? `${session.lastRoom.map} ${session.lastRoom.x},${session.lastRoom.y},${session.lastRoom.z}`
+        : null,
       canFire: enemies.length > 0 && hasFire,
     };
   }
@@ -2110,8 +2162,11 @@ function renderCenter(room) {
 
   const acts = [];
   if (room.canFight) acts.push(`<button type="button" data-cmd="fight">Fight</button>`);
-  if (room.canFlee)  acts.push(`<button type="button" data-cmd="flee">Flee</button>`);
-  if (room.canFire)  acts.push(`<button type="button" data-cmd="use fire">Fire</button>`);
+  if (room.canRetreat) {
+    const dest = room.retreatTo ? ` title="Back to ${room.retreatTo}"` : "";
+    acts.push(`<button type="button" data-cmd="retreat"${dest}>Retreat</button>`);
+  }
+  if (room.canFire) acts.push(`<button type="button" data-cmd="use fire">Fire</button>`);
   els.centerActions.innerHTML = acts.join("");
 }
 
@@ -2379,7 +2434,7 @@ function startGame(worldCfg) {
 
   mapGeomCache.clear();
 
-  let player = null, deltas = {};
+  let player = null, deltas = {}, lastRoom = null;
   try {
     const raw = localStorage.getItem("pydventure.save");
     if (raw) {
@@ -2392,13 +2447,14 @@ function startGame(worldCfg) {
       if (same) {
         player = Player.fromJSON(saved.player);
         deltas = saved.deltas || {};
+        lastRoom = saved.lastRoom || null;
       }
     }
   } catch (e) { console.warn("Save load failed:", e); }
 
   if (!player) player = new Player({ map: "overworld", x: 0, y: 0, z: 1 });
 
-  currentSession = new Session(world, player, { deltas });
+  currentSession = new Session(world, player, { deltas, lastRoom });
 
   clearFeedback();
   appendFeedback(`Welcome to ${config.name}.`, "title");
