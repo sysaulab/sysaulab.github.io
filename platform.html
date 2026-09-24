@@ -64,7 +64,7 @@ const INVINCIBLE_TIME = 3.00;
 const START_LIVES     = 3;
 const GAMEOVER_PROMPT_DELAY = 1.0;
 
-const TOUCH_HINT_TIME = 4.0;   // seconds the touch zone hint stays visible
+const TOUCH_HINT_TIME = 4.0;
 
 /* ============================================================
    HELPERS
@@ -115,25 +115,11 @@ let prevJumpHeld = false;                                  // for edge detection
 
 /* ---------- touch pointers ---------- */
 const activePointers = new Map();   // pointerId -> 'left' | 'right' | 'jump'
-const zoneGlow = { left: 0, right: 0, jump: 0 };
 let touchHintTime = 0;
 
 /* ============================================================
    TOUCH ZONE GEOMETRY
-   ------------------------------------------------------------
-   Top third          -> jump  (full width horizontal band)
-   Bottom two thirds  -> left (left half) / right (right half)
    ============================================================ */
-function zoneRects() {
-  const topH = H / 3;
-  const botH = H - topH;
-  return {
-    jump:  { x: 0,     y: 0,    w: W,     h: topH },
-    left:  { x: 0,     y: topH, w: W / 2, h: botH },
-    right: { x: W / 2, y: topH, w: W / 2, h: botH }
-  };
-}
-
 function zoneAt(x, y) {
   if (y < H / 3) return 'jump';
   return (x < W / 2) ? 'left' : 'right';
@@ -176,7 +162,6 @@ function reset() {
   activePointers.clear();
   tkeys.left = tkeys.right = tkeys.jump = false;
   prevJumpHeld = keys.jump;
-  zoneGlow.left = zoneGlow.right = zoneGlow.jump = 0;
   touchHintTime = touchUI ? TOUCH_HINT_TIME : 0;
 
   platforms.push({ x: -1400, y: 460, w: 2000, h: 70, moving: false, dx: 0 });
@@ -306,18 +291,10 @@ function update(dt) {
     jump:  keys.jump  || tkeys.jump
   };
 
-  // Rising-edge jump detection so buffer works for both input sources
   if (input.jump && !prevJumpHeld && state === 'playing') {
     player.jumpBuffer = JUMP_BUFFER;
   }
   prevJumpHeld = input.jump;
-
-  /* ---------- touch zone glow ---------- */
-  for (const z of ['left', 'right', 'jump']) {
-    const active = input[z] ? 1 : 0;
-    zoneGlow[z] += (active - zoneGlow[z]) * Math.min(1, dt * 14);
-    if (zoneGlow[z] < 0.002) zoneGlow[z] = 0;
-  }
 
   /* ---------- GAME OVER ---------- */
   if (state === 'gameover') {
@@ -601,9 +578,7 @@ function render() {
   drawPlayer();
   ctx.restore();
 
-  // Touch zones sit under the HUD so the HUD stays readable
-  drawTouchZones();
-
+  drawTouchHint();
   drawHUD();
 
   if (hitFlash > 0) {
@@ -616,69 +591,45 @@ function render() {
 }
 
 /* ============================================================
-   TOUCH ZONE OVERLAY
+   TOUCH HINT OVERLAY (no per-touch visual feedback)
    ============================================================ */
-function drawTouchZones() {
-  const glowMax = Math.max(zoneGlow.jump, zoneGlow.left, zoneGlow.right);
+function drawTouchHint() {
   const hintAlpha = touchUI ? clamp(touchHintTime / 1.2, 0, 1) : 0;
+  if (hintAlpha <= 0.01) return;
 
-  if (hintAlpha <= 0.01 && glowMax <= 0.01) return;
+  ctx.save();
 
-  const z = zoneRects();
+  ctx.fillStyle = `rgba(255, 255, 255, ${0.07 * hintAlpha})`;
+  ctx.fillRect(0, 0, W, H);
 
-  // --- Soft fill for whichever zone is being pressed ---
-  for (const key of ['jump', 'left', 'right']) {
-    const g = zoneGlow[key];
-    if (g < 0.01) continue;
-    const r = z[key];
+  ctx.strokeStyle = `rgba(255, 255, 255, ${0.45 * hintAlpha})`;
+  ctx.lineWidth = 2;
+  ctx.setLineDash([10, 10]);
+  ctx.beginPath();
+  ctx.moveTo(0, H / 3);     ctx.lineTo(W, H / 3);
+  ctx.moveTo(W / 2, H / 3); ctx.lineTo(W / 2, H);
+  ctx.stroke();
+  ctx.setLineDash([]);
 
-    ctx.fillStyle = `rgba(255, 255, 255, ${0.10 * g})`;
-    ctx.fillRect(r.x, r.y, r.w, r.h);
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
 
-    // Inset outline so it reads as a distinct button
-    const pad = 6;
-    ctx.strokeStyle = `rgba(255, 255, 255, ${0.32 * g})`;
-    ctx.lineWidth = 2;
-    roundRectPath(r.x + pad, r.y + pad, r.w - pad * 2, r.h - pad * 2, 18);
-    ctx.stroke();
-  }
+  const pulse = 0.7 + 0.3 * Math.sin(performance.now() / 260);
 
-  // --- One-time hint showing where the zones are ---
-  if (hintAlpha > 0.01) {
-    ctx.save();
+  ctx.fillStyle = `rgba(255, 255, 255, ${0.80 * hintAlpha * pulse})`;
+  ctx.font = 'bold 26px ui-sans-serif, system-ui, sans-serif';
+  ctx.fillText('JUMP', W / 2, H / 6);
 
-    ctx.fillStyle = `rgba(255, 255, 255, ${0.07 * hintAlpha})`;
-    ctx.fillRect(0, 0, W, H);
+  ctx.font = 'bold 44px ui-sans-serif, system-ui, sans-serif';
+  ctx.fillText('◀', W * 0.25, H / 3 + (H * 2 / 3) / 2);
+  ctx.fillText('▶', W * 0.75, H / 3 + (H * 2 / 3) / 2);
 
-    ctx.strokeStyle = `rgba(255, 255, 255, ${0.45 * hintAlpha})`;
-    ctx.lineWidth = 2;
-    ctx.setLineDash([10, 10]);
-    ctx.beginPath();
-    ctx.moveTo(0, H / 3);   ctx.lineTo(W, H / 3);
-    ctx.moveTo(W / 2, H / 3); ctx.lineTo(W / 2, H);
-    ctx.stroke();
-    ctx.setLineDash([]);
+  ctx.font = '600 13px ui-sans-serif, system-ui, sans-serif';
+  ctx.fillStyle = `rgba(255, 255, 255, ${0.55 * hintAlpha})`;
+  ctx.fillText('LEFT',  W * 0.25, H / 3 + (H * 2 / 3) / 2 + 46);
+  ctx.fillText('RIGHT', W * 0.75, H / 3 + (H * 2 / 3) / 2 + 46);
 
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-
-    const pulse = 0.7 + 0.3 * Math.sin(performance.now() / 260);
-
-    ctx.fillStyle = `rgba(255, 255, 255, ${0.80 * hintAlpha * pulse})`;
-    ctx.font = 'bold 26px ui-sans-serif, system-ui, sans-serif';
-    ctx.fillText('JUMP', W / 2, H / 6);
-
-    ctx.font = 'bold 44px ui-sans-serif, system-ui, sans-serif';
-    ctx.fillText('◀', W * 0.25, H / 3 + (H * 2 / 3) / 2);
-    ctx.fillText('▶', W * 0.75, H / 3 + (H * 2 / 3) / 2);
-
-    ctx.font = '600 13px ui-sans-serif, system-ui, sans-serif';
-    ctx.fillStyle = `rgba(255, 255, 255, ${0.55 * hintAlpha})`;
-    ctx.fillText('LEFT',  W * 0.25, H / 3 + (H * 2 / 3) / 2 + 46);
-    ctx.fillText('RIGHT', W * 0.75, H / 3 + (H * 2 / 3) / 2 + 46);
-
-    ctx.restore();
-  }
+  ctx.restore();
 }
 
 /* ---------- background ---------- */
@@ -969,7 +920,6 @@ function drawHUD() {
   ctx.fillText(String(best), W - 30, 68);
   ctx.textAlign = 'left';
 
-  // Controls hint — only show keyboard text when it's likely relevant
   if (!touchUI) {
     ctx.fillStyle = 'rgba(255,255,255,0.45)';
     ctx.font = '600 13px ui-sans-serif, system-ui, sans-serif';
@@ -1025,7 +975,7 @@ window.addEventListener('keydown', (e) => {
       e.preventDefault();
       if (state === 'gameover') {
         if (gameOverTimer > GAMEOVER_PROMPT_DELAY) reset();
-        return;   // don't latch the jump key while on the game-over screen
+        return;
       }
       if (state === 'playing') keys.jump = true;
       break;
@@ -1045,27 +995,18 @@ window.addEventListener('keyup', (e) => {
 
 /* ============================================================
    POINTER / TOUCH INPUT
-   ------------------------------------------------------------
-   Each pointer is captured so pointerup always fires here, even
-   if the finger drifts off the canvas. Multiple simultaneous
-   pointers are tracked independently, so holding LEFT while
-   tapping JUMP works the way you'd expect.
    ============================================================ */
 canvas.addEventListener('pointerdown', (e) => {
   e.preventDefault();
 
   try { canvas.setPointerCapture(e.pointerId); } catch (err) { /* ignore */ }
 
-  // Game-over screen: any tap restarts (after the prompt delay)
   if (state === 'gameover') {
     if (gameOverTimer > GAMEOVER_PROMPT_DELAY) reset();
     return;
   }
 
   if (state !== 'playing') return;
-
-  // Fade the hint away as soon as the player actually uses the controls
-  if (touchHintTime > 0.9) touchHintTime = 0.9;
 
   const rect = canvas.getBoundingClientRect();
   const x = e.clientX - rect.left;
@@ -1082,7 +1023,6 @@ function onPointerEnd(e) {
 canvas.addEventListener('pointerup', onPointerEnd);
 canvas.addEventListener('pointercancel', onPointerEnd);
 
-// Safety net: if focus/visibility is lost mid-touch, drop all held pointers
 window.addEventListener('blur', () => {
   activePointers.clear();
   applyTouchKeys();
