@@ -1,6 +1,6 @@
 # sysaulab.github.io
 
-Play [adventure.html](adventure.html) online. ( [manual](adventure_manual.md) )
+Play [adventure.html](adventure.html) online. ( [manual](adventure_manual.html) )
 
 Play [platform.html](platform.html) online.
 

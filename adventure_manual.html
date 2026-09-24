@@ -1,0 +1,496 @@
+<h1 id="pydventure">pydventure</h1>
+<p>A single-file, turn-based browser roguelike. Open
+<code>adventure.html</code> in any modern browser — no build step, no
+server, no dependencies.</p>
+<hr />
+<h2 id="the-goal">The goal</h2>
+<p>Collect <strong>seven crystals</strong>, one from each of the seven
+dungeons, and place them on the altar in the shrine.</p>
+<pre><code>overworld  ──►  level1 … level7   (one crystal each, guarded by a dragon)
+                    │
+                    ▼
+                level8 (shrine)  ← requires crystal ×7
+                    │
+                    ▼
+                 victory</code></pre>
+<p>Entering the shrine <strong>consumes all seven crystals</strong>.
+Inside waits a red dragon. Claim the victory item on the far side to end
+the game.</p>
+<p>If your HP reaches zero you collapse, wake at the entrance of the
+current map with full health, and lose your retreat target. Progress is
+saved to <code>localStorage</code> after every action.</p>
+<hr />
+<h2 id="how-to-play">How to play</h2>
+<p>Every action is a turn. You either move, use something, or craft —
+and if enemies are in the room, anything you do other than fight or heal
+has to get past them first.</p>
+<h3 id="movement">Movement</h3>
+<table>
+<thead>
+<tr>
+<th>Input</th>
+<th>Action</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>N</code> <code>S</code> <code>E</code> <code>W</code> (keys or
+on-screen buttons)</td>
+<td>move one room</td>
+</tr>
+<tr>
+<td><code>U</code> <code>D</code></td>
+<td>take stairs / teleport between maps</td>
+</tr>
+<tr>
+<td>Click a door button</td>
+<td>same as the key</td>
+</tr>
+</tbody>
+</table>
+<p>There is no “explore” command — the room description names every exit
+and any locked door tells you what it wants.</p>
+<h3 id="commands">Commands</h3>
+<p>The UI is click-driven, but every action has a text form:</p>
+<pre><code>move n              move north
+move u              go up / take stairs up
+use fire            throw a fire at the first enemy
+use shelter         rest and heal to full
+use meal            eat a meal (+2 HP)
+use heart           permanently raise max HP by 1
+use sword           (sword is a level, not an item — see Crafting)
+take wood           pick up an item from the floor
+fight               attack the enemies in this room
+retreat             go back to the room you came from
+combine rock rock   craft (see Crafting)</code></pre>
+<p><code>use &lt;item&gt;</code> on a locked door opens it if the item
+matches. If only one door needs that item you can omit the direction;
+otherwise specify (<code>use bomb n</code>).</p>
+<h3 id="combat">Combat</h3>
+<p>Combat is a single opposed roll. You never grind down an enemy’s HP
+with your sword — either you win the room or you don’t.</p>
+<pre><code>your pool  = 1 + fight skill + (20 × sword level)
+enemy pool = sum of enemy HP in the room
+
+roll       = rand(0, your pool)
+enemyRoll  = rand(0, enemy pool)
+
+win  → room cleared, +1 fight skill, roll drops
+lose → -1 HP, enemies remain</code></pre>
+<p><strong>Fire</strong> bypasses the roll entirely: 10–20 damage to the
+front enemy. A dragon (250 HP) takes about 15–25 fires to bring
+down.</p>
+<h3 id="avoidance-and-retreat">Avoidance and retreat</h3>
+<p><strong>Avoidance</strong> is only used when you try to leave a room
+that still has enemies in it.</p>
+<pre><code>your pool  = 1 + avoidance skill
+enemy pool = sum of enemy HP in the room</code></pre>
+<p>Win → you slip through. Lose → -1 HP and you stay put.</p>
+<p><strong>Retreat</strong> is the exception. If it is the very first
+thing you do after entering a room, it is free — you’re still standing
+in the doorway, you just step back out. Any other action (including a
+failed retreat) uses up your free peek, and after that retreating costs
+an avoidance roll like any other move.</p>
+<h3 id="inventory">Inventory</h3>
+<p>You can carry <strong>at most 10 of any one item</strong>. The status
+bar shows each item as <code>name:count/10</code>. Picking up more than
+fits leaves the excess on the floor. You cannot carry a crafting result
+that would overflow a slot — use something first.</p>
+<p>To use an item from the status bar: <strong>double-click</strong> it
+on desktop, or <strong>long-press</strong> (~½ second) on touch.</p>
+<hr />
+<h2 id="the-world">The world</h2>
+<table>
+<colgroup>
+<col style="width: 33%" />
+<col style="width: 33%" />
+<col style="width: 33%" />
+</colgroup>
+<thead>
+<tr>
+<th>Map</th>
+<th>Kind</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>overworld</code></td>
+<td>overworld, 2 floors</td>
+<td>surface + one underground cave level, connected by two stair
+pairs</td>
+</tr>
+<tr>
+<td><code>level1</code> … <code>level7</code></td>
+<td>dungeon, 1 floor each</td>
+<td>difficulty scales; each holds one crystal, guarded by a dragon</td>
+</tr>
+<tr>
+<td><code>level8</code></td>
+<td>shrine, 1 floor</td>
+<td>needs <code>crystal ×7</code> to enter; holds the victory item</td>
+</tr>
+</tbody>
+</table>
+<p>Dungeons and the shrine are entered via stairs down from the
+overworld (they appear as <code>D</code> doors on dead-end and normal
+overworld rooms). Each dungeon’s <code>U</code> exit returns you to the
+overworld spot you came from.</p>
+<p>Enemies respawn. After <strong>90 seconds</strong> away from a room,
+cleared enemies have a chance to come back:</p>
+<table>
+<thead>
+<tr>
+<th>Map kind</th>
+<th>Respawn chance</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>overworld</td>
+<td>15%</td>
+</tr>
+<tr>
+<td>dungeon / shrine</td>
+<td>35%</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="crafting">Crafting</h2>
+<p>Open the ⚗ panel (bottom-left) or type
+<code>combine &lt;a&gt; &lt;b&gt;</code>. All recipes are exactly two
+inputs.</p>
+<table>
+<thead>
+<tr>
+<th>Result</th>
+<th>Inputs</th>
+<th>Effect</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>fire</strong></td>
+<td>wood ×2</td>
+<td>throwable — 10–20 dmg, one enemy</td>
+</tr>
+<tr>
+<td><strong>tool</strong></td>
+<td>rock ×2</td>
+<td>intermediate</td>
+</tr>
+<tr>
+<td><strong>plank</strong></td>
+<td>tool ×1 + wood ×1</td>
+<td>intermediate</td>
+</tr>
+<tr>
+<td><strong>shelter</strong></td>
+<td>plank ×2</td>
+<td>full heal</td>
+</tr>
+<tr>
+<td><strong>coal</strong></td>
+<td>fire ×1 + wood ×1</td>
+<td>intermediate</td>
+</tr>
+<tr>
+<td><strong>grill</strong></td>
+<td>coal ×2</td>
+<td>intermediate</td>
+</tr>
+<tr>
+<td><strong>meal</strong></td>
+<td>grill ×1 + food ×1</td>
+<td>+2 HP</td>
+</tr>
+<tr>
+<td><strong>steel</strong></td>
+<td>coal ×1 + ore ×1</td>
+<td>intermediate</td>
+</tr>
+<tr>
+<td><strong>sword</strong></td>
+<td>tool ×1 + steel ×1</td>
+<td><strong>+1 sword level</strong> (permanent)</td>
+</tr>
+</tbody>
+</table>
+<h3 id="cost-in-raw-materials">Cost in raw materials</h3>
+<p>Every intermediate is consumed, so a full chain costs:</p>
+<table>
+<thead>
+<tr>
+<th>Item</th>
+<th>Raw cost</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>fire</td>
+<td>2 wood</td>
+</tr>
+<tr>
+<td>tool</td>
+<td>2 rock</td>
+</tr>
+<tr>
+<td>plank</td>
+<td>2 rock + 1 wood</td>
+</tr>
+<tr>
+<td>shelter</td>
+<td>4 rock + 2 wood</td>
+</tr>
+<tr>
+<td>coal</td>
+<td>3 wood</td>
+</tr>
+<tr>
+<td>grill</td>
+<td>6 wood</td>
+</tr>
+<tr>
+<td>meal</td>
+<td>6 wood + 1 food</td>
+</tr>
+<tr>
+<td>steel</td>
+<td>3 wood + 1 ore</td>
+</tr>
+<tr>
+<td><strong>sword</strong></td>
+<td><strong>2 rock + 3 wood + 1 ore</strong></td>
+</tr>
+</tbody>
+</table>
+<h3 id="where-things-come-from">Where things come from</h3>
+<ul>
+<li><strong>wood, rock, food</strong> — enemy drops (food only from
+overworld enemies) and random floor resources</li>
+<li><strong>bomb</strong> — enemy drops (mid/high tier), plus a loose
+stash of 3 on the overworld’s top floor</li>
+<li><strong>ore</strong> — 1 per dungeon floor, mined from the
+floor</li>
+<li><strong>heart</strong> — guaranteed drop from a dragon</li>
+</ul>
+<p>Resource pools per terrain (weighted):</p>
+<table>
+<thead>
+<tr>
+<th>Terrain</th>
+<th>Drops</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>forest</td>
+<td>wood ×4, rock ×1</td>
+</tr>
+<tr>
+<td>plains</td>
+<td>wood ×1, rock ×1</td>
+</tr>
+<tr>
+<td>desert</td>
+<td>rock ×2</td>
+</tr>
+<tr>
+<td>dead plain</td>
+<td>rock ×3, wood ×1</td>
+</tr>
+<tr>
+<td>valley</td>
+<td>rock ×3, wood ×1</td>
+</tr>
+<tr>
+<td>cave</td>
+<td>rock ×2, wood ×1</td>
+</tr>
+<tr>
+<td>stone hall</td>
+<td>coal ×2</td>
+</tr>
+<tr>
+<td>crypt</td>
+<td>coal ×3</td>
+</tr>
+<tr>
+<td>armory</td>
+<td>coal ×2</td>
+</tr>
+<tr>
+<td>library</td>
+<td>coal ×4, rock ×1</td>
+</tr>
+<tr>
+<td>sanctum</td>
+<td>rock ×3, coal ×3</td>
+</tr>
+<tr>
+<td>shrine hall</td>
+<td>rock ×2, coal ×2</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="enemies">Enemies</h2>
+<p>Enemy HP is also its contribution to the room’s “enemy power” — the
+number you have to beat to fight or slip past.</p>
+<table>
+<colgroup>
+<col style="width: 25%" />
+<col style="width: 25%" />
+<col style="width: 25%" />
+<col style="width: 25%" />
+</colgroup>
+<thead>
+<tr>
+<th>Enemy</th>
+<th>HP</th>
+<th>Found in</th>
+<th>Drops</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>octorok_blue</td>
+<td>1</td>
+<td>plains, cave</td>
+<td>wood, food</td>
+</tr>
+<tr>
+<td>bat_blue</td>
+<td>2</td>
+<td>forest, cave</td>
+<td>wood, food</td>
+</tr>
+<tr>
+<td>spider_blue</td>
+<td>3</td>
+<td>forest</td>
+<td>wood, food</td>
+</tr>
+<tr>
+<td>fan</td>
+<td>5</td>
+<td>desert</td>
+<td>wood, food</td>
+</tr>
+<tr>
+<td>rhinos</td>
+<td>6</td>
+<td>valley</td>
+<td>wood, rock, food</td>
+</tr>
+<tr>
+<td>knight_blue</td>
+<td>7</td>
+<td>dead plain</td>
+<td>wood, rock, food</td>
+</tr>
+<tr>
+<td>octorok_red</td>
+<td>11</td>
+<td>plains</td>
+<td>wood, rock, food</td>
+</tr>
+<tr>
+<td>bat_red</td>
+<td>12</td>
+<td>forest, cave, stone hall, library</td>
+<td>wood, food</td>
+</tr>
+<tr>
+<td>spider_red</td>
+<td>13</td>
+<td>forest, crypt</td>
+<td>wood, rock, food</td>
+</tr>
+<tr>
+<td>fan_red</td>
+<td>15</td>
+<td>desert</td>
+<td>wood, rock, bomb, food</td>
+</tr>
+<tr>
+<td>rhinos_red</td>
+<td>16</td>
+<td>valley</td>
+<td>wood, rock, bomb, food</td>
+</tr>
+<tr>
+<td>knight_red</td>
+<td>17</td>
+<td>dead plain, armory</td>
+<td>wood, rock, bomb, food</td>
+</tr>
+<tr>
+<td>ghosts</td>
+<td>19</td>
+<td>cemetery</td>
+<td>wood, rock, bomb, food</td>
+</tr>
+<tr>
+<td>stalfos</td>
+<td>20</td>
+<td>stone hall, crypt</td>
+<td>wood, rock, bomb</td>
+</tr>
+<tr>
+<td>darknut</td>
+<td>24</td>
+<td>armory, sanctum, shrine hall</td>
+<td>wood, rock, bomb</td>
+</tr>
+<tr>
+<td>wizzrobe</td>
+<td>27</td>
+<td>library, sanctum, shrine hall</td>
+<td>wood, rock, bomb</td>
+</tr>
+<tr>
+<td><strong>dragon</strong></td>
+<td><strong>250</strong></td>
+<td>each dungeon’s crystal room</td>
+<td>wood, rock, bomb, <strong>heart</strong></td>
+</tr>
+<tr>
+<td><strong>dragon_red</strong></td>
+<td><strong>500</strong></td>
+<td>the shrine</td>
+<td>wood, rock, bomb, <strong>heart</strong></td>
+</tr>
+</tbody>
+</table>
+<p>Drops are rolled individually per enemy, 0–1 of each listed item.</p>
+<p><strong>Bomb walls</strong> appear in every dungeon (two per floor).
+They are ordinary doors that require and consume one
+<strong>bomb</strong> to pass.</p>
+<hr />
+<h2 id="tips">Tips</h2>
+<ul>
+<li><strong>Craft a sword early.</strong> Each sword level adds 20 to
+your fight roll — one sword is worth more than 20 levels of fight skill.
+The first dungeon’s ore plus a few trees is enough.</li>
+<li><strong>Retreat first, fight later.</strong> The free retreat on
+entry is your scouting tool. If a room looks too strong, back out before
+you commit.</li>
+<li><strong>Fire is the boss killer.</strong> A dragon’s 250 EP is
+brutal to roll against, but wood is everywhere and each fire chip is
+10–20. Stockpile wood on the overworld before descending.</li>
+<li><strong>Food comes from the surface.</strong> Dungeon and shrine
+enemies never drop it. If you plan to live off meals, farm the
+overworld.</li>
+<li><strong>Don’t overfill.</strong> The 10-per-item cap will silently
+refuse crafting output. Burn a fire or eat a meal before crafting the
+eleventh.</li>
+<li><strong>Hearts stack.</strong> Every dragon gives one, and each one
+is a permanent max-HP increase. Killing all eight bosses roughly doubles
+your health bar.</li>
+<li><strong>The shrine eats your crystals.</strong> You arrive with 7,
+you enter with 0. There is no going back to a dungeon to “re-farm” one
+afterward.</li>
+</ul>
+<p>Ok, now you can <a href="adventure.html">play the game</a>.</p>
