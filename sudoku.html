@@ -1,0 +1,937 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,maximum-scale=1,user-scalable=no">
+<meta name="theme-color" content="#0e1116">
+<title>Sudoku</title>
+<style>
+:root{
+  --bg:#0e1116;
+  --surface:#171b22;
+  --surface2:#1e242e;
+  --line:#2a313c;
+  --line-strong:#3d4657;
+  --text:#e7ecf3;
+  --muted:#8b95a6;
+  --accent:#4d8dff;
+  --accent-soft:rgba(77,141,255,.16);
+  --given:#e7ecf3;
+  --user:#63a4ff;
+  --err:#ff5f5f;
+  --ok:#3ddc97;
+}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{
+  margin:0;
+  min-height:100dvh;
+  display:flex;
+  justify-content:center;
+  padding:12px 12px calc(14px + env(safe-area-inset-bottom));
+  background:radial-gradient(1100px 700px at 50% -15%, #17222f 0%, #0e1116 62%) fixed;
+  color:var(--text);
+  font-family:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",sans-serif;
+  -webkit-font-smoothing:antialiased;
+  -webkit-tap-highlight-color:transparent;
+  -webkit-touch-callout:none;
+  user-select:none;
+  touch-action:manipulation;
+  overscroll-behavior:none;
+}
+
+.wrap{
+  width:100%;
+  max-width:540px;
+  display:flex;
+  flex-direction:column;
+  gap:12px;
+}
+
+/* ---------- header ---------- */
+header{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:10px;
+}
+.brand{
+  font-size:15px;
+  font-weight:800;
+  letter-spacing:.22em;
+  text-transform:uppercase;
+  color:var(--muted);
+}
+.diffs{
+  display:flex;
+  gap:3px;
+  padding:4px;
+  background:var(--surface);
+  border:1px solid var(--line);
+  border-radius:999px;
+}
+.diffs button{
+  border:0;
+  background:transparent;
+  color:var(--muted);
+  font:inherit;
+  font-size:12px;
+  font-weight:700;
+  padding:6px 11px;
+  border-radius:999px;
+  cursor:pointer;
+  transition:background .15s,color .15s;
+  white-space:nowrap;
+}
+.diffs button.active{background:var(--accent);color:#fff}
+
+/* ---------- stat bar ---------- */
+.statbar{
+  display:flex;
+  align-items:stretch;
+  gap:8px;
+}
+.stat{
+  flex:1;
+  min-width:0;
+  background:var(--surface);
+  border:1px solid var(--line);
+  border-radius:12px;
+  padding:7px 10px;
+  display:flex;
+  flex-direction:column;
+  gap:1px;
+}
+.stat span{
+  font-size:9.5px;
+  letter-spacing:.13em;
+  text-transform:uppercase;
+  font-weight:700;
+  color:var(--muted);
+}
+.stat b{
+  font-size:17px;
+  font-weight:700;
+  font-variant-numeric:tabular-nums;
+  letter-spacing:.01em;
+}
+.icon-btn{
+  width:46px;
+  flex:0 0 46px;
+  border:1px solid var(--line);
+  background:var(--surface);
+  color:var(--text);
+  border-radius:12px;
+  font-size:15px;
+  cursor:pointer;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  transition:background .15s,transform .06s;
+  padding:0;
+}
+.icon-btn:active{transform:scale(.94)}
+.icon-btn:active{background:var(--surface2)}
+
+/* ---------- board ---------- */
+.board-wrap{
+  position:relative;
+  width:100%;
+  max-width:520px;
+  margin:0 auto;
+  align-self:center;
+}
+.board{
+  display:grid;
+  grid-template-columns:repeat(9,1fr);
+  aspect-ratio:1/1;
+  width:100%;
+  background:var(--surface);
+  border:2px solid var(--line-strong);
+  border-radius:13px;
+  overflow:hidden;
+  box-shadow:0 24px 50px -28px #000, 0 0 0 1px rgba(255,255,255,.02) inset;
+}
+.cell{
+  position:relative;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  background:var(--surface);
+  border-right:1px solid var(--line);
+  border-bottom:1px solid var(--line);
+  font-size:clamp(17px,5.4vw,31px);
+  font-weight:600;
+  color:var(--user);
+  cursor:pointer;
+  transition:background .12s ease;
+  overflow:hidden;
+  line-height:1;
+}
+.cell.br{border-right:2px solid var(--line-strong)}
+.cell.bb{border-bottom:2px solid var(--line-strong)}
+.cell.lastcol{border-right:0}
+.cell.lastrow{border-bottom:0}
+
+.cell.given{color:var(--given);font-weight:700}
+.cell.hinted .val{color:var(--ok)}
+.cell.peer{background:#1c222c}
+.cell.same{background:var(--accent-soft)}
+.cell.sel{background:rgba(77,141,255,.38)}
+.cell.err .val{color:var(--err)}
+.cell.err.sel{background:rgba(255,95,95,.28)}
+
+.val{display:block;transform-origin:center}
+.notes{
+  position:absolute;
+  inset:2px;
+  display:grid;
+  grid-template-columns:repeat(3,1fr);
+  grid-template-rows:repeat(3,1fr);
+}
+.notes span{
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  font-size:clamp(6.5px,2.05vw,11px);
+  font-weight:700;
+  color:var(--muted);
+  line-height:1;
+}
+
+/* ---------- overlay ---------- */
+.overlay{
+  position:absolute;
+  inset:0;
+  z-index:6;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  text-align:center;
+  border-radius:13px;
+  background:rgba(14,17,22,.78);
+  -webkit-backdrop-filter:blur(7px);
+  backdrop-filter:blur(7px);
+  animation:fade .18s ease;
+}
+.overlay[hidden]{display:none}
+@keyframes fade{from{opacity:0}to{opacity:1}}
+.ov-card{padding:18px;max-width:280px;display:flex;flex-direction:column;align-items:center;gap:6px}
+.ov-card h2{margin:0;font-size:20px;font-weight:800;letter-spacing:.01em}
+.ov-card p{margin:0;font-size:13px;color:var(--muted);line-height:1.5}
+.ov-btn{
+  margin-top:10px;
+  border:0;
+  background:var(--accent);
+  color:#fff;
+  font:inherit;
+  font-size:14px;
+  font-weight:700;
+  padding:11px 24px;
+  border-radius:999px;
+  cursor:pointer;
+  transition:transform .08s,filter .15s;
+}
+.ov-btn:active{transform:scale(.96)}
+.spinner{
+  width:26px;height:26px;border-radius:50%;
+  border:3px solid var(--line-strong);
+  border-top-color:var(--accent);
+  animation:spin .8s linear infinite;
+  margin-bottom:4px;
+}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+/* ---------- number pad ---------- */
+.pad{
+  display:grid;
+  grid-template-columns:repeat(9,1fr);
+  gap:6px;
+  max-width:520px;
+  width:100%;
+  margin:0 auto;
+}
+.pad-btn{
+  position:relative;
+  aspect-ratio:1/1.12;
+  padding:0;
+  border:1px solid var(--line);
+  border-radius:11px;
+  background:var(--surface);
+  color:var(--text);
+  font:inherit;
+  font-size:clamp(15px,4.4vw,23px);
+  font-weight:700;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  cursor:pointer;
+  transition:background .12s,transform .07s,opacity .15s;
+}
+.pad-btn:active{transform:scale(.93);background:var(--surface2)}
+.pad-btn .pc{
+  position:absolute;
+  left:0;right:0;bottom:3px;
+  font-size:9px;
+  font-weight:700;
+  color:var(--muted);
+  line-height:1;
+}
+.pad-btn.done{opacity:.3}
+.pad-btn.active{background:var(--accent);border-color:var(--accent);color:#fff}
+.pad-btn.active .pc{color:rgba(255,255,255,.85)}
+
+/* ---------- actions ---------- */
+.actions{
+  display:grid;
+  grid-template-columns:repeat(5,1fr);
+  gap:8px;
+  max-width:520px;
+  width:100%;
+  margin:0 auto;
+}
+.actions button{
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  justify-content:center;
+  gap:4px;
+  padding:9px 2px 8px;
+  border:1px solid var(--line);
+  border-radius:13px;
+  background:var(--surface);
+  color:var(--text);
+  font:inherit;
+  font-size:10.5px;
+  font-weight:700;
+  letter-spacing:.02em;
+  cursor:pointer;
+  transition:background .15s,transform .07s,opacity .15s;
+}
+.actions button .ico{font-size:17px;line-height:1}
+.actions button:active{transform:scale(.95);background:var(--surface2)}
+.actions button.active{background:var(--accent);border-color:var(--accent);color:#fff}
+.actions button:disabled{opacity:.32;pointer-events:none}
+
+@media (max-height:700px){
+  .stat b{font-size:15px}
+  .actions button{padding:7px 2px 6px;font-size:10px}
+}
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <header>
+    <div class="brand">Sudoku</div>
+    <div class="diffs" id="diffs"></div>
+  </header>
+
+  <div class="statbar">
+    <div class="stat"><span>Time</span><b id="timer">0:00</b></div>
+    <div class="stat"><span>Mistakes</span><b id="mistakes">0</b></div>
+    <div class="stat"><span>Hints</span><b id="hints">0</b></div>
+    <button class="icon-btn" id="pauseBtn" aria-label="Pause">❚❚</button>
+    <button class="icon-btn" id="newBtn" aria-label="New game">＋</button>
+  </div>
+
+  <div class="board-wrap">
+    <div class="board" id="board"></div>
+    <div class="overlay" id="overlay" hidden>
+      <div class="ov-card">
+        <div class="spinner" id="ovSpinner" hidden></div>
+        <h2 id="ovTitle"></h2>
+        <p id="ovText"></p>
+        <button class="ov-btn" id="ovBtn" hidden></button>
+      </div>
+    </div>
+  </div>
+
+  <div class="pad" id="pad"></div>
+
+  <div class="actions">
+    <button id="undoBtn"><span class="ico">↶</span>Undo</button>
+    <button id="redoBtn"><span class="ico">↷</span>Redo</button>
+    <button id="eraseBtn"><span class="ico">⌫</span>Erase</button>
+    <button id="notesBtn"><span class="ico">✎</span>Notes</button>
+    <button id="hintBtn"><span class="ico">💡</span>Hint</button>
+  </div>
+</div>
+
+<script>
+(() => {
+'use strict';
+
+/* ============================================================
+   Sudoku engine
+   ============================================================ */
+const rowOf = i => (i / 9) | 0;
+const colOf = i => i % 9;
+const boxOf = i => ((i / 27) | 0) * 3 + (((i % 9) / 3) | 0);
+const popcount = x => { let c = 0; while (x) { x &= x - 1; c++; } return c; };
+const FULL = 0x1FF;
+
+function shuffle(a) {
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = (Math.random() * (i + 1)) | 0;
+    const t = a[i]; a[i] = a[j]; a[j] = t;
+  }
+  return a;
+}
+
+/* Peer map — 20 cells sharing a row, column or box */
+const PEERS = [];
+const PEER_SET = [];
+for (let i = 0; i < 81; i++) {
+  const r = rowOf(i), c = colOf(i), b = boxOf(i), s = [];
+  for (let j = 0; j < 81; j++) {
+    if (j === i) continue;
+    if (rowOf(j) === r || colOf(j) === c || boxOf(j) === b) s.push(j);
+  }
+  PEERS.push(s);
+  PEER_SET.push(new Set(s));
+}
+
+/* Fill a complete, valid, randomised grid (MRV backtracking) */
+function generateFull() {
+  const g = new Int8Array(81);
+  const rowM = new Int16Array(9), colM = new Int16Array(9), boxM = new Int16Array(9);
+  const order = [1,2,3,4,5,6,7,8,9];
+
+  function rec() {
+    let best = -1, bestMask = 0, bestCount = 10;
+    for (let i = 0; i < 81; i++) {
+      if (g[i]) continue;
+      const m = ~(rowM[rowOf(i)] | colM[colOf(i)] | boxM[boxOf(i)]) & FULL;
+      const n = popcount(m);
+      if (n === 0) return false;
+      if (n < bestCount) { bestCount = n; best = i; bestMask = m; if (n === 1) break; }
+    }
+    if (best < 0) return true;
+    const r = rowOf(best), c = colOf(best), b = boxOf(best);
+    shuffle(order);
+    for (let k = 0; k < 9; k++) {
+      const v = order[k], bit = 1 << (v - 1);
+      if (!(bestMask & bit)) continue;
+      g[best] = v; rowM[r] |= bit; colM[c] |= bit; boxM[b] |= bit;
+      if (rec()) return true;
+      g[best] = 0; rowM[r] &= ~bit; colM[c] &= ~bit; boxM[b] &= ~bit;
+    }
+    return false;
+  }
+  rec();
+  return g;
+}
+
+/* Count solutions, stopping at `limit` (MRV + bitmasks) */
+function countSolutions(grid, limit) {
+  const g = Int8Array.from(grid);
+  const rowM = new Int16Array(9), colM = new Int16Array(9), boxM = new Int16Array(9);
+  for (let i = 0; i < 81; i++) {
+    const v = g[i];
+    if (v) { const bit = 1 << (v - 1); rowM[rowOf(i)] |= bit; colM[colOf(i)] |= bit; boxM[boxOf(i)] |= bit; }
+  }
+  let count = 0;
+
+  function rec() {
+    let best = -1, bestMask = 0, bestCount = 10;
+    for (let i = 0; i < 81; i++) {
+      if (g[i]) continue;
+      const m = ~(rowM[rowOf(i)] | colM[colOf(i)] | boxM[boxOf(i)]) & FULL;
+      const n = popcount(m);
+      if (n === 0) return;
+      if (n < bestCount) { bestCount = n; best = i; bestMask = m; if (n === 1) break; }
+    }
+    if (best < 0) { count++; return; }
+    const r = rowOf(best), c = colOf(best), b = boxOf(best);
+    for (let v = 1; v <= 9; v++) {
+      const bit = 1 << (v - 1);
+      if (!(bestMask & bit)) continue;
+      g[best] = v; rowM[r] |= bit; colM[c] |= bit; boxM[b] |= bit;
+      rec();
+      g[best] = 0; rowM[r] &= ~bit; colM[c] &= ~bit; boxM[b] &= ~bit;
+      if (count >= limit) return;
+    }
+  }
+  rec();
+  return count;
+}
+
+const TARGET_CLUES = { easy: 45, medium: 36, hard: 30, expert: 25 };
+
+function makePuzzle(target) {
+  const solution = generateFull();
+  const puzzle = Int8Array.from(solution);
+  const order = shuffle([...Array(81).keys()]);
+  let clues = 81;
+  for (let k = 0; k < order.length && clues > target; k++) {
+    const i = order[k];
+    const saved = puzzle[i];
+    puzzle[i] = 0;
+    if (countSolutions(puzzle, 2) !== 1) puzzle[i] = saved;
+    else clues--;
+  }
+  return { puzzle, solution };
+}
+
+/* ============================================================
+   DOM setup
+   ============================================================ */
+const $ = id => document.getElementById(id);
+const boardEl = $('board'), padEl = $('pad'), overlay = $('overlay');
+const ovTitle = $('ovTitle'), ovText = $('ovText'), ovBtn = $('ovBtn'), ovSpinner = $('ovSpinner');
+const timerEl = $('timer'), mistakesEl = $('mistakes'), hintsEl = $('hints');
+const undoBtn = $('undoBtn'), redoBtn = $('redoBtn'), eraseBtn = $('eraseBtn');
+const notesBtn = $('notesBtn'), hintBtn = $('hintBtn');
+const pauseBtn = $('pauseBtn'), newBtn = $('newBtn'), diffsEl = $('diffs');
+
+const DIFFS = ['easy', 'medium', 'hard', 'expert'];
+DIFFS.forEach(d => {
+  const b = document.createElement('button');
+  b.textContent = d[0].toUpperCase() + d.slice(1);
+  b.dataset.diff = d;
+  b.addEventListener('click', () => newGame(d));
+  diffsEl.appendChild(b);
+});
+
+/* Precompute border classes */
+const baseCls = [];
+for (let i = 0; i < 81; i++) {
+  const r = rowOf(i), c = colOf(i);
+  let s = '';
+  if (c === 8) s += ' lastcol'; else if (c % 3 === 2) s += ' br';
+  if (r === 8) s += ' lastrow'; else if (r % 3 === 2) s += ' bb';
+  baseCls.push(s);
+}
+
+/* Build board cells */
+const cells = [], cellVals = [], cellNotes = [];
+for (let i = 0; i < 81; i++) {
+  const cell = document.createElement('div');
+  cell.className = 'cell' + baseCls[i];
+  cell.dataset.i = i;
+
+  const val = document.createElement('span');
+  val.className = 'val';
+
+  const notes = document.createElement('div');
+  notes.className = 'notes';
+  for (let n = 1; n <= 9; n++) notes.appendChild(document.createElement('span'));
+
+  cell.append(val, notes);
+  boardEl.appendChild(cell);
+  cells.push(cell); cellVals.push(val); cellNotes.push(notes);
+}
+
+boardEl.addEventListener('click', e => {
+  const cell = e.target.closest('.cell');
+  if (cell) selectCell(+cell.dataset.i);
+});
+
+/* Build number pad */
+const padBtns = [];
+for (let n = 1; n <= 9; n++) {
+  const b = document.createElement('button');
+  b.className = 'pad-btn';
+  b.dataset.n = n;
+  b.innerHTML = '<span class="pn">' + n + '</span><span class="pc"></span>';
+  padEl.appendChild(b);
+  padBtns.push(b);
+}
+padEl.addEventListener('click', e => {
+  const b = e.target.closest('.pad-btn');
+  if (b) inputNumber(+b.dataset.n);
+});
+
+/* ============================================================
+   State
+   ============================================================ */
+const state = {
+  diff: 'easy',
+  phase: 'loading',           // loading | playing | paused | done
+  puzzle: new Int8Array(81),
+  solution: new Int8Array(81),
+  values: new Int8Array(81),
+  notes: Array.from({ length: 81 }, () => new Set()),
+  hinted: new Set(),
+  selected: -1,
+  notesMode: false,
+  history: [],
+  future: [],
+  mistakes: 0,
+  hintsUsed: 0,
+  elapsedMs: 0,
+  startTs: 0
+};
+
+/* ============================================================
+   Timer
+   ============================================================ */
+function fmtTime(ms) {
+  const total = Math.floor(ms / 1000);
+  const h = Math.floor(total / 3600);
+  const m = Math.floor((total % 3600) / 60);
+  const s = total % 60;
+  const mm = h ? String(m).padStart(2, '0') : String(m);
+  return (h ? h + ':' : '') + mm + ':' + String(s).padStart(2, '0');
+}
+setInterval(() => {
+  if (state.phase !== 'playing') return;
+  timerEl.textContent = fmtTime(state.elapsedMs + (performance.now() - state.startTs));
+}, 200);
+
+/* ============================================================
+   Rendering
+   ============================================================ */
+function hasConflict(i) {
+  const v = state.values[i];
+  if (!v) return false;
+  const peers = PEERS[i];
+  for (let k = 0; k < peers.length; k++) if (state.values[peers[k]] === v) return true;
+  return false;
+}
+
+function render() {
+  const sel = state.selected;
+  const selVal = sel >= 0 ? state.values[sel] : 0;
+  const peers = sel >= 0 ? PEER_SET[sel] : null;
+
+  for (let i = 0; i < 81; i++) {
+    const cell = cells[i];
+    const v = state.values[i];
+
+    let cls = 'cell' + baseCls[i];
+    if (state.puzzle[i]) cls += ' given';
+    if (sel >= 0) {
+      if (peers.has(i)) cls += ' peer';
+      if (selVal && v === selVal && i !== sel) cls += ' same';
+      if (i === sel) cls += ' sel';
+    }
+    if (v && hasConflict(i)) cls += ' err';
+    if (state.hinted.has(i)) cls += ' hinted';
+    if (cell.className !== cls) cell.className = cls;
+
+    const valEl = cellVals[i];
+    const notesEl = cellNotes[i];
+
+    if (v) {
+      const str = String(v);
+      if (valEl.textContent !== str) {
+        valEl.textContent = str;
+        valEl.animate(
+          [{ transform: 'scale(.5)', opacity: .25 }, { transform: 'scale(1)', opacity: 1 }],
+          { duration: 160, easing: 'cubic-bezier(.2,.9,.3,1.5)' }
+        );
+      }
+      valEl.style.display = '';
+      notesEl.style.display = 'none';
+    } else {
+      valEl.style.display = 'none';
+      valEl.textContent = '';
+      const s = state.notes[i];
+      if (s.size) {
+        let sig = '';
+        for (let n = 1; n <= 9; n++) sig += s.has(n) ? n : '.';
+        if (notesEl.dataset.sig !== sig) {
+          notesEl.dataset.sig = sig;
+          for (let n = 1; n <= 9; n++) notesEl.children[n - 1].textContent = s.has(n) ? n : '';
+        }
+        notesEl.style.display = '';
+      } else {
+        notesEl.style.display = 'none';
+        notesEl.dataset.sig = '';
+      }
+    }
+  }
+
+  /* pad */
+  const counts = new Array(10).fill(0);
+  for (let i = 0; i < 81; i++) { const v = state.values[i]; if (v) counts[v]++; }
+  for (let n = 1; n <= 9; n++) {
+    const b = padBtns[n - 1];
+    const rem = 9 - counts[n];
+    b.querySelector('.pc').textContent = rem > 0 ? rem : '';
+    b.classList.toggle('done', rem <= 0);
+    b.classList.toggle('active', selVal === n);
+  }
+
+  mistakesEl.textContent = state.mistakes;
+  hintsEl.textContent = state.hintsUsed;
+  notesBtn.classList.toggle('active', state.notesMode);
+  undoBtn.disabled = !state.history.length;
+  redoBtn.disabled = !state.future.length;
+}
+
+/* ============================================================
+   Overlay
+   ============================================================ */
+function showOverlay(opts) {
+  overlay.hidden = false;
+  ovTitle.textContent = opts.title || '';
+  ovText.textContent = opts.text || '';
+  ovText.hidden = !opts.text;
+  ovSpinner.hidden = !opts.spinner;
+  if (opts.btn) {
+    ovBtn.hidden = false;
+    ovBtn.textContent = opts.btn;
+    ovBtn.onclick = opts.onBtn;
+  } else {
+    ovBtn.hidden = true;
+    ovBtn.onclick = null;
+  }
+}
+function hideOverlay() { overlay.hidden = true; }
+
+/* ============================================================
+   Game flow
+   ============================================================ */
+function newGame(diff) {
+  state.diff = diff;
+  [...diffsEl.children].forEach(b => b.classList.toggle('active', b.dataset.diff === diff));
+  state.phase = 'loading';
+  showOverlay({ title: 'Generating…', text: 'Crafting a ' + diff + ' puzzle', spinner: true });
+
+  setTimeout(() => {
+    const { puzzle, solution } = makePuzzle(TARGET_CLUES[diff]);
+    state.puzzle = puzzle;
+    state.solution = solution;
+    state.values = Int8Array.from(puzzle);
+    state.notes = Array.from({ length: 81 }, () => new Set());
+    state.hinted = new Set();
+    state.selected = -1;
+    state.notesMode = false;
+    state.history = [];
+    state.future = [];
+    state.mistakes = 0;
+    state.hintsUsed = 0;
+    state.elapsedMs = 0;
+    state.startTs = performance.now();
+    state.phase = 'playing';
+
+    timerEl.textContent = '0:00';
+    hideOverlay();
+    render();
+  }, 60);
+}
+
+function pauseGame() {
+  if (state.phase !== 'playing') return;
+  state.elapsedMs += performance.now() - state.startTs;
+  state.phase = 'paused';
+  showOverlay({
+    title: 'Paused',
+    text: 'Timer stopped.',
+    btn: 'Resume',
+    onBtn: resumeGame
+  });
+}
+
+function resumeGame() {
+  if (state.phase !== 'paused') return;
+  state.startTs = performance.now();
+  state.phase = 'playing';
+  hideOverlay();
+  render();
+}
+
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) pauseGame();
+});
+
+function checkWin() {
+  for (let i = 0; i < 81; i++) if (state.values[i] !== state.solution[i]) return;
+  state.elapsedMs += performance.now() - state.startTs;
+  state.phase = 'done';
+  const t = fmtTime(state.elapsedMs);
+  const bits = [state.diff, t];
+  if (state.mistakes) bits.push(state.mistakes + (state.mistakes === 1 ? ' mistake' : ' mistakes'));
+  if (state.hintsUsed) bits.push(state.hintsUsed + (state.hintsUsed === 1 ? ' hint' : ' hints'));
+  showOverlay({
+    title: 'Solved! 🎉',
+    text: bits.join(' · '),
+    btn: 'New game',
+    onBtn: () => newGame(state.diff)
+  });
+}
+
+/* ============================================================
+   History
+   ============================================================ */
+function snapshot() {
+  return {
+    values: Int8Array.from(state.values),
+    notes: state.notes.map(s => new Set(s)),
+    hinted: new Set(state.hinted),
+    mistakes: state.mistakes,
+    hintsUsed: state.hintsUsed
+  };
+}
+function restore(s) {
+  state.values = s.values;
+  state.notes = s.notes;
+  state.hinted = s.hinted;
+  state.mistakes = s.mistakes;
+  state.hintsUsed = s.hintsUsed;
+}
+function pushHistory() {
+  state.history.push(snapshot());
+  if (state.history.length > 400) state.history.shift();
+  state.future.length = 0;
+}
+
+function undo() {
+  if (state.phase !== 'playing' || !state.history.length) return;
+  state.future.push(snapshot());
+  restore(state.history.pop());
+  render();
+}
+function redo() {
+  if (state.phase !== 'playing' || !state.future.length) return;
+  state.history.push(snapshot());
+  restore(state.future.pop());
+  render();
+}
+
+/* ============================================================
+   Interactions
+   ============================================================ */
+function selectCell(i) {
+  if (state.phase === 'loading') return;
+  state.selected = i;
+  render();
+}
+
+function inputNumber(n) {
+  if (state.phase !== 'playing') return;
+  const i = state.selected;
+  if (i < 0 || state.puzzle[i]) return;
+
+  if (state.notesMode) {
+    if (!state.values[i] && state.notes[i].size === 0) {
+      /* nothing yet — still record history for the note toggle */
+    }
+    pushHistory();
+    if (state.values[i]) state.values[i] = 0;
+    const s = state.notes[i];
+    if (s.has(n)) s.delete(n); else s.add(n);
+    render();
+    return;
+  }
+
+  pushHistory();
+
+  if (state.values[i] === n) {         // tapping the same number clears it
+    state.values[i] = 0;
+    render();
+    return;
+  }
+
+  state.values[i] = n;
+  state.notes[i].clear();
+  state.hinted.delete(i);
+  for (const p of PEERS[i]) state.notes[p].delete(n);
+
+  if (n !== state.solution[i]) state.mistakes++;
+
+  render();
+  checkWin();
+}
+
+function eraseCell() {
+  if (state.phase !== 'playing') return;
+  const i = state.selected;
+  if (i < 0 || state.puzzle[i]) return;
+  if (!state.values[i] && state.notes[i].size === 0) return;
+  pushHistory();
+  state.values[i] = 0;
+  state.notes[i].clear();
+  state.hinted.delete(i);
+  render();
+}
+
+function toggleNotes() {
+  state.notesMode = !state.notesMode;
+  render();
+}
+
+function useHint() {
+  if (state.phase !== 'playing') return;
+
+  let i = state.selected;
+  if (i < 0 || state.values[i] !== 0) {
+    const empties = [];
+    for (let k = 0; k < 81; k++) if (!state.values[k]) empties.push(k);
+    if (!empties.length) return;
+    i = empties[(Math.random() * empties.length) | 0];
+  }
+
+  pushHistory();
+  const v = state.solution[i];
+  state.values[i] = v;
+  state.notes[i].clear();
+  state.hinted.add(i);
+  state.hintsUsed++;
+  state.selected = i;
+  for (const p of PEERS[i]) state.notes[p].delete(v);
+
+  render();
+  checkWin();
+}
+
+function moveSelection(dr, dc) {
+  if (state.phase !== 'playing') return;
+  const i = state.selected;
+  if (i < 0) { state.selected = 0; render(); return; }
+  const r = (rowOf(i) + dr + 9) % 9;
+  const c = (colOf(i) + dc + 9) % 9;
+  state.selected = r * 9 + c;
+  render();
+}
+
+/* Buttons */
+undoBtn.addEventListener('click', undo);
+redoBtn.addEventListener('click', redo);
+eraseBtn.addEventListener('click', eraseCell);
+notesBtn.addEventListener('click', toggleNotes);
+hintBtn.addEventListener('click', useHint);
+pauseBtn.addEventListener('click', () => {
+  if (state.phase === 'playing') pauseGame();
+  else if (state.phase === 'paused') resumeGame();
+});
+newBtn.addEventListener('click', () => newGame(state.diff));
+
+/* Keyboard */
+document.addEventListener('keydown', e => {
+  if (e.metaKey || e.ctrlKey) {
+    if (e.key === 'z') { e.preventDefault(); undo(); }
+    if (e.key === 'y') { e.preventDefault(); redo(); }
+    return;
+  }
+  const k = e.key;
+  if (k >= '1' && k <= '9') { e.preventDefault(); inputNumber(+k); return; }
+  if (k === '0' || k === 'Backspace' || k === 'Delete') { e.preventDefault(); eraseCell(); return; }
+  if (k === 'ArrowUp') { e.preventDefault(); moveSelection(-1, 0); return; }
+  if (k === 'ArrowDown') { e.preventDefault(); moveSelection(1, 0); return; }
+  if (k === 'ArrowLeft') { e.preventDefault(); moveSelection(0, -1); return; }
+  if (k === 'ArrowRight') { e.preventDefault(); moveSelection(0, 1); return; }
+  if (k === 'n' || k === 'N') { e.preventDefault(); toggleNotes(); return; }
+  if (k === 'h' || k === 'H') { e.preventDefault(); useHint(); return; }
+  if (k === 'u' || k === 'U') { e.preventDefault(); undo(); return; }
+  if (k === ' ') { e.preventDefault(); pauseBtn.click(); }
+});
+
+/* Swipe-free: prevent accidental double-tap zoom on iOS */
+let lastTouch = 0;
+document.addEventListener('touchend', e => {
+  const now = Date.now();
+  if (now - lastTouch < 300) e.preventDefault();
+  lastTouch = now;
+}, { passive: false });
+
+/* Boot */
+newGame('easy');
+
+})();
+</script>
+</body>
+</html>
