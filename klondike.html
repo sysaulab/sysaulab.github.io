@@ -1,0 +1,736 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>klondike.html</title>
+<style>
+  :root{
+    --cw: 80px;
+    --ch: 114px;
+    --gap: 11px;
+    --radius: calc(var(--cw) * 0.1);
+  }
+
+  *{ box-sizing: border-box; }
+
+  html, body{
+    margin:0; padding:0; height:100%;
+    overflow:hidden;
+    overscroll-behavior:none;
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    background:
+      radial-gradient(ellipse at 50% -20%, #37a267 0%, #1f7145 45%, #0f3d25 100%);
+    color:#eaf6ee;
+    -webkit-user-select:none; user-select:none;
+    -webkit-tap-highlight-color:transparent;
+  }
+
+  .app{ display:flex; flex-direction:column; height:100%; }
+
+  /* ---------- top bar ---------- */
+  .topbar{
+    display:flex; align-items:center; justify-content:center;
+    gap:8px; flex-wrap:wrap;
+    padding:10px 12px 4px;
+  }
+  button, select{
+    font:inherit; font-size:13px; font-weight:600;
+    padding:9px 15px;
+    border-radius:9px;
+    border:1px solid rgba(255,255,255,.28);
+    background:rgba(255,255,255,.12);
+    color:#fff;
+    cursor:pointer;
+    touch-action:manipulation;
+    transition:background .15s, transform .06s;
+    -webkit-appearance:none; appearance:none;
+  }
+  button:hover, select:hover{ background:rgba(255,255,255,.22); }
+  button:active{ transform:translateY(1px); }
+  select option{ color:#111; }
+  .stats{
+    font-size:13px; opacity:.85;
+    font-variant-numeric:tabular-nums;
+    padding-left:6px; white-space:nowrap;
+  }
+
+  /* ---------- board ---------- */
+  .board{
+    position:relative;
+    display:grid;
+    grid-template-columns: repeat(7, var(--cw));
+    gap: var(--gap);
+    justify-content:center;
+    align-content:start;
+    margin:0 auto;
+    flex:1 1 auto;
+    min-height:0;
+    touch-action:none;            /* kills scroll/zoom gestures on the board */
+  }
+
+  .pile{ position:relative; width:var(--cw); height:var(--ch); border-radius:var(--radius); }
+
+  .slot{
+    position:absolute; left:0; top:0;
+    width:var(--cw); height:var(--ch);
+    border-radius:var(--radius);
+    border:2px dashed rgba(255,255,255,.20);
+    background:rgba(0,0,0,.10);
+    display:grid; place-items:center;
+    font-size:calc(var(--cw) * 0.5);
+    color:rgba(255,255,255,.13);
+    pointer-events:none;
+  }
+
+  .pile.hover::after{
+    content:'';
+    position:absolute; left:-4px; top:-4px;
+    width:calc(var(--cw) + 8px);
+    height:calc(var(--ch) + 8px);
+    border-radius:calc(var(--radius) + 4px);
+    border:2px solid rgba(255,255,255,.85);
+    box-shadow:0 0 14px rgba(255,255,255,.45), inset 0 0 14px rgba(255,255,255,.15);
+    pointer-events:none;
+  }
+
+  /* ---------- cards ---------- */
+  .card{
+    position:absolute; left:0; top:0;
+    width:var(--cw); height:var(--ch);
+    border-radius:var(--radius);
+    background:linear-gradient(160deg,#ffffff 0%,#f2f2f5 100%);
+    box-shadow:0 1px 1px rgba(0,0,0,.28), 0 3px 7px rgba(0,0,0,.22);
+    overflow:hidden;
+    pointer-events:none;
+    -webkit-touch-callout:none;
+  }
+  .pile .card{ pointer-events:auto; }
+
+  .card.red{ color:#d12a3e; }
+  .card.black{ color:#22252b; }
+
+  .card .corner{
+    position:absolute;
+    display:flex; flex-direction:column; align-items:center;
+    line-height:.92; font-weight:800;
+  }
+  .card .corner.tl{ top:5%; left:7%; }
+  .card .corner.br{ bottom:5%; right:7%; transform:rotate(180deg); }
+  .card .rank{ font-size:calc(var(--cw) * 0.32); letter-spacing:-.04em; }
+  .card .suit-s{ font-size:calc(var(--cw) * 0.24); }
+  .card .pip{
+    position:absolute; inset:0;
+    display:grid; place-items:center;
+    font-size:calc(var(--cw) * 0.64);
+    opacity:.92;
+  }
+
+  .card.down{
+    background:linear-gradient(160deg,#3d74b8 0%,#27517f 100%);
+    box-shadow:0 1px 1px rgba(0,0,0,.35), 0 3px 8px rgba(0,0,0,.32);
+  }
+  .card.down::before{
+    content:'';
+    position:absolute; inset:5%;
+    border-radius:calc(var(--cw) * 0.06);
+    border:1px solid rgba(255,255,255,.35);
+    background-image:
+      repeating-linear-gradient(45deg, rgba(255,255,255,.11) 0 3px, transparent 3px 7px),
+      repeating-linear-gradient(-45deg, rgba(255,255,255,.11) 0 3px, transparent 3px 7px);
+  }
+
+  .card.hidden{ visibility:hidden; }
+
+  /* ---------- drag layer ---------- */
+  .drag-layer{
+    position:fixed; left:0; top:0;
+    width:0; height:0;
+    pointer-events:none;
+    z-index:9999;
+    will-change:transform;
+  }
+  .drag-layer .card{
+    box-shadow:0 10px 26px rgba(0,0,0,.55), 0 2px 6px rgba(0,0,0,.4);
+    pointer-events:none;
+  }
+
+  /* ---------- win overlay ---------- */
+  .overlay{
+    position:fixed; inset:0;
+    background:rgba(0,0,0,.55);
+    backdrop-filter:blur(4px);
+    display:grid; place-items:center;
+    z-index:10000;
+    animation:fade .28s ease;
+  }
+  .overlay.hidden{ display:none; }
+  @keyframes fade{ from{opacity:0} to{opacity:1} }
+
+  .panel{
+    background:linear-gradient(160deg,#2c8a58,#17512f);
+    border:1px solid rgba(255,255,255,.28);
+    border-radius:18px;
+    padding:28px 40px;
+    text-align:center;
+    box-shadow:0 24px 60px rgba(0,0,0,.5);
+    animation:pop .3s cubic-bezier(.2,1.4,.5,1);
+  }
+  @keyframes pop{ from{transform:scale(.85); opacity:0} to{transform:scale(1); opacity:1} }
+  .panel .emoji{ font-size:46px; line-height:1; }
+  .panel h2{ margin:10px 0 6px; font-size:24px; }
+  .panel p{ margin:0 0 18px; opacity:.85; font-size:14px; }
+  .panel button{ background:rgba(255,255,255,.9); color:#14512e; border-color:transparent; }
+  .panel button:hover{ background:#fff; }
+</style>
+</head>
+<body>
+
+<div class="app">
+  <header class="topbar">
+    <button id="btnNew">New Game</button>
+    <button id="btnUndo">Undo</button>
+    <select id="selDraw" title="Cards drawn per click">
+      <option value="1">Draw 1</option>
+      <option value="3">Draw 3</option>
+    </select>
+    <span class="stats" id="stats">Moves 0 · Time 0:00</span>
+  </header>
+  <div class="board" id="board"></div>
+</div>
+
+<div class="overlay hidden" id="win">
+  <div class="panel">
+    <div class="emoji">🎉</div>
+    <h2>You Win!</h2>
+    <p id="winStats"></p>
+    <button id="btnAgain">Play Again</button>
+  </div>
+</div>
+
+<script>
+(() => {
+'use strict';
+
+const RANKS = [null,'A','2','3','4','5','6','7','8','9','10','J','Q','K'];
+const SUITS = ['♠','♥','♦','♣'];
+const ALL_KEYS = ['stock','waste','f0','f1','f2','f3','t0','t1','t2','t3','t4','t5','t6'];
+
+const boardEl    = document.getElementById('board');
+const statsEl    = document.getElementById('stats');
+const winEl      = document.getElementById('win');
+const winStatsEl = document.getElementById('winStats');
+
+const pileEls = {};
+let state = null;
+let history = [];
+let moves = 0;
+let drawMode = 1;
+let startTime = 0;
+let timerId = null;
+let drag = null;
+let hoverEl = null;
+let M = { cw: 80, ch: 114, gap: 11, upOff: 31, downOff: 17 };
+
+const isRed = c => c.suit === 1 || c.suit === 2;
+const fmt = s => `${Math.floor(s/60)}:${String(s%60).padStart(2,'0')}`;
+
+/* ======================== sizing ======================== */
+function computeMetrics(){
+  const pad = 20;
+  const avail = Math.min(window.innerWidth, 900) - pad;
+  let cw = avail / (7 + 6 * 0.14);
+  cw = Math.max(30, Math.min(cw, 94));
+  const gap = cw * 0.14;
+  const ch  = cw * 1.42;
+
+  M = { cw, ch, gap, upOff: ch * 0.27, downOff: ch * 0.15 };
+
+  const r = document.documentElement.style;
+  r.setProperty('--cw', cw.toFixed(2) + 'px');
+  r.setProperty('--ch', ch.toFixed(2) + 'px');
+  r.setProperty('--gap', gap.toFixed(2) + 'px');
+}
+
+function maxTableauHeight(){
+  const top = boardEl.getBoundingClientRect().top;
+  const tableauTop = top + M.ch + M.gap;
+  return Math.max(M.ch, window.innerHeight - tableauTop - 12);
+}
+
+/* ======================== deck ======================== */
+function makeDeck(){
+  const deck = [];
+  let id = 0;
+  for (let s = 0; s < 4; s++)
+    for (let r = 1; r <= 13; r++)
+      deck.push({ id: id++, suit: s, rank: r, up: false });
+  return deck;
+}
+
+function shuffle(a){
+  for (let i = a.length - 1; i > 0; i--){
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+
+/* ======================== board build ======================== */
+function buildBoard(){
+  boardEl.innerHTML = '';
+  const layout = [
+    ['stock', 1, 1], ['waste', 1, 2],
+    ['f0', 1, 4], ['f1', 1, 5], ['f2', 1, 6], ['f3', 1, 7],
+    ['t0', 2, 1], ['t1', 2, 2], ['t2', 2, 3], ['t3', 2, 4],
+    ['t4', 2, 5], ['t5', 2, 6], ['t6', 2, 7]
+  ];
+  for (const [key, row, col] of layout){
+    const el = document.createElement('div');
+    el.className = 'pile';
+    el.dataset.pile = key;
+    el.style.gridRow = String(row);
+    el.style.gridColumn = String(col);
+
+    const slot = document.createElement('div');
+    slot.className = 'slot';
+    if (key[0] === 'f') slot.textContent = SUITS[+key[1]];
+    el.appendChild(slot);
+
+    boardEl.appendChild(el);
+    pileEls[key] = el;
+  }
+}
+
+/* ======================== helpers ======================== */
+function getPile(key){
+  if (key === 'stock') return state.stock;
+  if (key === 'waste') return state.waste;
+  if (key[0] === 'f') return state.foundations[+key[1]];
+  return state.tableau[+key[1]];
+}
+
+function locate(id){
+  for (const key of ALL_KEYS){
+    const pile = getPile(key);
+    for (let i = 0; i < pile.length; i++)
+      if (pile[i].id === id) return { key, index: i, card: pile[i] };
+  }
+  return null;
+}
+
+function canDrop(cards, toKey){
+  if (!cards || !cards.length) return false;
+  if (toKey === 'stock' || toKey === 'waste') return false;
+  const to = getPile(toKey);
+  const c = cards[0];
+
+  if (toKey[0] === 'f'){
+    if (cards.length !== 1) return false;
+    if (to.length === 0) return c.rank === 1;
+    const t = to[to.length - 1];
+    return t.suit === c.suit && c.rank === t.rank + 1;
+  }
+  if (toKey[0] === 't'){
+    if (to.length === 0) return c.rank === 13;
+    const t = to[to.length - 1];
+    if (!t.up) return false;
+    return isRed(t) !== isRed(c) && c.rank === t.rank - 1;
+  }
+  return false;
+}
+
+function movableStack(key, index){
+  const pile = getPile(key);
+  if (index < 0 || index >= pile.length) return null;
+
+  if (key === 'waste' || key[0] === 'f')
+    return index === pile.length - 1 ? [pile[index]] : null;
+
+  const cards = pile.slice(index);
+  if (!cards[0].up) return null;
+  for (let i = 1; i < cards.length; i++){
+    if (!cards[i].up) return null;
+    if (cards[i-1].rank !== cards[i].rank + 1) return null;
+    if (isRed(cards[i-1]) === isRed(cards[i])) return null;
+  }
+  return cards;
+}
+
+/* ======================== rendering ======================== */
+function cardEl(c){
+  const d = document.createElement('div');
+  d.className = 'card ' + (isRed(c) ? 'red' : 'black') + (c.up ? '' : ' down');
+  d.dataset.id = String(c.id);
+  if (c.up){
+    const r = RANKS[c.rank], s = SUITS[c.suit];
+    d.innerHTML =
+      `<div class="corner tl"><span class="rank">${r}</span><span class="suit-s">${s}</span></div>` +
+      `<div class="pip">${s}</div>` +
+      `<div class="corner br"><span class="rank">${r}</span><span class="suit-s">${s}</span></div>`;
+  }
+  return d;
+}
+
+function layoutPile(key, cards, maxH, topOnly){
+  const el = pileEls[key];
+  el.querySelectorAll('.card').forEach(n => n.remove());
+
+  const isTableau = key[0] === 't';
+  const list = (topOnly && cards.length) ? [cards[cards.length - 1]] : cards;
+  const n = list.length;
+
+  const offs = new Array(n).fill(0);
+  if (isTableau){
+    for (let i = 1; i < n; i++)
+      offs[i] = list[i-1].up ? M.upOff : M.downOff;
+  }
+
+  let total = M.ch + offs.reduce((a,b)=>a+b, 0);
+
+  if (isTableau && maxH && total > maxH){
+    const used = offs.reduce((a,b)=>a+b, 0);
+    if (used > 0){
+      const f = Math.max(0.12, (maxH - M.ch) / used);
+      for (let i = 1; i < n; i++) offs[i] *= f;
+      total = M.ch + offs.reduce((a,b)=>a+b, 0);
+    }
+  }
+
+  const fanStart = (key === 'waste') ? Math.max(0, n - 3) : Infinity;
+  const fanStep  = M.cw * 0.22;
+
+  let y = 0;
+  for (let i = 0; i < n; i++){
+    if (i > 0) y += offs[i];
+    const c = list[i];
+    const d = cardEl(c);
+    d.style.top = y.toFixed(1) + 'px';
+    if (i >= fanStart) d.style.left = ((i - fanStart) * fanStep).toFixed(1) + 'px';
+    d.style.zIndex = String(i + 1);
+    el.appendChild(d);
+  }
+  el.style.height = Math.max(M.ch, total).toFixed(1) + 'px';
+}
+
+function render(){
+  const maxH = maxTableauHeight();
+
+  layoutPile('stock', state.stock, 0, true);
+  layoutPile('waste', state.waste, 0, false);
+  for (let i = 0; i < 4; i++) layoutPile('f' + i, state.foundations[i], 0, false);
+  for (let i = 0; i < 7; i++) layoutPile('t' + i, state.tableau[i], maxH, false);
+
+  const stockSlot = pileEls.stock.querySelector('.slot');
+  stockSlot.textContent = (state.stock.length === 0 && state.waste.length > 0) ? '↻' : '';
+
+  updateStats();
+}
+
+function updateStats(){
+  const t = startTime ? Math.floor((Date.now() - startTime) / 1000) : 0;
+  statsEl.textContent = `Moves ${moves} · Time ${fmt(t)}`;
+}
+
+/* ======================== game logic ======================== */
+function newGame(){
+  clearInterval(timerId);
+  timerId = null;
+  startTime = Date.now();
+  moves = 0;
+  history = [];
+  drag = null;
+  hoverEl = null;
+  winEl.classList.add('hidden');
+
+  const deck = shuffle(makeDeck());
+
+  state = {
+    stock: [],
+    waste: [],
+    foundations: [[],[],[],[]],
+    tableau: [[],[],[],[],[],[],[]]
+  };
+
+  for (let i = 0; i < 7; i++){
+    for (let j = 0; j <= i; j++){
+      const c = deck.pop();
+      c.up = (j === i);
+      state.tableau[i].push(c);
+    }
+  }
+  state.stock = deck;
+
+  render();
+  timerId = setInterval(updateStats, 500);
+}
+
+function pushHistory(){
+  history.push({ s: JSON.stringify(state), m: moves });
+  if (history.length > 300) history.shift();
+}
+
+function undo(){
+  if (!history.length) return;
+  const h = history.pop();
+  state = JSON.parse(h.s);
+  moves = h.m;
+  render();
+}
+
+function moveCards(cards, fromKey, toKey){
+  if (fromKey === toKey) return false;
+  if (!canDrop(cards, toKey)) return false;
+
+  const from = getPile(fromKey);
+  const to   = getPile(toKey);
+  const idx  = from.findIndex(c => c.id === cards[0].id);
+  if (idx < 0) return false;
+
+  pushHistory();
+  from.splice(idx, cards.length);
+  for (const c of cards) to.push(c);
+
+  if (fromKey[0] === 't' && from.length && !from[from.length - 1].up)
+    from[from.length - 1].up = true;
+
+  moves++;
+  render();
+  checkWin();
+  return true;
+}
+
+function tryFoundation(card){
+  const loc = locate(card.id);
+  if (!loc) return false;
+  const pile = getPile(loc.key);
+  if (loc.index !== pile.length - 1) return false;
+
+  for (let i = 0; i < 4; i++){
+    const key = 'f' + i;
+    if (canDrop([card], key)) return moveCards([card], loc.key, key);
+  }
+  return false;
+}
+
+/* TAP-TO-MOVE: foundation first, then the most useful tableau spot. */
+function autoMove(cards, fromKey){
+  if (cards.length === 1 && tryFoundation(cards[0])) return true;
+
+  const src = getPile(fromKey);
+  const exposes = fromKey[0] === 't' &&
+                  src.length > cards.length &&
+                  !src[src.length - cards.length - 1].up;
+
+  let best = null, bestScore = -1;
+  for (let i = 0; i < 7; i++){
+    const key = 't' + i;
+    if (key === fromKey) continue;
+    if (!canDrop(cards, key)) continue;
+
+    const empty = state.tableau[i].length === 0;
+    // never pointlessly shuffle a lone card onto an empty column
+    const score = empty ? ((exposes || cards.length > 1) ? 1 : 0) : 2;
+
+    if (score > bestScore){ bestScore = score; best = key; }
+  }
+  if (best && bestScore > 0) return moveCards(cards, fromKey, best);
+  return false;
+}
+
+function drawFromStock(){
+  if (state.stock.length === 0){
+    if (state.waste.length === 0) return;
+    pushHistory();
+    while (state.waste.length){
+      const c = state.waste.pop();
+      c.up = false;
+      state.stock.push(c);
+    }
+    moves++;
+    render();
+    return;
+  }
+
+  pushHistory();
+  const n = Math.min(drawMode, state.stock.length);
+  for (let i = 0; i < n; i++){
+    const c = state.stock.pop();
+    c.up = true;
+    state.waste.push(c);
+  }
+  moves++;
+  render();
+}
+
+function checkWin(){
+  if (state.foundations.every(f => f.length === 13)){
+    clearInterval(timerId);
+    timerId = null;
+    const t = Math.floor((Date.now() - startTime) / 1000);
+    winStatsEl.textContent = `Time ${fmt(t)} · Moves ${moves}`;
+    winEl.classList.remove('hidden');
+  }
+}
+
+/* ======================== drag & drop ======================== */
+function highlight(x, y){
+  const el = document.elementFromPoint(x, y);
+  const pile = el ? el.closest('.pile') : null;
+  const target = (pile && pile.dataset.pile !== drag.fromKey &&
+                  canDrop(drag.cards, pile.dataset.pile)) ? pile : null;
+  if (hoverEl !== target){
+    if (hoverEl) hoverEl.classList.remove('hover');
+    if (target) target.classList.add('hover');
+    hoverEl = target;
+  }
+}
+
+function onPointerMove(e){
+  if (!drag) return;
+  const dx = e.clientX - drag.x0;
+  const dy = e.clientY - drag.y0;
+  if (!drag.moved && Math.hypot(dx, dy) > drag.slop) drag.moved = true;
+  drag.layer.style.transform = `translate(${dx}px, ${dy}px)`;
+  highlight(e.clientX, e.clientY);
+}
+
+function onPointerUp(e){
+  if (!drag) return;
+  const d = drag;
+  drag = null;
+
+  window.removeEventListener('pointermove', onPointerMove);
+  window.removeEventListener('pointerup', onPointerUp);
+  window.removeEventListener('pointercancel', onPointerUp);
+
+  const dx = e.clientX - d.x0;
+  const dy = e.clientY - d.y0;
+  const isClick = Math.hypot(dx, dy) < d.slop;
+
+  let toKey = null;
+  if (!isClick){
+    const el = document.elementFromPoint(e.clientX, e.clientY);
+    toKey = el && el.closest('.pile') ? el.closest('.pile').dataset.pile : null;
+  }
+
+  if (hoverEl){ hoverEl.classList.remove('hover'); hoverEl = null; }
+  d.layer.remove();
+  d.cards.forEach(c => {
+    const el = boardEl.querySelector(`.card[data-id="${c.id}"]`);
+    if (el) el.classList.remove('hidden');
+  });
+
+  if (isClick){
+    if (autoMove(d.cards, d.fromKey)) return;
+    render();
+    return;
+  }
+
+  if (toKey && toKey !== d.fromKey && canDrop(d.cards, toKey)){
+    moveCards(d.cards, d.fromKey, toKey);
+    return;
+  }
+  render();
+}
+
+function onPointerDown(e){
+  if (e.button !== undefined && e.button !== 0) return;
+
+  const pile = e.target.closest('.pile');
+  if (!pile) return;
+  const key = pile.dataset.pile;
+
+  if (key === 'stock'){
+    e.preventDefault();
+    drawFromStock();
+    return;
+  }
+
+  const cardNode = e.target.closest('.card');
+  if (!cardNode) return;
+
+  const id = Number(cardNode.dataset.id);
+  const loc = locate(id);
+  if (!loc || !loc.card.up) return;
+
+  const cards = movableStack(loc.key, loc.index);
+  if (!cards) return;
+
+  e.preventDefault();
+
+  // keep the whole gesture, even if the finger leaves the board
+  try { boardEl.setPointerCapture(e.pointerId); } catch(_) {}
+
+  const rects = cards.map(c =>
+    boardEl.querySelector(`.card[data-id="${c.id}"]`).getBoundingClientRect()
+  );
+
+  const layer = document.createElement('div');
+  layer.className = 'drag-layer';
+
+  cards.forEach((c, i) => {
+    const src = boardEl.querySelector(`.card[data-id="${c.id}"]`);
+    const clone = src.cloneNode(true);
+    clone.classList.remove('hidden');
+    clone.style.position = 'absolute';
+    clone.style.left = rects[i].left + 'px';
+    clone.style.top = rects[i].top + 'px';
+    clone.style.width = rects[i].width + 'px';
+    clone.style.height = rects[i].height + 'px';
+    clone.style.zIndex = String(i + 1);
+    layer.appendChild(clone);
+    src.classList.add('hidden');
+  });
+
+  document.body.appendChild(layer);
+
+  drag = {
+    cards,
+    fromKey: loc.key,
+    x0: e.clientX,
+    y0: e.clientY,
+    layer,
+    moved: false,
+    // fatter slop for fingers so a tap never becomes a dead micro-drag
+    slop: e.pointerType === 'touch' ? 10 : 5
+  };
+
+  window.addEventListener('pointermove', onPointerMove);
+  window.addEventListener('pointerup', onPointerUp);
+  window.addEventListener('pointercancel', onPointerUp);
+}
+
+/* ======================== wiring ======================== */
+boardEl.addEventListener('pointerdown', onPointerDown);
+boardEl.addEventListener('contextmenu', e => e.preventDefault());
+
+document.getElementById('btnNew').addEventListener('click', newGame);
+document.getElementById('btnAgain').addEventListener('click', newGame);
+document.getElementById('btnUndo').addEventListener('click', undo);
+
+document.getElementById('selDraw').addEventListener('change', e => {
+  drawMode = Number(e.target.value);
+});
+
+window.addEventListener('keydown', e => {
+  if (e.key === 'u' || e.key === 'U') undo();
+  if (e.key === 'n' || e.key === 'N') newGame();
+});
+
+let resizeTimer = null;
+window.addEventListener('resize', () => {
+  clearTimeout(resizeTimer);
+  resizeTimer = setTimeout(() => { computeMetrics(); render(); }, 120);
+});
+
+/* ======================== boot ======================== */
+computeMetrics();
+buildBoard();
+newGame();
+
+})();
+</script>
+</body>
+</html>

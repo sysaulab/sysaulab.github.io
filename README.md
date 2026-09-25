@@ -2,6 +2,8 @@
 
 ## Ad-free games
 
+These are simple touch friendly games, works with all phones and tablets, computers too. They are offered ad free.
+
 Play [adventure.html](adventure.html) online. ( [manual](adventure_manual.html) )
 
 Play [platform.html](platform.html) online.
@@ -9,6 +11,8 @@ Play [platform.html](platform.html) online.
 Play [maze.html](maze.html) online.
 
 Play [mahjong.html](mahjong.html) online.
+
+Play [klondike.html](klondike.html) online.
 
 ## Unhealthy passion
 

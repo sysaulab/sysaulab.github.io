@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
-<title>Mahjong Solitaire</title>
+<title>mahjong.html</title>
 <style>
   * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
 
@@ -151,7 +151,7 @@
   }
   #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
 
-  /* ---------------- Win overlay ---------------- */
+  /* ---------------- End overlay ---------------- */
   #overlay {
     position: fixed; inset: 0;
     background: rgba(2, 14, 8, .82);
@@ -181,6 +181,9 @@
     color: #ffe08a;
     text-shadow: 0 3px 0 rgba(0,0,0,.4);
   }
+  .panel.lost h1 { color: #ff9f8f; }
+  .panel.lost { background: linear-gradient(180deg, #5c231e, #2c0d0b); }
+
   .panel p { margin: 4px 0 22px; color: #cfe6d6; font-size: 15px; }
   .panel .time { font-size: 30px; color: #fff; font-weight: 700; font-variant-numeric: tabular-nums; }
 </style>
@@ -194,7 +197,6 @@
     <div class="buttons">
       <button id="hintBtn" class="ghost">Hint</button>
       <button id="undoBtn" class="ghost">Undo</button>
-      <button id="shuffleBtn">Shuffle</button>
       <button id="newBtn">New Game</button>
     </div>
   </header>
@@ -206,9 +208,9 @@
 </div>
 
 <div id="overlay">
-  <div class="panel">
-    <h1>YOU WIN!</h1>
-    <p>Every tile cleared</p>
+  <div class="panel" id="panel">
+    <h1 id="overlayTitle">YOU WIN!</h1>
+    <p id="overlayMsg">Every tile cleared</p>
     <div class="time" id="finalTime">00:00</div>
     <p style="margin-top:22px"><button id="playAgain">Play Again</button></p>
   </div>
@@ -231,6 +233,9 @@ const board     = document.getElementById('board');
 const boardWrap = document.getElementById('boardWrap');
 const toastEl   = document.getElementById('toast');
 const overlay   = document.getElementById('overlay');
+const panel     = document.getElementById('panel');
+const overlayTitle = document.getElementById('overlayTitle');
+const overlayMsg   = document.getElementById('overlayMsg');
 
 const k = (x, y, z) => x + ',' + y + ',' + z;
 
@@ -372,6 +377,7 @@ function newGame() {
   selected = null;
   history = [];
   overlay.classList.remove('show');
+  panel.classList.remove('lost');
 
   const positions = makePositions();
   let order = makeRemovalOrder(positions);
@@ -454,11 +460,6 @@ function render() {
   updateFreeStates();
 }
 
-function updateFace(t) {
-  const face = t.el.querySelector('.face');
-  if (face) face.innerHTML = faceHTML(t.face);
-}
-
 function updateFreeStates() {
   for (const t of tiles) {
     if (t.removed) { t.free = false; t.el.classList.remove('free'); continue; }
@@ -516,10 +517,8 @@ function removePair(a, b) {
 
   if (remaining === 0) { win(); return; }
 
-  // dead-end detection
-  if (!findHintPair()) {
-    showToast('No moves left — hit Shuffle!');
-  }
+  // dead-end detection — a real loss now
+  if (!findHintPair()) lose();
 }
 
 /* =========================================================
@@ -558,61 +557,12 @@ let hintTimer = null;
 function hint() {
   if (gameOver) return;
   const pair = findHintPair();
-  if (!pair) { showToast('No moves available — shuffle!'); return; }
+  if (!pair) { showToast('No moves available!'); return; }
   for (const t of pair) t.el.classList.add('hint');
   clearTimeout(hintTimer);
   hintTimer = setTimeout(() => {
     for (const t of pair) t.el.classList.remove('hint');
   }, 1600);
-}
-
-/* =========================================================
-   Shuffle remaining tiles (keeps the board solvable)
-   ========================================================= */
-function shuffleBoard() {
-  if (gameOver) return;
-  const rem = tiles.filter(t => !t.removed);
-  if (rem.length < 2) return;
-
-  const positions = rem.map(t => ({ x: t.x, y: t.y, z: t.z }));
-  const byKey = new Map(rem.map(t => [k(t.x, t.y, t.z), t]));
-
-  let order = makeRemovalOrder(positions);
-  if (!order) {
-    // fallback: pair positions arbitrarily
-    const sh = shuffleArr(positions.slice());
-    order = [];
-    for (let i = 0; i < sh.length; i += 2) order.push([sh[i], sh[i + 1]]);
-  }
-
-  // remaining groups → pair slots
-  const counts = new Map();
-  for (const t of rem) counts.set(t.group, (counts.get(t.group) || 0) + 1);
-  const slots = [];
-  for (const [gid, c] of counts)
-    for (let i = 0; i < Math.floor(c / 2); i++) slots.push(gid);
-  shuffleArr(slots);
-
-  const useCount = new Map();
-  order.forEach((pair, i) => {
-    const gid = slots[i % slots.length];
-    const def = GROUP_BY_ID.get(gid);
-    for (const p of pair) {
-      const t = byKey.get(k(p.x, p.y, p.z));
-      if (!t) continue;
-      const used = useCount.get(gid) || 0;
-      useCount.set(gid, used + 1);
-      t.group = gid;
-      t.face = def.variants[used % def.variants.length];
-      updateFace(t);
-    }
-  });
-
-  history = [];
-  if (selected) { selected.el.classList.remove('selected'); selected = null; }
-  updateFreeStates();
-  showToast('Shuffled!');
-  if (!findHintPair()) showToast('Hmm — no moves. Shuffle again.');
 }
 
 /* =========================================================
@@ -646,10 +596,28 @@ function stopTimer() {
   if (timerId) { clearInterval(timerId); timerId = null; }
 }
 
+/* =========================================================
+   End states
+   ========================================================= */
 function win() {
   gameOver = true;
   stopTimer();
   updateHUD();
+  panel.classList.remove('lost');
+  overlayTitle.textContent = 'YOU WIN!';
+  overlayMsg.textContent   = 'Every tile cleared';
+  document.getElementById('finalTime').textContent =
+    document.getElementById('timer').textContent;
+  setTimeout(() => overlay.classList.add('show'), 380);
+}
+
+function lose() {
+  gameOver = true;
+  stopTimer();
+  updateHUD();
+  panel.classList.add('lost');
+  overlayTitle.textContent = 'NO MOVES LEFT';
+  overlayMsg.textContent   = remaining + ' tiles remain — no matching moves';
   document.getElementById('finalTime').textContent =
     document.getElementById('timer').textContent;
   setTimeout(() => overlay.classList.add('show'), 380);
@@ -686,13 +654,11 @@ window.addEventListener('orientationchange', () => setTimeout(fitBoard, 200));
 document.getElementById('newBtn').addEventListener('click', newGame);
 document.getElementById('hintBtn').addEventListener('click', hint);
 document.getElementById('undoBtn').addEventListener('click', undo);
-document.getElementById('shuffleBtn').addEventListener('click', shuffleBoard);
 document.getElementById('playAgain').addEventListener('click', newGame);
 
 document.addEventListener('keydown', e => {
   if (e.key === 'h' || e.key === 'H') hint();
   if (e.key === 'u' || e.key === 'U') undo();
-  if (e.key === 's' || e.key === 'S') shuffleBoard();
   if (e.key === 'n' || e.key === 'N') newGame();
 });
 
