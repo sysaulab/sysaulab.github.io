@@ -153,7 +153,7 @@
     <div class="main-pad">
       <button class="btn warn" data-act="clear">AC</button>
       <button class="btn sec" data-act="back">⌫</button>
-      <button class="btn sec" data-act="fn" data-val="%">%</button>
+      <button class="btn sec" data-act="op" data-val="%">%</button>
       <button class="btn op" data-act="op" data-val="/">÷</button>
 
       <button class="btn" data-act="digit" data-val="7">7</button>
@@ -205,6 +205,13 @@ function divRound(num, den) {
 }
 const mul = (a, b) => divRound(a * b, ONE);
 const div = (a, b) => divRound(a * ONE, b);
+
+/* exact modulo — no rounding, since both operands share the same scale.
+   Sign of the result follows the dividend (JS/C convention). */
+function modFixed(a, b) {
+  if (b === 0n) throw new CalcError('Modulo by zero');
+  return a % b;
+}
 
 /* integer square root (Newton) */
 function isqrt(n) {
@@ -524,6 +531,7 @@ function parse(src) {
     for (;;) {
       if (isOp('*'))      { pos++; left = mul(left, parseUnary()); }
       else if (isOp('/')) { pos++; left = div(left, parseUnary()); }
+      else if (isOp('%')) { pos++; left = modFixed(left, parseUnary()); }
       else if (startsPrimary()) left = mul(left, parseUnary());   // implicit ×
       else break;
     }
@@ -548,8 +556,7 @@ function parse(src) {
   function parsePostfix() {
     let v = parsePrimary();
     for (;;) {
-      if (isOp('!'))      { pos++; v = factorialFixed(v); }
-      else if (isOp('%')) { pos++; v = v / 100n; }
+      if (isOp('!')) { pos++; v = factorialFixed(v); }
       else break;
     }
     return v;
@@ -611,8 +618,8 @@ const state = {
   sci: true
 };
 
-const OPS = ['+', '-', '*', '/', '^'];
-const SUFFIX = ['!', '%', '^2', '^(-1)'];
+const OPS = ['+', '-', '*', '/', '^', '%'];
+const SUFFIX = ['!', '^2', '^(-1)'];
 
 const TOKEN_DISPLAY = {
   '*': '×', '/': '÷', '-': '−',
@@ -939,7 +946,7 @@ window.addEventListener('keydown', (e) => {
   else if (k === '(') pressFn('(');
   else if (k === ')') pressFn(')');
   else if (k === '!') pressFn('!');
-  else if (k === '%') pressFn('%');
+  else if (k === '%') pressOp('%');
   else if (k === 'Enter' || k === '=') { doEquals(); e.preventDefault(); }
   else if (k === 'Backspace') { doBack(); e.preventDefault(); }
   else if (k === 'Escape' || k === 'Delete') doClear();
