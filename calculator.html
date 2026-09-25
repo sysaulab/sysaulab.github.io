@@ -1,0 +1,956 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#0a0c11">
+<meta name="color-scheme" content="dark">
+<title>calculator.html</title>
+<style>
+  :root{
+    --bg:#0a0c11;
+    --screen-a:#111722; --screen-b:#0b0f16;
+    --btn:#1b2130; --btn-a:#2c3548;
+    --op:#1f2a42; --op-fg:#6ea8fe; --op-a:#2b3b5e;
+    --fn:#151a24; --fn-fg:#9aa8bd; --fn-a:#222a38;
+    --text:#eef2f8; --muted:#7d8899; --red:#ff7a7a;
+  }
+  *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{height:100%}
+  body{
+    background:var(--bg); color:var(--text);
+    font-family:ui-sans-serif,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,system-ui,sans-serif;
+    display:flex;align-items:center;justify-content:center;overflow:hidden;
+    user-select:none;-webkit-user-select:none;touch-action:manipulation;
+  }
+  .calc{
+    width:min(540px,100%);
+    height:min(100dvh,980px);
+    display:flex;flex-direction:column;gap:8px;
+    padding:8px;
+    padding-top:max(8px,env(safe-area-inset-top));
+    padding-bottom:max(8px,env(safe-area-inset-bottom));
+  }
+
+  /* ---------- screen ---------- */
+  .screen{
+    flex:0 0 auto;
+    background:linear-gradient(180deg,var(--screen-a),var(--screen-b));
+    border:1px solid #1c2432;border-radius:22px;
+    padding:12px 16px 14px;
+    display:flex;flex-direction:column;gap:6px;
+    min-height:132px;overflow:hidden;
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.03);
+  }
+  .indicators{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+  .chip{
+    font-size:10.5px;letter-spacing:.09em;font-weight:600;
+    padding:4px 10px;border-radius:999px;
+    background:#182030;border:1px solid #232c3d;color:#6b7688;
+    cursor:pointer;font-family:inherit;transition:all .15s;
+  }
+  .chip.on{color:#ffb340;border-color:#4d3b18;background:#241d0d}
+  .chip:active{transform:scale(.94)}
+  .copy-chip{
+    color:#9fe6b0;border-color:#1e3a2a;background:#0f1a13;
+    padding:6px 12px;font-size:11px;letter-spacing:.08em;
+  }
+  .copy-chip.dim{opacity:.35}
+  .copy-chip.ok{color:#0a0c11;background:#3ddc84;border-color:#3ddc84;opacity:1}
+  .copy-chip.bad{color:#1a0b0b;background:#ff7a7a;border-color:#ff7a7a;opacity:1}
+  .spacer{flex:1}
+  .expr{
+    font-size:15px;line-height:1.3;color:var(--muted);text-align:right;
+    min-height:20px;max-height:2.6em;overflow:hidden;
+    overflow-wrap:anywhere;font-variant-numeric:tabular-nums;
+  }
+  .result{
+    font-size:44px;font-weight:300;line-height:1.12;text-align:right;
+    overflow-wrap:anywhere;font-variant-numeric:tabular-nums;
+    letter-spacing:-.02em;transition:color .15s;
+  }
+  .result.preview{color:#9fb0c9}
+  .result.err{color:var(--red);font-size:20px !important;font-weight:400}
+
+  /* ---------- pads ---------- */
+  .pads{flex:1 1 auto;display:flex;flex-direction:column;gap:8px;min-height:0}
+  .sci-pad{
+    flex:0 0 auto;display:grid;grid-template-columns:repeat(6,1fr);gap:6px;
+  }
+  .sci-pad .btn{
+    min-height:46px;font-size:13.5px;font-weight:500;
+    background:var(--fn);color:var(--fn-fg);border-radius:13px;
+  }
+  .sci-pad .btn:active{background:var(--fn-a)}
+  .main-pad{
+    flex:1 1 auto;display:grid;grid-template-columns:repeat(4,1fr);
+    grid-template-rows:repeat(5,minmax(0,1fr));gap:8px;min-height:0;
+  }
+  .btn{
+    border:0;border-radius:16px;background:var(--btn);color:var(--text);
+    font-family:inherit;font-size:clamp(17px,5.4vw,26px);font-weight:400;
+    display:flex;align-items:center;justify-content:center;
+    cursor:pointer;touch-action:manipulation;
+    transition:background .1s,transform .06s;
+    min-height:44px;
+  }
+  .btn:active{transform:scale(.955);background:var(--btn-a)}
+  .main-pad .btn.op{background:var(--op);color:var(--op-fg);font-weight:500}
+  .main-pad .btn.op:active{background:var(--op-a)}
+  .main-pad .btn.eq{
+    background:linear-gradient(180deg,#ffa726,#ef6c00);color:#1a1000;font-weight:600;
+  }
+  .main-pad .btn.eq:active{background:linear-gradient(180deg,#ffb74d,#f57c00)}
+  .main-pad .btn.warn{color:#ff8f6b;font-size:clamp(14px,4.2vw,20px)}
+  .main-pad .btn.sec{color:#9aa8bd;font-size:clamp(16px,4.6vw,22px)}
+  .hidden{display:none !important}
+
+  @media (max-height:620px){
+    .screen{min-height:104px;padding:8px 14px 10px}
+    .result{font-size:34px}
+    .sci-pad .btn{min-height:38px;font-size:12px}
+  }
+</style>
+</head>
+<body>
+
+<div class="calc">
+  <div class="screen">
+    <div class="indicators">
+      <button class="chip on" id="angleChip" data-act="angle">DEG</button>
+      <button class="chip on" id="modeChip" data-act="mode">SCI</button>
+      <div class="spacer"></div>
+      <button class="chip copy-chip" id="copyChip" data-act="copy" title="Copy full-precision value">⧉ COPY</button>
+    </div>
+    <div class="expr" id="expr"></div>
+    <div class="result" id="result">0</div>
+  </div>
+
+  <div class="pads">
+    <div class="sci-pad" id="sciPad">
+      <button class="btn" data-act="fn" data-val="sin(">sin</button>
+      <button class="btn" data-act="fn" data-val="cos(">cos</button>
+      <button class="btn" data-act="fn" data-val="tan(">tan</button>
+      <button class="btn" data-act="fn" data-val="asin(">sin⁻¹</button>
+      <button class="btn" data-act="fn" data-val="acos(">cos⁻¹</button>
+      <button class="btn" data-act="fn" data-val="atan(">tan⁻¹</button>
+
+      <button class="btn" data-act="fn" data-val="ln(">ln</button>
+      <button class="btn" data-act="fn" data-val="log(">log</button>
+      <button class="btn" data-act="fn" data-val="sqrt(">√</button>
+      <button class="btn" data-act="fn" data-val="^2">x²</button>
+      <button class="btn" data-act="fn" data-val="^">xʸ</button>
+      <button class="btn" data-act="fn" data-val="^(-1)">1/x</button>
+
+      <button class="btn" data-act="fn" data-val="(">(</button>
+      <button class="btn" data-act="fn" data-val=")">)</button>
+      <button class="btn" data-act="fn" data-val="!">n!</button>
+      <button class="btn" data-act="fn" data-val="pi">π</button>
+      <button class="btn" data-act="fn" data-val="e">e</button>
+      <button class="btn" data-act="fn" data-val="exp(">eˣ</button>
+    </div>
+
+    <div class="main-pad">
+      <button class="btn warn" data-act="clear">AC</button>
+      <button class="btn sec" data-act="back">⌫</button>
+      <button class="btn sec" data-act="fn" data-val="%">%</button>
+      <button class="btn op" data-act="op" data-val="/">÷</button>
+
+      <button class="btn" data-act="digit" data-val="7">7</button>
+      <button class="btn" data-act="digit" data-val="8">8</button>
+      <button class="btn" data-act="digit" data-val="9">9</button>
+      <button class="btn op" data-act="op" data-val="*">×</button>
+
+      <button class="btn" data-act="digit" data-val="4">4</button>
+      <button class="btn" data-act="digit" data-val="5">5</button>
+      <button class="btn" data-act="digit" data-val="6">6</button>
+      <button class="btn op" data-act="op" data-val="-">−</button>
+
+      <button class="btn" data-act="digit" data-val="1">1</button>
+      <button class="btn" data-act="digit" data-val="2">2</button>
+      <button class="btn" data-act="digit" data-val="3">3</button>
+      <button class="btn op" data-act="op" data-val="+">+</button>
+
+      <button class="btn sec" data-act="pm">±</button>
+      <button class="btn" data-act="digit" data-val="0">0</button>
+      <button class="btn" data-act="digit" data-val=".">.</button>
+      <button class="btn eq" data-act="equals">=</button>
+    </div>
+  </div>
+</div>
+
+<script>
+(() => {
+'use strict';
+
+/* ══════════════════════════════════════════════════════════════
+   FIXED-POINT BIGINT CORE
+   Every value is a BigInt representing  v × 10^30  (exact).
+   ══════════════════════════════════════════════════════════════ */
+
+const DEC = 30;
+const ONE = 10n ** BigInt(DEC);
+
+class CalcError extends Error {}
+
+/* rounded division (half away from zero) */
+function divRound(num, den) {
+  if (den === 0n) throw new CalcError('Division by zero');
+  const neg = (num < 0n) !== (den < 0n);
+  const n = num < 0n ? -num : num;
+  const d = den < 0n ? -den : den;
+  let q = n / d;
+  if ((n % d) * 2n >= d) q += 1n;
+  return neg ? -q : q;
+}
+const mul = (a, b) => divRound(a * b, ONE);
+const div = (a, b) => divRound(a * ONE, b);
+
+/* integer square root (Newton) */
+function isqrt(n) {
+  if (n < 0n) throw new CalcError('√ of a negative number');
+  if (n < 2n) return n;
+  const bits = n.toString(2).length;
+  let x = 1n << BigInt(Math.ceil(bits / 2));
+  for (;;) {
+    const y = (x + n / x) >> 1n;
+    if (y >= x) return x;
+    x = y;
+  }
+}
+const sqrtFixed = (x) => {
+  if (x < 0n) throw new CalcError('√ of a negative number');
+  return x === 0n ? 0n : isqrt(x * ONE);
+};
+
+/* constants to 30 decimals */
+const PI       = 3141592653589793238462643383280n;   // 3.141592653589793238462643383280
+const HALF_PI  = PI / 2n;                            // exact
+const TWO_PI   = PI * 2n;                            // exact
+const EULER    = 2718281828459045235360287471353n;   // 2.718281828459045235360287471353
+const LN10     = 2302585092994045684017991454684n;   // 2.302585092994045684017991454684
+const SQRT10   = 3162277660168379331998893544433n;   // 3.162277660168379331998893544433
+
+/* ---------- exp ---------- */
+const EXP_LIMIT = 20000n * ONE;
+function expFixed(x) {
+  if (x === 0n) return ONE;
+  if (x > EXP_LIMIT || x < -EXP_LIMIT) throw new CalcError('Overflow');
+  if (x < 0n) return div(ONE, expFixed(-x));
+  let k = 0n, y = x;
+  const half = ONE / 2n;
+  while (y > half) { y /= 2n; k++; }
+  let term = ONE, sum = ONE;
+  for (let n = 1n; n <= 400n; n++) {
+    term = mul(term, y) / n;
+    if (term === 0n) break;
+    sum += term;
+  }
+  while (k-- > 0n) sum = mul(sum, sum);
+  return sum;
+}
+
+/* ---------- ln ---------- */
+function lnFixed(x) {
+  if (x <= 0n) throw new CalcError('ln needs a positive number');
+  let e = 0n, m = x;
+  while (m >= 10n * ONE) { m /= 10n; e++; }
+  while (m < ONE)       { m *= 10n; e--; }
+  if (m > SQRT10) { m /= 10n; e++; }
+  const z  = div(m - ONE, m + ONE);
+  const z2 = mul(z, z);
+  let term = z, sum = z;
+  for (let n = 3n; n < 999n; n += 2n) {
+    term = mul(term, z2);
+    const add = term / n;
+    if (add === 0n) break;
+    sum += add;
+  }
+  return 2n * sum + e * LN10;
+}
+
+/* ---------- trig ---------- */
+function sinSeries(t) {
+  const t2 = mul(t, t);
+  let term = t, sum = t;
+  for (let n = 1n; n <= 120n; n++) {
+    term = -(mul(term, t2) / ((2n * n) * (2n * n + 1n)));
+    if (term === 0n) break;
+    sum += term;
+  }
+  return sum;
+}
+function cosSeries(t) {
+  const t2 = mul(t, t);
+  let term = ONE, sum = ONE;
+  for (let n = 1n; n <= 120n; n++) {
+    term = -(mul(term, t2) / ((2n * n - 1n) * (2n * n)));
+    if (term === 0n) break;
+    sum += term;
+  }
+  return sum;
+}
+function sinFixed(x) {
+  let r = x % TWO_PI;
+  if (r < 0n) r += TWO_PI;
+  const q = Number(r / HALF_PI);          // 0..3
+  const t = r - BigInt(q) * HALF_PI;
+  switch (q) {
+    case 0: return  sinSeries(t);
+    case 1: return  cosSeries(t);
+    case 2: return -sinSeries(t);
+    default:return -cosSeries(t);
+  }
+}
+const cosFixed = (x) => sinFixed(x + HALF_PI);
+const tanFixed = (x) => {
+  const c = cosFixed(x);
+  if (c === 0n) throw new CalcError('tan undefined');
+  return div(sinFixed(x), c);
+};
+
+/* ---------- inverse trig ---------- */
+function atanSeries(a) {
+  const a2 = mul(a, a);
+  let term = a, sum = a;
+  for (let n = 3n; n < 3000n; n += 2n) {
+    term = -mul(term, a2);
+    const add = term / n;
+    if (add === 0n) break;
+    sum += add;
+  }
+  return sum;
+}
+function atanFixed(x) {
+  if (x === 0n) return 0n;
+  const neg = x < 0n;
+  let a = neg ? -x : x;
+  let invert = false;
+  if (a > ONE) { a = div(ONE, a); invert = true; }
+  let k = 0;
+  while (a > ONE / 4n) {           // atan(a) = 2·atan(a / (1 + √(1+a²)))
+    a = div(a, ONE + sqrtFixed(ONE + mul(a, a)));
+    k++;
+  }
+  let r = atanSeries(a);
+  for (let i = 0; i < k; i++) r *= 2n;
+  if (invert) r = HALF_PI - r;
+  return neg ? -r : r;
+}
+function asinFixed(x) {
+  const a = x < 0n ? -x : x;
+  if (a > ONE) throw new CalcError('sin⁻¹ domain error');
+  if (a === ONE) return x < 0n ? -HALF_PI : HALF_PI;
+  return atanFixed(div(x, sqrtFixed(ONE - mul(x, x))));
+}
+const acosFixed = (x) => HALF_PI - asinFixed(x);
+
+/* ---------- powers ---------- */
+function powInt(base, n) {
+  if (n === 0n) return ONE;
+  const neg = n < 0n;
+  let e = neg ? -n : n;
+  if (e > 100000n) throw new CalcError('Exponent too large');
+  let result = ONE, b = base;
+  while (e > 0n) {
+    if (e & 1n) result = mul(result, b);
+    e >>= 1n;
+    if (e > 0n) b = mul(b, b);
+  }
+  return neg ? div(ONE, result) : result;
+}
+function powFixed(x, y) {
+  if (y % ONE === 0n) {
+    const n = y / ONE;
+    if (x === 0n) {
+      if (n > 0n) return 0n;
+      throw new CalcError('0 to a non-positive power');
+    }
+    return powInt(x, n);
+  }
+  if (x < 0n) throw new CalcError('Fractional power of a negative number');
+  if (x === 0n) return 0n;
+  return expFixed(mul(y, lnFixed(x)));
+}
+
+/* ---------- factorial ---------- */
+function factorialFixed(x) {
+  if (x < 0n) throw new CalcError('n! needs a non-negative number');
+  if (x % ONE !== 0n) throw new CalcError('n! needs a whole number');
+  const n = x / ONE;
+  if (n > 3000n) throw new CalcError('n! too large');
+  let r = 1n;
+  for (let i = 2n; i <= n; i++) r *= i;
+  return r * ONE;
+}
+
+/* ---------- number <-> text ---------- */
+function parseNum(str) {
+  let s = str, neg = false;
+  if (s[0] === '-') { neg = true; s = s.slice(1); }
+  else if (s[0] === '+') s = s.slice(1);
+  const parts = s.split('.');
+  let ip = parts[0] || '0';
+  let fp = parts[1] || '';
+  if (fp.length > DEC) fp = fp.slice(0, DEC);
+  fp = fp.padEnd(DEC, '0');
+  let v = BigInt(ip) * ONE + BigInt(fp === '' ? '0' : fp);
+  return neg ? -v : v;
+}
+
+function formatFixed(v, maxFrac = 12) {
+  const neg = v < 0n;
+  let a = neg ? -v : v;
+  if (maxFrac < DEC) {
+    const drop = 10n ** BigInt(DEC - maxFrac);
+    a = ((a + drop / 2n) / drop) * drop;
+  }
+  const ip = a / ONE;
+  const frac = (a % ONE).toString().padStart(DEC, '0').slice(0, maxFrac).replace(/0+$/, '');
+  if (ip === 0n && frac === '') return '0';
+  return (neg ? '-' : '') + ip.toString() + (frac ? '.' + frac : '');
+}
+
+function sciString(v, sig = 12) {
+  const neg = v < 0n;
+  const a = neg ? -v : v;
+  if (a === 0n) return '0';
+  const s = a.toString();
+  const first = s.search(/[1-9]/);
+  const exp = s.length - 1 - first - DEC;
+  let digits = s.slice(first, first + sig + 1);
+  if (digits.length < sig + 1) digits = digits.padEnd(sig + 1, '0');
+  const roundUp = digits.charCodeAt(sig) >= 53; // '5'
+  let m = BigInt(digits.slice(0, sig));
+  if (roundUp) m += 1n;
+  let ms = m.toString();
+  let e = exp;
+  if (ms.length > sig) { ms = ms.slice(0, sig); e += 1; }
+  ms = ms.replace(/0+$/, '') || '0';
+  const head = ms[0] + (ms.length > 1 ? '.' + ms.slice(1) : '');
+  return (neg ? '-' : '') + head + 'e' + (e >= 0 ? '+' : '') + e;
+}
+
+function formatValue(v) {
+  if (v === 0n) return '0';
+  const a = v < 0n ? -v : v;
+  const ip = a / ONE;
+  if (ip.toString().length > 18) return sciString(v, 12);
+  if (ip === 0n) {
+    const frac = (a % ONE).toString().padStart(DEC, '0');
+    if (frac.search(/[1-9]/) >= 9) return sciString(v, 12); // < 1e-9
+  }
+  return formatFixed(v, 12);
+}
+
+/* exact round-trip string (used when chaining from a result) */
+const fullStr = (v) => formatFixed(v, DEC);
+
+/* ══════════════════════════════════════════════════════════════
+   EXPRESSION PARSER
+   ══════════════════════════════════════════════════════════════ */
+
+let angleMode = 'DEG';
+
+const toRad = (x) => angleMode === 'DEG'
+  ? div(mul(x, PI), 180n * ONE)
+  : x;
+const fromRad = (x) => angleMode === 'DEG'
+  ? div(mul(x, 180n * ONE), PI)
+  : x;
+
+const FUNCS = {
+  sin:  (x) => sinFixed(toRad(x)),
+  cos:  (x) => cosFixed(toRad(x)),
+  tan:  (x) => tanFixed(toRad(x)),
+  asin: (x) => fromRad(asinFixed(x)),
+  acos: (x) => fromRad(acosFixed(x)),
+  atan: (x) => fromRad(atanFixed(x)),
+  ln:   lnFixed,
+  log:  (x) => div(lnFixed(x), LN10),
+  sqrt: sqrtFixed,
+  exp:  expFixed,
+  abs:  (x) => (x < 0n ? -x : x)
+};
+
+function lex(s) {
+  const out = [];
+  let i = 0;
+  while (i < s.length) {
+    const c = s[i];
+    if (c === ' ' || c === '\t') { i++; continue; }
+    if ((c >= '0' && c <= '9') || c === '.') {
+      let j = i;
+      while (j < s.length && ((s[j] >= '0' && s[j] <= '9') || s[j] === '.')) j++;
+      out.push({ type: 'num', value: s.slice(i, j) });
+      i = j;
+    } else if (/[a-zA-Z]/.test(c)) {
+      let j = i;
+      while (j < s.length && /[a-zA-Z]/.test(s[j])) j++;
+      out.push({ type: 'name', value: s.slice(i, j).toLowerCase() });
+      i = j;
+    } else {
+      out.push({ type: 'op', value: c });
+      i++;
+    }
+  }
+  return out;
+}
+
+function parse(src) {
+  const toks = lex(src);
+  let pos = 0;
+
+  const peek = () => toks[pos];
+  const isOp = (v) => { const t = toks[pos]; return !!t && t.type === 'op' && t.value === v; };
+  const startsPrimary = () => {
+    const t = toks[pos];
+    if (!t) return false;
+    return t.type === 'num' || t.type === 'name' || (t.type === 'op' && t.value === '(');
+  };
+
+  function parseExpr() {
+    let left = parseTerm();
+    while (isOp('+') || isOp('-')) {
+      const op = toks[pos++].value;
+      const right = parseTerm();
+      left = op === '+' ? left + right : left - right;
+    }
+    return left;
+  }
+
+  function parseTerm() {
+    let left = parseUnary();
+    for (;;) {
+      if (isOp('*'))      { pos++; left = mul(left, parseUnary()); }
+      else if (isOp('/')) { pos++; left = div(left, parseUnary()); }
+      else if (startsPrimary()) left = mul(left, parseUnary());   // implicit ×
+      else break;
+    }
+    return left;
+  }
+
+  function parseUnary() {
+    if (isOp('-')) { pos++; return -parseUnary(); }
+    if (isOp('+')) { pos++; return parseUnary(); }
+    return parsePower();
+  }
+
+  function parsePower() {
+    const base = parsePostfix();
+    if (isOp('^')) {
+      pos++;
+      return powFixed(base, parseUnary());   // right-assoc
+    }
+    return base;
+  }
+
+  function parsePostfix() {
+    let v = parsePrimary();
+    for (;;) {
+      if (isOp('!'))      { pos++; v = factorialFixed(v); }
+      else if (isOp('%')) { pos++; v = v / 100n; }
+      else break;
+    }
+    return v;
+  }
+
+  function parsePrimary() {
+    const t = peek();
+    if (!t) throw new CalcError('Incomplete expression');
+    if (t.type === 'num') { pos++; return parseNum(t.value); }
+    if (t.type === 'name') {
+      pos++;
+      const name = t.value;
+      if (name === 'pi') return PI;
+      if (name === 'e')  return EULER;
+      const fn = FUNCS[name];
+      if (!fn) throw new CalcError('Unknown "' + name + '"');
+      if (!isOp('(')) throw new CalcError('Expected ( after ' + name);
+      pos++;
+      const arg = parseExpr();
+      if (!isOp(')')) throw new CalcError('Missing )');
+      pos++;
+      return fn(arg);
+    }
+    if (t.type === 'op' && t.value === '(') {
+      pos++;
+      const v = parseExpr();
+      if (!isOp(')')) throw new CalcError('Missing )');
+      pos++;
+      return v;
+    }
+    throw new CalcError('Unexpected "' + t.value + '"');
+  }
+
+  const result = parseExpr();
+  if (pos < toks.length) throw new CalcError('Unexpected "' + toks[pos].value + '"');
+  return result;
+}
+
+function evalSrc(src) {
+  let open = 0;
+  for (const c of src) {
+    if (c === '(') open++;
+    else if (c === ')') open--;
+  }
+  if (open > 0) src += ')'.repeat(open);      // auto-close
+  return parse(src);
+}
+
+/* ══════════════════════════════════════════════════════════════
+   UI STATE
+   ══════════════════════════════════════════════════════════════ */
+
+const state = {
+  tokens: [],        // array of token strings, e.g. ["sin(","45",")","+","2"]
+  fresh: true,       // next digit starts a new entry
+  lastResult: null,  // BigInt or null
+  lastExpr: '',
+  errMsg: null,
+  sci: true
+};
+
+const OPS = ['+', '-', '*', '/', '^'];
+const SUFFIX = ['!', '%', '^2', '^(-1)'];
+
+const TOKEN_DISPLAY = {
+  '*': '×', '/': '÷', '-': '−',
+  'pi': 'π', 'sqrt(': '√(',
+  '^2': '²', '^(-1)': '⁻¹'
+};
+
+const isNumTok = (t) => /^-?\d*\.?\d*$/.test(t) && /\d|\./.test(t);
+
+const $expr   = document.getElementById('expr');
+const $result = document.getElementById('result');
+const $sciPad = document.getElementById('sciPad');
+const $angle  = document.getElementById('angleChip');
+const $mode   = document.getElementById('modeChip');
+const $copy   = document.getElementById('copyChip');
+
+function renderTokens(toks) {
+  let out = '';
+  for (const t of toks) {
+    let d;
+    if (Object.prototype.hasOwnProperty.call(TOKEN_DISPLAY, t)) d = TOKEN_DISPLAY[t];
+    else if (/^-?\d/.test(t) && t.length > 20) d = t.slice(0, 18) + '…';
+    else d = t;
+    if (OPS.includes(t)) out += ' ' + d + ' ';
+    else out += d;
+  }
+  return out.trim();
+}
+
+function fitResult(el) {
+  const len = el.textContent.length;
+  const w = el.clientWidth || 320;
+  let size = Math.min(48, Math.max(26, w * 0.115));
+  if (len > 12) size = Math.max(15, size * 12 / len);
+  el.style.fontSize = size.toFixed(1) + 'px';
+}
+
+function update() {
+  const toks = state.tokens;
+  let canCopy = false;
+
+  if (toks.length === 0) {
+    if (state.lastResult !== null) {
+      $expr.textContent = state.lastExpr ? state.lastExpr + ' =' : '';
+      $result.textContent = formatValue(state.lastResult);
+      canCopy = true;
+    } else {
+      $expr.textContent = '';
+      $result.textContent = '0';
+    }
+    $result.classList.remove('preview', 'err');
+  } else {
+    $expr.textContent = renderTokens(toks);
+
+    if (state.errMsg) {
+      $result.textContent = state.errMsg;
+      $result.classList.add('err');
+      $result.classList.remove('preview');
+    } else {
+      $result.classList.remove('err');
+      let preview = null;
+      try { preview = evalSrc(toks.join('')); } catch (e) { /* incomplete */ }
+      if (preview !== null) {
+        $result.textContent = formatValue(preview);
+        $result.classList.add('preview');
+        canCopy = true;
+      } else {
+        $result.textContent = '';
+        $result.classList.add('preview');
+      }
+    }
+  }
+  $copy.classList.toggle('dim', !canCopy);
+  fitResult($result);
+}
+
+/* ══════════════════════════════════════════════════════════════
+   INPUT ACTIONS
+   ══════════════════════════════════════════════════════════════ */
+
+function clearError() { state.errMsg = null; }
+
+function pressDigit(d) {
+  clearError();
+  if (state.fresh) {
+    state.tokens = [];
+    state.lastResult = null;
+    state.lastExpr = '';
+    state.fresh = false;
+  }
+  const last = state.tokens[state.tokens.length - 1];
+  if (last !== undefined && isNumTok(last) && last.length < 20) {
+    if (d === '.' && last.includes('.')) return;
+    let t = last + d;
+    if (/^-?0\d/.test(t)) t = t.replace(/^(-?)0+(?=\d)/, '$1');
+    state.tokens[state.tokens.length - 1] = t;
+  } else {
+    state.tokens.push(d);
+  }
+  update();
+}
+
+function pressOp(op) {
+  clearError();
+  if (state.fresh) {
+    state.tokens = [];
+    state.fresh = false;
+    state.lastExpr = '';
+    if (state.lastResult !== null) state.tokens.push(fullStr(state.lastResult));
+  }
+  const last = state.tokens[state.tokens.length - 1];
+  if (last === undefined) {
+    if (op === '-') state.tokens.push('-');
+    else state.tokens.push('0', op);
+  } else if (OPS.includes(last)) {
+    state.tokens[state.tokens.length - 1] = op;
+  } else if (last === '(') {
+    if (op === '-') state.tokens.push('-');
+  } else {
+    state.tokens.push(op);
+  }
+  update();
+}
+
+function pressFn(val) {
+  clearError();
+  if (state.fresh) {
+    const prev = state.lastResult;
+    state.tokens = [];
+    state.lastExpr = '';
+    state.fresh = false;
+    state.lastResult = null;
+
+    if (prev !== null) {
+      if (val.endsWith('(')) {                       // prefix function
+        state.tokens.push(val, fullStr(prev), ')');
+        update();
+        return;
+      }
+      if (SUFFIX.includes(val) || val === '^') {     // postfix / power
+        state.tokens.push(fullStr(prev), val);
+        update();
+        return;
+      }
+    }
+  }
+  state.tokens.push(val);
+  update();
+}
+
+function doClear() {
+  state.tokens = [];
+  state.fresh = true;
+  state.lastResult = null;
+  state.lastExpr = '';
+  state.errMsg = null;
+  update();
+}
+
+function doBack() {
+  clearError();
+  if (state.fresh) {
+    state.lastResult = null;
+    state.lastExpr = '';
+    update();
+    return;
+  }
+  state.tokens.pop();
+  update();
+}
+
+function doPM() {
+  clearError();
+  if (state.fresh && state.lastResult !== null) {
+    state.lastResult = -state.lastResult;
+    update();
+    return;
+  }
+  const last = state.tokens[state.tokens.length - 1];
+  if (last !== undefined && isNumTok(last)) {
+    state.tokens[state.tokens.length - 1] =
+      last.startsWith('-') ? last.slice(1) : '-' + last;
+  } else {
+    state.tokens.push('-');
+  }
+  update();
+}
+
+function doEquals() {
+  if (state.tokens.length === 0) return;
+  const src = state.tokens.join('');
+  const pretty = renderTokens(state.tokens);
+  try {
+    const v = evalSrc(src);
+    state.lastExpr = pretty;
+    state.lastResult = v;
+    state.tokens = [];
+    state.fresh = true;
+    state.errMsg = null;
+  } catch (e) {
+    state.errMsg = (e instanceof CalcError) ? e.message : 'Syntax error';
+    state.lastResult = null;
+    state.fresh = false;
+  }
+  update();
+}
+
+function toggleAngle() {
+  angleMode = angleMode === 'DEG' ? 'RAD' : 'DEG';
+  $angle.textContent = angleMode;
+  $angle.classList.toggle('on', angleMode === 'DEG');
+  clearError();
+  update();
+}
+
+function toggleMode() {
+  state.sci = !state.sci;
+  $sciPad.classList.toggle('hidden', !state.sci);
+  $mode.textContent = state.sci ? 'SCI' : 'BASIC';
+  $mode.classList.toggle('on', state.sci);
+}
+
+/* ══════════════════════════════════════════════════════════════
+   COPY FULL-PRECISION RESULT
+   ══════════════════════════════════════════════════════════════ */
+
+/* the exact value currently on screen: committed result or live preview */
+function currentValue() {
+  if (state.errMsg) return null;
+  if (state.tokens.length === 0) return state.lastResult;
+  try { return evalSrc(state.tokens.join('')); } catch (e) { return null; }
+}
+
+function legacyCopy(text) {
+  const ta = document.createElement('textarea');
+  ta.value = text;
+  ta.setAttribute('readonly', '');
+  ta.style.position = 'fixed';
+  ta.style.top = '-1000px';
+  ta.style.opacity = '0';
+  document.body.appendChild(ta);
+  ta.select();
+  ta.setSelectionRange(0, text.length);
+  let ok = false;
+  try { ok = document.execCommand('copy'); } catch (_) { ok = false; }
+  document.body.removeChild(ta);
+  return ok;
+}
+
+let copyTimer = null;
+function flashCopy(ok) {
+  $copy.textContent = ok ? '✓ COPIED' : '✗ FAILED';
+  $copy.classList.toggle('ok', ok);
+  $copy.classList.toggle('bad', !ok);
+  $copy.classList.remove('dim');
+  clearTimeout(copyTimer);
+  copyTimer = setTimeout(() => {
+    $copy.textContent = '⧉ COPY';
+    $copy.classList.remove('ok', 'bad');
+    update();                       // restores the dim state if needed
+  }, 1200);
+}
+
+async function doCopy() {
+  const v = currentValue();
+  if (v === null) return;           // nothing on screen to copy
+  const text = fullStr(v);          // ← full 30-decimal precision
+
+  let ok = false;
+  try {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      await navigator.clipboard.writeText(text);
+      ok = true;
+    }
+  } catch (_) { ok = false; }
+  if (!ok) ok = legacyCopy(text);
+
+  flashCopy(ok);
+}
+
+/* ══════════════════════════════════════════════════════════════
+   WIRING
+   ══════════════════════════════════════════════════════════════ */
+
+function vibrate(ms) {
+  if (navigator.vibrate) { try { navigator.vibrate(ms); } catch (_) {} }
+}
+
+document.body.addEventListener('click', (e) => {
+  const btn = e.target.closest('button');
+  if (!btn) return;
+  const act = btn.dataset.act;
+  const val = btn.dataset.val;
+  switch (act) {
+    case 'digit':  pressDigit(val); break;
+    case 'op':     pressOp(val);    break;
+    case 'fn':     pressFn(val);    break;
+    case 'clear':  doClear();       break;
+    case 'back':   doBack();        break;
+    case 'pm':     doPM();          break;
+    case 'equals': doEquals();      break;
+    case 'angle':  toggleAngle();   break;
+    case 'mode':   toggleMode();    break;
+    case 'copy':   doCopy();        break;
+    default: return;
+  }
+  vibrate(8);
+});
+
+window.addEventListener('keydown', (e) => {
+  const k = e.key;
+  if ((e.ctrlKey || e.metaKey) && !e.altKey) {
+    if (k === 'c' || k === 'C') { doCopy(); e.preventDefault(); }
+    return;
+  }
+  if (e.altKey) return;
+  if (/^[0-9]$/.test(k)) { pressDigit(k); e.preventDefault(); }
+  else if (k === '.' || k === ',') { pressDigit('.'); e.preventDefault(); }
+  else if (k === '+') pressOp('+');
+  else if (k === '-') pressOp('-');
+  else if (k === '*') pressOp('*');
+  else if (k === '/') { pressOp('/'); e.preventDefault(); }
+  else if (k === '^') pressOp('^');
+  else if (k === '(') pressFn('(');
+  else if (k === ')') pressFn(')');
+  else if (k === '!') pressFn('!');
+  else if (k === '%') pressFn('%');
+  else if (k === 'Enter' || k === '=') { doEquals(); e.preventDefault(); }
+  else if (k === 'Backspace') { doBack(); e.preventDefault(); }
+  else if (k === 'Escape' || k === 'Delete') doClear();
+});
+
+window.addEventListener('resize', () => fitResult($result));
+
+/* boot */
+$sciPad.classList.remove('hidden');
+update();
+})();
+</script>
+</body>
+</html>
