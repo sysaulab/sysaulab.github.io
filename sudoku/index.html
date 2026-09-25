@@ -324,6 +324,16 @@ header{
   .stat b{font-size:15px}
   .actions button{padding:7px 2px 6px;font-size:10px}
 }
+
+.install{
+  width:100%; max-width:520px; margin:0 auto;
+  padding:11px; border:0; border-radius:13px;
+  background:var(--accent); color:#fff;
+  font:inherit; font-size:13px; font-weight:700; letter-spacing:.02em;
+  cursor:pointer; transition:transform .07s;
+}
+.install:active{transform:scale(.97)}
+
 </style>
 </head>
 <body>
@@ -355,6 +365,7 @@ header{
   </div>
 
   <div class="pad" id="pad"></div>
+  <button id="installBtn" class="install" hidden>⬇ Install app</button>
 
   <div class="actions">
     <button id="undoBtn"><span class="ico">↶</span>Undo</button>
@@ -937,6 +948,35 @@ document.addEventListener('touchend', e => {
 
 /* Boot */
 newGame('easy');
+
+/* ---------- PWA: service worker + install prompt ---------- */
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('sw.js').catch(() => {});
+  });
+}
+
+let deferredPrompt = null;
+const installBtn = $('installBtn');
+
+window.addEventListener('beforeinstallprompt', e => {
+  e.preventDefault();
+  deferredPrompt = e;
+  installBtn.hidden = false;
+});
+
+installBtn.addEventListener('click', async () => {
+  if (!deferredPrompt) return;
+  deferredPrompt.prompt();
+  await deferredPrompt.userChoice;
+  deferredPrompt = null;
+  installBtn.hidden = true;
+});
+
+window.addEventListener('appinstalled', () => {
+  installBtn.hidden = true;
+  deferredPrompt = null;
+});
 
 })();
 </script>
