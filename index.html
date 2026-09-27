@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="color-scheme" content="light dark">
+  <meta name="theme-color" content="#f6f7f9" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#0d1117" media="(prefers-color-scheme: dark)">
+  <title>sysaulab — Ad-free games and tools</title>
+  <meta name="description" content="Free, ad-free games and tools for mobile and browsers.">
+  <link rel="icon" href="favicon.ico">
+
+  <style>
+    /* ---------- Design tokens ---------- */
+    :root {
+      --bg: #f6f7f9;
+      --card: #ffffff;
+      --text: #14181f;
+      --muted: #5b6675;
+      --border: #e3e7ee;
+      --accent: #3b6ef6;
+      --radius: 16px;
+      --gap: clamp(12px, 2.5vw, 20px);
+      --shadow: 0 1px 2px rgba(16, 24, 40, .06), 0 8px 24px rgba(16, 24, 40, .06);
+      --shadow-hover: 0 2px 4px rgba(16, 24, 40, .08), 0 16px 32px rgba(16, 24, 40, .12);
+    }
+
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #0d1117;
+        --card: #161b22;
+        --text: #e6edf3;
+        --muted: #9aa7b4;
+        --border: #242c37;
+        --accent: #6f9bff;
+        --shadow: 0 1px 2px rgba(0, 0, 0, .4), 0 8px 24px rgba(0, 0, 0, .35);
+        --shadow-hover: 0 2px 4px rgba(0, 0, 0, .5), 0 16px 32px rgba(0, 0, 0, .45);
+      }
+    }
+
+    /* ---------- Base ---------- */
+    *, *::before, *::after { box-sizing: border-box; }
+
+    html { -webkit-text-size-adjust: 100%; }
+
+    body {
+      margin: 0 auto;
+      max-width: 1100px;
+      font-family: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      line-height: 1.4;
+      color: var(--text);
+      background: var(--bg);
+      /* Respect iPhone notch / home-indicator areas */
+      padding:
+        calc(env(safe-area-inset-top) + 24px)
+        calc(env(safe-area-inset-right) + 16px)
+        calc(env(safe-area-inset-bottom) + 32px)
+        calc(env(safe-area-inset-left) + 16px);
+    }
+
+    /* ---------- Header ---------- */
+    .hero {
+      text-align: center;
+      padding: 8px 0 clamp(20px, 5vw, 36px);
+    }
+
+    .hero h1 {
+      margin: 0 0 6px;
+      font-size: clamp(1.75rem, 6vw, 2.5rem);
+      letter-spacing: -0.02em;
+    }
+
+    .tagline {
+      margin: 0;
+      color: var(--muted);
+      font-size: clamp(0.95rem, 3.5vw, 1.05rem);
+    }
+
+    /* ---------- Grid ---------- */
+    .grid {
+      list-style: none;
+      margin: 0;
+      padding: 0;
+      display: grid;
+      gap: var(--gap);
+      /* 2 columns on most phones, more on tablets/desktop */
+      grid-template-columns: repeat(auto-fill, minmax(min(100%, 140px), 1fr));
+    }
+
+    /* ---------- Card ---------- */
+    .card {
+      display: flex;
+      flex-direction: column;
+      height: 100%;
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      overflow: hidden;
+      text-decoration: none;
+      color: inherit;
+      box-shadow: var(--shadow);
+      /* Touch behaviour */
+      -webkit-tap-highlight-color: transparent;
+      touch-action: manipulation;      /* kills the 300ms double-tap delay */
+      user-select: none;
+      transition: transform .15s ease, box-shadow .15s ease, border-color .15s ease;
+    }
+
+    .card img {
+      display: block;
+      width: 100%;
+      aspect-ratio: 4 / 3;
+      object-fit: cover;
+      background: var(--bg);
+    }
+
+    .card-title {
+      padding: 10px 12px 12px;
+      font-weight: 600;
+      font-size: clamp(0.875rem, 3.2vw, 1rem);
+      text-align: center;
+      /* ensures the whole label is a comfortable tap target */
+      min-height: 44px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    /* Pointer devices only — no sticky hover state on touch screens */
+    @media (hover: hover) and (pointer: fine) {
+      .card:hover {
+        transform: translateY(-3px);
+        border-color: var(--accent);
+        box-shadow: var(--shadow-hover);
+      }
+    }
+
+    /* Immediate touch feedback */
+    .card:active { transform: scale(.97); }
+
+    .card:focus-visible {
+      outline: 3px solid var(--accent);
+      outline-offset: 2px;
+    }
+
+    /* ---------- Footer ---------- */
+    .site-footer {
+      margin-top: clamp(28px, 6vw, 48px);
+      text-align: center;
+      color: var(--muted);
+      font-size: 0.85rem;
+    }
+
+    .site-footer a { color: inherit; }
+
+    @media (prefers-reduced-motion: reduce) {
+      .card { transition: none; }
+      .card:hover, .card:active { transform: none; }
+    }
+  </style>
+</head>
+
+<body>
+
+  <header class="hero">
+    <h1>sysaulab</h1>
+    <p class="tagline">Ad-free games and tools</p>
+  </header>
+
+  <main>
+    <ul class="grid">
+      <li>
+        <a class="card" href="platform.html">
+          <img src="platform.jpg" alt="" loading="lazy" decoding="async" width="400" height="300">
+          <span class="card-title">Platform</span>
+        </a>
+      </li>
+      <li>
+        <a class="card" href="maze.html">
+          <img src="maze.jpg" alt="" loading="lazy" decoding="async" width="400" height="300">
+          <span class="card-title">Maze</span>
+        </a>
+      </li>
+      <li>
+        <a class="card" href="mahjong.html">
+          <img src="mahjong.jpg" alt="" loading="lazy" decoding="async" width="400" height="300">
+          <span class="card-title">Mahjong</span>
+        </a>
+      </li>
+      <li>
+        <a class="card" href="klondike.html">
+          <img src="klondike.jpg" alt="" loading="lazy" decoding="async" width="400" height="300">
+          <span class="card-title">Klondike</span>
+        </a>
+      </li>
+      <li>
+        <a class="card" href="calculator.html">
+          <img src="calculator.jpg" alt="" loading="lazy" decoding="async" width="400" height="300">
+          <span class="card-title">Calculator</span>
+        </a>
+      </li>
+      <li>
+        <a class="card" href="sudoku.html">
+          <img src="sudoku.jpg" alt="" loading="lazy" decoding="async" width="400" height="300">
+          <span class="card-title">Sudoku</span>
+        </a>
+      </li>
+      <li>
+        <a class="card" href="othello.html">
+          <img src="othello.jpg" alt="" loading="lazy" decoding="async" width="400" height="300">
+          <span class="card-title">Othello</span>
+        </a>
+      </li>
+      <li>
+        <a class="card" href="ludo.html">
+          <img src="ludo.jpg" alt="" loading="lazy" decoding="async" width="400" height="300">
+          <span class="card-title">Ludo</span>
+        </a>
+      </li>
+      <li>
+        <a class="card" href="checkers.html">
+          <img src="checkers.jpg" alt="" loading="lazy" decoding="async" width="400" height="300">
+          <span class="card-title">Checkers</span>
+        </a>
+      </li>
+      <li>
+        <a class="card" href="connect.html">
+          <img src="connect.jpg" alt="" loading="lazy" decoding="async" width="400" height="300">
+          <span class="card-title">Connect Four</span>
+        </a>
+      </li>
+    </ul>
+  </main>
+
+  <footer class="site-footer">
+    <p>No ads. No tracking. Just games.</p>
+  </footer>
+
+</body>
+</html>

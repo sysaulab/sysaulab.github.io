@@ -1,0 +1,806 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<meta name="theme-color" content="#151821">
+<title>Ludo</title>
+<style>
+  :root{
+    --bg:#151821;
+    --panel:#212633;
+    --text:#e7ebf3;
+    --muted:#8b95a8;
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+  html,body{
+    margin:0;height:100%;overflow:hidden;background:var(--bg);color:var(--text);
+    font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;
+    user-select:none;-webkit-user-select:none;touch-action:manipulation;
+  }
+  #app{display:flex;flex-direction:column;height:100%;padding:10px;gap:8px;}
+
+  #top{display:flex;align-items:center;justify-content:center;gap:10px;}
+  #chips{display:flex;justify-content:center;gap:6px;flex-wrap:wrap;}
+  .chip{
+    display:flex;align-items:center;gap:5px;padding:5px 10px;border-radius:999px;
+    background:var(--panel);font-size:12px;font-weight:700;color:var(--muted);
+    transition:all .22s ease;border:2px solid transparent;
+  }
+  .chip.active{color:#fff;background:#2c3346;transform:translateY(-1px);
+    box-shadow:0 0 0 2px rgba(255,255,255,.08);}
+  .chip .dot{width:10px;height:10px;border-radius:50%;flex:none;}
+  .chip .cnt{opacity:.75;font-variant-numeric:tabular-nums;}
+
+  #reset{
+    background:var(--panel);border:none;color:var(--muted);
+    width:34px;height:34px;border-radius:12px;font-size:16px;cursor:pointer;
+    display:flex;align-items:center;justify-content:center;flex:none;
+    transition:background .15s,color .15s;
+  }
+  #reset:active{background:#2c3346;color:#fff;}
+
+  #boardWrap{flex:1;display:flex;align-items:center;justify-content:center;min-height:0;}
+  canvas{display:block;border-radius:16px;box-shadow:0 10px 34px rgba(0,0,0,.55);}
+
+  #bottom{
+    display:flex;align-items:center;justify-content:center;gap:18px;
+    padding-bottom:env(safe-area-inset-bottom);min-height:70px;
+  }
+  #msg{font-size:14px;font-weight:600;color:var(--text);min-width:130px;text-align:center;
+       line-height:1.25;}
+
+  #die{
+    width:60px;height:60px;border-radius:15px;background:#fff;display:grid;
+    grid-template-columns:repeat(3,1fr);grid-template-rows:repeat(3,1fr);
+    padding:7px;gap:1px;flex:none;border:none;cursor:pointer;padding:7px;
+    box-shadow:0 4px 0 #b9bec9, 0 8px 16px rgba(0,0,0,.45);
+    transition:transform .08s, box-shadow .08s, opacity .2s;
+  }
+  #die:active:not(:disabled){transform:translateY(3px);box-shadow:0 1px 0 #b9bec9,0 3px 8px rgba(0,0,0,.4);}
+  #die:disabled{opacity:.4;cursor:default;}
+  #die.rolling{animation:shake .12s infinite;}
+  @keyframes shake{
+    0%{transform:rotate(-7deg) scale(.96);}
+    50%{transform:rotate(7deg) scale(1.04);}
+    100%{transform:rotate(-7deg) scale(.96);}
+  }
+  .pip{width:10px;height:10px;border-radius:50%;background:#22262f;place-self:center;opacity:0;}
+  .pip.on{opacity:1;}
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="top">
+    <div id="chips"></div>
+    <button id="reset" aria-label="New game">↻</button>
+  </div>
+  <div id="boardWrap"><canvas id="board"></canvas></div>
+  <div id="bottom">
+    <div id="msg">Roll the dice</div>
+    <button id="die" aria-label="Roll dice"></button>
+  </div>
+</div>
+
+<script>
+(function(){
+'use strict';
+
+/* ============================================================
+   BOARD DATA
+   ============================================================ */
+
+// The 52-cell ring, clockwise. (x, y) in a 15x15 grid.
+const RING = [
+  [1,6],[2,6],[3,6],[4,6],[5,6],
+  [6,5],[6,4],[6,3],[6,2],[6,1],[6,0],
+  [7,0],
+  [8,0],[8,1],[8,2],[8,3],[8,4],[8,5],
+  [9,6],[10,6],[11,6],[12,6],[13,6],[14,6],
+  [14,7],
+  [14,8],[13,8],[12,8],[11,8],[10,8],[9,8],
+  [8,9],[8,10],[8,11],[8,12],[8,13],[8,14],
+  [7,14],
+  [6,14],[6,13],[6,12],[6,11],[6,10],[6,9],
+  [5,8],[4,8],[3,8],[2,8],[1,8],[0,8],
+  [0,7],
+  [0,6]
+];
+
+const PLAYERS = [
+  { key:'red',    name:'Red',    base:[0,0], start:51,
+    home:[[1,7],[2,7],[3,7],[4,7],[5,7]], goal:[6.82,7.5] },
+  { key:'green',  name:'Green',  base:[9,0], start:12,
+    home:[[7,1],[7,2],[7,3],[7,4],[7,5]], goal:[7.5,6.82] },
+  { key:'yellow', name:'Yellow', base:[9,9], start:25,
+    home:[[13,7],[12,7],[11,7],[10,7],[9,7]], goal:[8.18,7.5] },
+  { key:'blue',   name:'Blue',   base:[0,9], start:38,
+    home:[[7,13],[7,12],[7,11],[7,10],[7,9]], goal:[7.5,8.18] },
+];
+
+const COLORS = {
+  red:    { main:'#e63946', light:'#f7b3b8', dark:'#8d1620' },
+  green:  { main:'#2a9d3f', light:'#a9e0b2', dark:'#166b26' },
+  yellow: { main:'#efa51a', light:'#f9dc9a', dark:'#a86f00' },
+  blue:   { main:'#2563eb', light:'#aec6f9', dark:'#14408f' },
+};
+
+// safe cells: the four start squares + four "star" squares
+const SAFE = new Set([51, 12, 25, 38, 7, 20, 33, 46]);
+
+const GOAL_OFFS = [[-0.17,-0.17],[0.17,-0.17],[-0.17,0.17],[0.17,0.17]];
+
+/* ============================================================
+   STATE
+   ============================================================ */
+
+let tokens = [];          // tokens[player][idx] = {pos, rx, ry}
+let curPlayer = 0;
+let diceValue = 0;
+let phase = 'roll';       // 'roll' | 'move' | 'busy' | 'over'
+let legal = [];
+let sixStreak = 0;
+let winner = -1;
+let anim = null;
+let gameToken = 0;        // bump to invalidate pending timeouts on reset
+
+/* ============================================================
+   DOM
+   ============================================================ */
+
+const canvas  = document.getElementById('board');
+const ctx     = canvas.getContext('2d');
+const wrap    = document.getElementById('boardWrap');
+const chipsEl = document.getElementById('chips');
+const msgEl   = document.getElementById('msg');
+const dieBtn  = document.getElementById('die');
+const resetBtn= document.getElementById('reset');
+
+let cell = 30;
+
+/* build dice pips */
+for(let i=0;i<9;i++){
+  const s = document.createElement('span');
+  s.className = 'pip';
+  dieBtn.appendChild(s);
+}
+const pipEls = dieBtn.querySelectorAll('.pip');
+
+/* build chips */
+const chipEls = PLAYERS.map(p => {
+  const el = document.createElement('div');
+  el.className = 'chip';
+  el.innerHTML = `<span class="dot" style="background:${COLORS[p.key].main}"></span>` +
+                 `<span class="nm">${p.name}</span>` +
+                 `<span class="cnt">0/4</span>`;
+  chipsEl.appendChild(el);
+  return el;
+});
+
+/* ============================================================
+   HELPERS
+   ============================================================ */
+
+const isAI = p => p !== 0;
+
+function baseSlots(base){
+  const [bx,by] = base;
+  return [[bx+2,by+2],[bx+4,by+2],[bx+2,by+4],[bx+4,by+4]];
+}
+
+function tokenXY(pi, pos, idx){
+  const p = PLAYERS[pi];
+  if(pos === -1){
+    return baseSlots(p.base)[idx];
+  }
+  if(pos <= 51){
+    const c = RING[(p.start + pos) % 52];
+    return [c[0]+0.5, c[1]+0.5];
+  }
+  if(pos <= 56){
+    const c = p.home[pos-52];
+    return [c[0]+0.5, c[1]+0.5];
+  }
+  return [p.goal[0] + GOAL_OFFS[idx][0], p.goal[1] + GOAL_OFFS[idx][1]];
+}
+
+function roundRect(x,y,w,h,r){
+  r = Math.min(r, w/2, h/2);
+  ctx.beginPath();
+  ctx.moveTo(x+r,y);
+  ctx.arcTo(x+w,y,x+w,y+h,r);
+  ctx.arcTo(x+w,y+h,x,y+h,r);
+  ctx.arcTo(x,y+h,x,y,r);
+  ctx.arcTo(x,y,x+w,y,r);
+  ctx.closePath();
+}
+
+function drawStar(cx,cy,r,color){
+  ctx.beginPath();
+  for(let i=0;i<10;i++){
+    const ang = -Math.PI/2 + i*Math.PI/5;
+    const rad = (i % 2 === 0) ? r : r*0.44;
+    const x = cx + Math.cos(ang)*rad;
+    const y = cy + Math.sin(ang)*rad;
+    i === 0 ? ctx.moveTo(x,y) : ctx.lineTo(x,y);
+  }
+  ctx.closePath();
+  ctx.fillStyle = color;
+  ctx.fill();
+}
+
+/* ============================================================
+   GAME LOGIC
+   ============================================================ */
+
+function newGame(){
+  gameToken++;
+  anim = null;
+  tokens = PLAYERS.map((p,pi) => {
+    const slots = baseSlots(p.base);
+    return [0,1,2,3].map(i => ({ pos:-1, rx:slots[i][0], ry:slots[i][1] }));
+  });
+  curPlayer = 0;
+  diceValue = 0;
+  phase = 'roll';
+  legal = [];
+  sixStreak = 0;
+  winner = -1;
+  renderDie();
+  updateUI();
+  msgEl.textContent = 'Your turn — roll!';
+}
+
+function getLegalMoves(pi, d){
+  const out = [];
+  for(let ti=0; ti<4; ti++){
+    const t = tokens[pi][ti];
+    if(t.pos === 57) continue;
+    if(t.pos === -1){
+      if(d === 6) out.push({ token:ti, from:-1, to:0 });
+    } else {
+      const to = t.pos + d;
+      if(to <= 57) out.push({ token:ti, from:t.pos, to });
+    }
+  }
+  return out;
+}
+
+function renderDie(){
+  const sets = {
+    0: [], 1: [4], 2: [0,8], 3: [0,4,8],
+    4: [0,2,6,8], 5: [0,2,4,6,8], 6: [0,2,3,5,6,8]
+  };
+  const on = new Set(sets[diceValue] || []);
+  pipEls.forEach((el,i) => el.classList.toggle('on', on.has(i)));
+}
+
+function updateUI(){
+  chipEls.forEach((el,i) => {
+    el.classList.toggle('active', i === curPlayer && winner < 0);
+    const done = tokens[i] ? tokens[i].filter(t => t.pos === 57).length : 0;
+    el.querySelector('.cnt').textContent = done + '/4';
+  });
+
+  if(winner >= 0){
+    msgEl.textContent = PLAYERS[winner].name + ' wins! 🎉';
+  } else if(phase === 'move'){
+    msgEl.textContent = 'Tap a glowing token';
+  } else if(phase === 'busy'){
+    msgEl.textContent = PLAYERS[curPlayer].name + '…';
+  } else if(phase === 'roll'){
+    msgEl.textContent = isAI(curPlayer)
+      ? PLAYERS[curPlayer].name + ' to roll'
+      : 'Your turn — roll!';
+  }
+
+  const canRoll = (phase === 'roll' && !isAI(curPlayer) && winner < 0);
+  dieBtn.disabled = !canRoll;
+  dieBtn.classList.remove('rolling');
+}
+
+/* ---------- dice ---------- */
+
+function rollDice(){
+  if(phase !== 'roll' || winner >= 0) return;
+  phase = 'busy';
+  dieBtn.disabled = true;
+  dieBtn.classList.add('rolling');
+  updateUI();
+
+  const my = gameToken;
+  let ticks = 0;
+  const iv = setInterval(() => {
+    if(my !== gameToken){ clearInterval(iv); return; }
+    diceValue = 1 + Math.floor(Math.random()*6);
+    renderDie();
+    if(++ticks >= 9){
+      clearInterval(iv);
+      dieBtn.classList.remove('rolling');
+      finishRoll(my);
+    }
+  }, 55);
+}
+
+function finishRoll(my){
+  if(my !== gameToken) return;
+  diceValue = 1 + Math.floor(Math.random()*6);
+  renderDie();
+
+  // three sixes rule
+  if(diceValue === 6){
+    sixStreak++;
+    if(sixStreak >= 3){
+      sixStreak = 0;
+      msgEl.textContent = 'Three 6s — turn lost!';
+      phase = 'busy';
+      setTimeout(() => { if(my === gameToken) nextPlayer(); }, 900);
+      return;
+    }
+  }
+
+  legal = getLegalMoves(curPlayer, diceValue);
+
+  if(legal.length === 0){
+    phase = 'busy';
+    msgEl.textContent = 'No moves available';
+    setTimeout(() => { if(my === gameToken) nextPlayer(); }, 750);
+    return;
+  }
+
+  // auto-play if every legal move is effectively identical
+  const uniq = new Set(legal.map(m => m.from + '>' + m.to));
+  if(uniq.size === 1 && legal.length > 0){
+    phase = 'busy';
+    setTimeout(() => {
+      if(my === gameToken) doMove(curPlayer, legal[0]);
+    }, 380);
+    return;
+  }
+
+  if(isAI(curPlayer)){
+    phase = 'busy';
+    setTimeout(() => {
+      if(my !== gameToken) return;
+      doMove(curPlayer, aiChoose(curPlayer, legal));
+    }, 520);
+    return;
+  }
+
+  phase = 'move';
+  updateUI();
+}
+
+/* ---------- AI ---------- */
+
+function aiChoose(pi, moves){
+  let best = moves[0], bestScore = -Infinity;
+  for(const m of moves){
+    let s = 0;
+    if(m.to === 57) s += 120;
+    else if(m.to >= 52) s += 60 + (m.to - 52) * 6;
+
+    // capture bonus
+    if(m.to <= 51){
+      const abs = (PLAYERS[pi].start + m.to) % 52;
+      if(!SAFE.has(abs)){
+        for(let q=0;q<4;q++){
+          if(q === pi) continue;
+          for(const ot of tokens[q]){
+            if(ot.pos >= 0 && ot.pos <= 51 &&
+               ((PLAYERS[q].start + ot.pos) % 52) === abs) s += 90;
+          }
+        }
+      } else {
+        s += 12; // safe square is good
+      }
+    }
+    if(m.from === -1) s += 35;
+    if(m.to <= 51) s += m.to * 0.15;
+    s += Math.random() * 4;
+
+    if(s > bestScore){ bestScore = s; best = m; }
+  }
+  return best;
+}
+
+/* ---------- move execution ---------- */
+
+function doMove(pi, move){
+  phase = 'busy';
+  updateUI();
+
+  const tk = tokens[pi][move.token];
+  const cells = [];
+  cells.push([tk.rx, tk.ry]);
+
+  if(move.from === -1){
+    cells.push(tokenXY(pi, 0, move.token));
+  } else {
+    for(let r = move.from + 1; r <= move.to; r++){
+      cells.push(tokenXY(pi, r, move.token));
+    }
+  }
+
+  const stepDur = move.from === -1 ? 170 : 105;
+  startAnim(tk, cells, stepDur, () => completeMove(pi, move, tk));
+}
+
+function completeMove(pi, move, tk){
+  tk.pos = move.to;
+  const p = tokenXY(pi, move.to, move.token);
+  tk.rx = p[0];
+  tk.ry = p[1];
+
+  /* captures */
+  let captured = false;
+  if(move.to <= 51){
+    const abs = (PLAYERS[pi].start + move.to) % 52;
+    if(!SAFE.has(abs)){
+      for(let q=0;q<4;q++){
+        if(q === pi) continue;
+        tokens[q].forEach((ot, oi) => {
+          if(ot.pos >= 0 && ot.pos <= 51 &&
+             ((PLAYERS[q].start + ot.pos) % 52) === abs){
+            ot.pos = -1;
+            const bp = tokenXY(q, -1, oi);
+            ot.rx = bp[0];
+            ot.ry = bp[1];
+            captured = true;
+          }
+        });
+      }
+    }
+  }
+
+  /* win? */
+  if(tokens[pi].every(t => t.pos === 57)){
+    winner = pi;
+    phase = 'over';
+    updateUI();
+    return;
+  }
+
+  const gotHome = (move.to === 57);
+  const extra = (diceValue === 6) || captured || gotHome;
+
+  if(extra){
+    phase = 'roll';
+    diceValue = 0;
+    renderDie();
+    updateUI();
+    const my = gameToken;
+    if(isAI(curPlayer)){
+      setTimeout(() => { if(my === gameToken) rollDice(); }, 620);
+    }
+  } else {
+    nextPlayer();
+  }
+}
+
+function nextPlayer(){
+  sixStreak = 0;
+  curPlayer = (curPlayer + 1) % 4;
+  diceValue = 0;
+  legal = [];
+  phase = 'roll';
+  renderDie();
+  updateUI();
+  const my = gameToken;
+  if(isAI(curPlayer)){
+    setTimeout(() => { if(my === gameToken) rollDice(); }, 750);
+  }
+}
+
+/* ============================================================
+   ANIMATION
+   ============================================================ */
+
+function startAnim(token, cells, dur, onDone){
+  anim = { token, cells, i:0, start: performance.now(), dur, onDone };
+}
+
+function tickAnim(now){
+  if(!anim) return;
+  let guard = 0;
+  while(anim && now - anim.start >= anim.dur && guard++ < 2000){
+    anim.i++;
+    if(anim.i >= anim.cells.length - 1){
+      const last = anim.cells[anim.cells.length - 1];
+      anim.token.rx = last[0];
+      anim.token.ry = last[1];
+      const cb = anim.onDone;
+      anim = null;
+      if(cb) cb();
+      return;
+    }
+    anim.start += anim.dur;
+  }
+  if(!anim) return;
+  const t = Math.min(1, (now - anim.start) / anim.dur);
+  const a = anim.cells[anim.i];
+  const b = anim.cells[anim.i + 1];
+  anim.token.rx = a[0] + (b[0] - a[0]) * t;
+  anim.token.ry = a[1] + (b[1] - a[1]) * t;
+}
+
+/* ============================================================
+   RENDERING
+   ============================================================ */
+
+function drawBase(p){
+  const [bx,by] = p.base;
+  const x = bx*cell, y = by*cell, w = 6*cell;
+  const c = COLORS[p.key];
+
+  ctx.fillStyle = c.main;
+  roundRect(x + w*0.045, y + w*0.045, w*0.91, w*0.91, cell*0.55);
+  ctx.fill();
+
+  ctx.fillStyle = '#ffffff';
+  roundRect(x + w*0.17, y + w*0.17, w*0.66, w*0.66, cell*0.45);
+  ctx.fill();
+
+  ctx.fillStyle = c.light;
+  for(const [sx,sy] of baseSlots(p.base)){
+    ctx.beginPath();
+    ctx.arc(sx*cell, sy*cell, cell*0.52, 0, Math.PI*2);
+    ctx.fill();
+  }
+}
+
+function drawCenter(){
+  const x0 = 6*cell, y0 = 6*cell, s = 3*cell;
+  const cx = x0 + s/2, cy = y0 + s/2;
+
+  const tris = [
+    { pts:[[x0,y0],[x0,y0+s],[cx,cy]], color: COLORS.red.main },
+    { pts:[[x0,y0],[x0+s,y0],[cx,cy]], color: COLORS.green.main },
+    { pts:[[x0+s,y0],[x0+s,y0+s],[cx,cy]], color: COLORS.yellow.main },
+    { pts:[[x0,y0+s],[x0+s,y0+s],[cx,cy]], color: COLORS.blue.main },
+  ];
+
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(x0, y0, s, s);
+
+  for(const t of tris){
+    ctx.beginPath();
+    ctx.moveTo(t.pts[0][0], t.pts[0][1]);
+    ctx.lineTo(t.pts[1][0], t.pts[1][1]);
+    ctx.lineTo(t.pts[2][0], t.pts[2][1]);
+    ctx.closePath();
+    ctx.fillStyle = t.color;
+    ctx.fill();
+    ctx.strokeStyle = '#ffffff';
+    ctx.lineWidth = Math.max(1.5, cell*0.055);
+    ctx.stroke();
+  }
+}
+
+function drawBoard(){
+  const W = 15*cell;
+  ctx.clearRect(0,0,W,W);
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(0,0,W,W);
+
+  // bases
+  for(const p of PLAYERS) drawBase(p);
+
+  // ring
+  const startOwner = {};
+  PLAYERS.forEach((p,i) => startOwner[p.start] = i);
+
+  const lw = Math.max(1, cell*0.035);
+  for(let i=0;i<52;i++){
+    const [x,y] = RING[i];
+    const px = x*cell, py = y*cell;
+
+    let fill = '#ffffff';
+    if(startOwner[i] !== undefined) fill = COLORS[PLAYERS[startOwner[i]].key].light;
+    else if(SAFE.has(i)) fill = '#eef1f7';
+
+    ctx.fillStyle = fill;
+    ctx.fillRect(px, py, cell, cell);
+
+    ctx.strokeStyle = '#b9c0cc';
+    ctx.lineWidth = lw;
+    ctx.strokeRect(px + lw/2, py + lw/2, cell - lw, cell - lw);
+
+    if(SAFE.has(i) && startOwner[i] === undefined){
+      drawStar(px + cell/2, py + cell/2, cell*0.26, '#9aa3b5');
+    }
+  }
+
+  // home columns
+  for(const p of PLAYERS){
+    const c = COLORS[p.key];
+    for(const [x,y] of p.home){
+      ctx.fillStyle = c.main;
+      ctx.fillRect(x*cell, y*cell, cell, cell);
+      ctx.strokeStyle = 'rgba(255,255,255,0.5)';
+      ctx.lineWidth = lw;
+      ctx.strokeRect(x*cell + lw/2, y*cell + lw/2, cell - lw, cell - lw);
+    }
+  }
+
+  drawCenter();
+
+  // subtle inner border
+  ctx.strokeStyle = 'rgba(0,0,0,0.06)';
+  ctx.lineWidth = 2;
+  ctx.strokeRect(1,1,W-2,W-2);
+}
+
+function computeStacks(){
+  const map = new Map();
+  tokens.forEach((arr, pi) => arr.forEach((t, ti) => {
+    if(t.pos < 0 || t.pos > 56) return;
+    const key = t.pos <= 51
+      ? 'r' + ((PLAYERS[pi].start + t.pos) % 52)
+      : 'h' + pi + '_' + t.pos;
+    if(!map.has(key)) map.set(key, []);
+    map.get(key).push([pi, ti]);
+  }));
+  return map;
+}
+
+function drawToken(px, py, r, pi, ti, selectable, pulse){
+  const c = COLORS[PLAYERS[pi].key];
+
+  // shadow
+  ctx.beginPath();
+  ctx.arc(px, py + r*0.16, r*0.98, 0, Math.PI*2);
+  ctx.fillStyle = 'rgba(0,0,0,0.22)';
+  ctx.fill();
+
+  // selectable halo
+  if(selectable){
+    ctx.beginPath();
+    ctx.arc(px, py, r + cell*(0.10 + 0.06*pulse), 0, Math.PI*2);
+    ctx.strokeStyle = 'rgba(255,255,255,' + (0.55 + 0.45*pulse) + ')';
+    ctx.lineWidth = cell*0.09;
+    ctx.stroke();
+  }
+
+  // body
+  ctx.beginPath();
+  ctx.arc(px, py, r, 0, Math.PI*2);
+  ctx.fillStyle = c.main;
+  ctx.fill();
+  ctx.lineWidth = Math.max(1.4, r*0.22);
+  ctx.strokeStyle = '#ffffff';
+  ctx.stroke();
+
+  // inner ring for depth
+  ctx.beginPath();
+  ctx.arc(px, py, r*0.62, 0, Math.PI*2);
+  ctx.strokeStyle = 'rgba(0,0,0,0.13)';
+  ctx.lineWidth = Math.max(1, r*0.14);
+  ctx.stroke();
+
+  // highlight
+  ctx.beginPath();
+  ctx.arc(px - r*0.30, py - r*0.33, r*0.27, 0, Math.PI*2);
+  ctx.fillStyle = 'rgba(255,255,255,0.65)';
+  ctx.fill();
+}
+
+function drawTokens(){
+  const stacks = computeStacks();
+  const pulse = (Math.sin(performance.now()/280) + 1) / 2;
+
+  for(let pi=0; pi<4; pi++){
+    for(let ti=0; ti<4; ti++){
+      const t = tokens[pi][ti];
+
+      let dx = 0, dy = 0;
+      if(t.pos >= 0 && t.pos <= 56){
+        const key = t.pos <= 51
+          ? 'r' + ((PLAYERS[pi].start + t.pos) % 52)
+          : 'h' + pi + '_' + t.pos;
+        const arr = stacks.get(key);
+        if(arr && arr.length > 1){
+          const idx = arr.findIndex(a => a[0] === pi && a[1] === ti);
+          const ang = (idx / arr.length) * Math.PI * 2 - Math.PI/2;
+          dx = Math.cos(ang) * cell * 0.15;
+          dy = Math.sin(ang) * cell * 0.15;
+        }
+      }
+
+      const px = t.rx * cell + dx;
+      const py = t.ry * cell + dy;
+      const r  = cell * (t.pos === 57 ? 0.245 : 0.355);
+
+      const selectable = (phase === 'move' && pi === curPlayer &&
+                          legal.some(m => m.token === ti));
+
+      drawToken(px, py, r, pi, ti, selectable, pulse);
+    }
+  }
+}
+
+function draw(){
+  drawBoard();
+  drawTokens();
+}
+
+/* ============================================================
+   MAIN LOOP + RESIZE
+   ============================================================ */
+
+function loop(now){
+  tickAnim(now);
+  draw();
+  requestAnimationFrame(loop);
+}
+
+function resize(){
+  const w = wrap.clientWidth;
+  const h = wrap.clientHeight;
+  const s = Math.max(120, Math.min(w, h));
+  cell = s / 15;
+
+  const dpr = Math.min(window.devicePixelRatio || 1, 2.5);
+  canvas.width  = Math.round(s * dpr);
+  canvas.height = Math.round(s * dpr);
+  canvas.style.width  = s + 'px';
+  canvas.style.height = s + 'px';
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  draw();
+}
+
+if(window.ResizeObserver){
+  new ResizeObserver(resize).observe(wrap);
+}
+window.addEventListener('resize', resize);
+window.addEventListener('orientationchange', () => setTimeout(resize, 120));
+
+/* ============================================================
+   INPUT
+   ============================================================ */
+
+canvas.addEventListener('pointerdown', e => {
+  if(phase !== 'move' || winner >= 0) return;
+  if(isAI(curPlayer)) return;
+
+  const rect = canvas.getBoundingClientRect();
+  const x = (e.clientX - rect.left) / cell;
+  const y = (e.clientY - rect.top) / cell;
+
+  let best = null, bestD = 0.8;
+  for(let pi=0; pi<4; pi++){
+    for(let ti=0; ti<4; ti++){
+      const t = tokens[pi][ti];
+      const d = Math.hypot(t.rx - x, t.ry - y);
+      if(d < bestD){ bestD = d; best = [pi, ti]; }
+    }
+  }
+  if(!best) return;
+  if(best[0] !== curPlayer) return;
+
+  const mv = legal.find(m => m.token === best[1]);
+  if(mv){
+    e.preventDefault();
+    doMove(curPlayer, mv);
+  }
+});
+
+dieBtn.addEventListener('click', rollDice);
+
+resetBtn.addEventListener('click', () => {
+  newGame();
+  resize();
+});
+
+/* ============================================================
+   BOOT
+   ============================================================ */
+
+newGame();
+resize();
+requestAnimationFrame(loop);
+
+})();
+</script>
+</body>
+</html>

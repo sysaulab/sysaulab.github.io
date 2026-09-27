@@ -1,0 +1,661 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#0b0e13">
+<title>Othello</title>
+<style>
+  :root{
+    --felt:#1a6b45;
+    --db: radial-gradient(circle at 34% 28%, #66707e 0%, #1b212a 58%, #05070a 100%);
+    --dw: radial-gradient(circle at 34% 28%, #ffffff 0%, #e8ecf1 52%, #b0b9c4 100%);
+  }
+
+  *{ box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+
+  html,body{
+    height:100%;
+    margin:0;
+    overscroll-behavior:none;
+  }
+
+  body{
+    background: radial-gradient(circle at 50% -10%, #1d2733 0%, #0b0e13 62%);
+    color:#e7edf5;
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    display:flex; align-items:center; justify-content:center;
+    user-select:none; -webkit-user-select:none;
+    touch-action:manipulation;
+    padding: calc(10px + env(safe-area-inset-top)) 12px calc(10px + env(safe-area-inset-bottom));
+  }
+
+  .app{
+    display:flex; flex-direction:column; align-items:center; gap:12px;
+    width:min(92vw, 520px);
+  }
+
+  /* ---------- players ---------- */
+  .players{ display:flex; gap:10px; width:100%; }
+
+  .player{
+    flex:1; min-width:0;
+    display:flex; align-items:center; gap:8px;
+    padding:9px 12px;
+    border-radius:13px;
+    background:rgba(255,255,255,.05);
+    border:1px solid rgba(255,255,255,.07);
+    transition: background .2s, border-color .2s, box-shadow .2s;
+  }
+  .player.right{ justify-content:flex-end; }
+  .player.active{
+    border-color:rgba(122,196,255,.55);
+    background:rgba(122,196,255,.10);
+    box-shadow:0 0 18px rgba(122,196,255,.18);
+  }
+  .pname{ font-size:13px; font-weight:600; letter-spacing:.02em; opacity:.85;
+          white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .pcount{ font-size:19px; font-weight:800; font-variant-numeric:tabular-nums; margin-left:auto; }
+  .player.right .pcount{ margin-left:0; margin-right:auto; }
+
+  .chip{
+    width:17px; height:17px; border-radius:50%; flex:0 0 auto;
+    box-shadow:0 1px 3px rgba(0,0,0,.6);
+  }
+  .chip.black{ background:var(--db); }
+  .chip.white{ background:var(--dw); }
+
+  /* ---------- board ---------- */
+  .board{
+    position:relative;
+    width:min(92vw, 520px, 58vh);
+    width:min(92vw, 520px, 58dvh);
+    aspect-ratio:1 / 1;
+    display:grid;
+    grid-template-columns:repeat(8, 1fr);
+    grid-template-rows:repeat(8, 1fr);
+    background-color:var(--felt);
+    background-image:
+      linear-gradient(rgba(0,0,0,.17) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(0,0,0,.17) 1px, transparent 1px);
+    background-size:12.5% 12.5%;
+    border-radius:13px;
+    overflow:hidden;
+    touch-action:manipulation;
+    box-shadow:
+      0 20px 45px rgba(0,0,0,.55),
+      0 0 0 2px rgba(255,255,255,.07),
+      inset 0 0 70px rgba(0,0,0,.35);
+  }
+
+  .cell{ position:relative; }
+
+  .cell.hint::after{
+    content:'';
+    position:absolute; left:50%; top:50%;
+    width:24%; height:24%;
+    border-radius:50%;
+    background:rgba(255,255,255,.35);
+    box-shadow:0 0 10px rgba(255,255,255,.25);
+    animation:pulse 1.8s ease-in-out infinite;
+  }
+  @keyframes pulse{
+    0%,100%{ opacity:.4; transform:translate(-50%,-50%) scale(.8); }
+    50%    { opacity:1;  transform:translate(-50%,-50%) scale(1.18); }
+  }
+
+  /* ---------- discs ---------- */
+  .disc{
+    position:absolute; inset:6%;
+    border-radius:50%;
+    animation-fill-mode:both;
+    will-change:transform;
+    box-shadow:0 2px 5px rgba(0,0,0,.5), inset 0 -2px 5px rgba(0,0,0,.35);
+  }
+  .disc.black{ background:var(--db); }
+  .disc.white{ background:var(--dw); box-shadow:0 2px 5px rgba(0,0,0,.4), inset 0 -2px 5px rgba(0,0,0,.12); }
+
+  @keyframes place{
+    from{ transform:scale(.25); opacity:0; }
+    to  { transform:scale(1);   opacity:1; }
+  }
+  .disc.place{ animation:place .26s cubic-bezier(.34,1.56,.64,1) both; }
+
+  @keyframes flipToWhite{
+    0%  { transform:scaleX(1);   background:var(--db); }
+    49% { transform:scaleX(.06); background:var(--db); }
+    51% { transform:scaleX(.06); background:var(--dw); }
+    100%{ transform:scaleX(1);   background:var(--dw); }
+  }
+  @keyframes flipToBlack{
+    0%  { transform:scaleX(1);   background:var(--dw); }
+    49% { transform:scaleX(.06); background:var(--dw); }
+    51% { transform:scaleX(.06); background:var(--db); }
+    100%{ transform:scaleX(1);   background:var(--db); }
+  }
+  .disc.flipToWhite{ animation:flipToWhite .34s ease-in-out both; }
+  .disc.flipToBlack{ animation:flipToBlack .34s ease-in-out both; }
+
+  /* ---------- status & controls ---------- */
+  .status{
+    font-size:14px; font-weight:600; letter-spacing:.02em;
+    min-height:20px; text-align:center; opacity:.9;
+  }
+
+  .controls{ display:flex; gap:10px; width:100%; }
+
+  .btn{
+    flex:1;
+    appearance:none; border:1px solid rgba(255,255,255,.12);
+    background:rgba(255,255,255,.07);
+    color:#e7edf5;
+    font:inherit; font-size:14px; font-weight:600;
+    padding:12px 10px;
+    border-radius:12px;
+    cursor:pointer;
+    touch-action:manipulation;
+    transition: background .15s, transform .1s, border-color .15s;
+  }
+  .btn:active{ transform:scale(.96); background:rgba(255,255,255,.14); }
+  .btn.primary{
+    background:linear-gradient(180deg,#2f8b5d,#1e6a44);
+    border-color:rgba(255,255,255,.18);
+  }
+  .btn.primary:active{ background:linear-gradient(180deg,#37a06b,#237a4e); }
+
+  /* ---------- overlay ---------- */
+  .overlay{
+    position:fixed; inset:0;
+    display:none;
+    align-items:center; justify-content:center;
+    background:rgba(5,8,12,.66);
+    backdrop-filter:blur(6px);
+    -webkit-backdrop-filter:blur(6px);
+    z-index:10;
+    padding:20px;
+  }
+  .overlay.show{ display:flex; animation:fadeIn .25s ease both; }
+  @keyframes fadeIn{ from{opacity:0} to{opacity:1} }
+
+  .card{
+    width:min(86vw, 320px);
+    background:linear-gradient(180deg,#1b232e,#121820);
+    border:1px solid rgba(255,255,255,.1);
+    border-radius:20px;
+    padding:26px 22px 22px;
+    text-align:center;
+    box-shadow:0 24px 60px rgba(0,0,0,.6);
+    animation:pop .3s cubic-bezier(.34,1.4,.64,1) both;
+  }
+  @keyframes pop{ from{ transform:scale(.88); opacity:0 } to{ transform:scale(1); opacity:1 } }
+
+  .card h2{ margin:0 0 8px; font-size:22px; letter-spacing:.01em; }
+  .card p{ margin:0 0 20px; font-size:15px; opacity:.7; font-variant-numeric:tabular-nums; }
+</style>
+</head>
+<body>
+
+<div class="app">
+  <div class="players">
+    <div class="player" id="pBlack">
+      <span class="chip black"></span>
+      <span class="pname" id="nameBlack">Black</span>
+      <span class="pcount" id="scoreBlack">2</span>
+    </div>
+    <div class="player right" id="pWhite">
+      <span class="pcount" id="scoreWhite">2</span>
+      <span class="pname" id="nameWhite">White</span>
+      <span class="chip white"></span>
+    </div>
+  </div>
+
+  <div class="board" id="board"></div>
+
+  <div class="status" id="status">Black to move</div>
+
+  <div class="controls">
+    <button class="btn" id="newGame">New</button>
+    <button class="btn" id="undo">Undo</button>
+    <button class="btn" id="modeBtn">vs CPU</button>
+  </div>
+</div>
+
+<div class="overlay" id="overlay">
+  <div class="card">
+    <h2 id="ovTitle">Black wins!</h2>
+    <p id="ovScore">32 – 32</p>
+    <button class="btn primary" id="ovBtn">Play again</button>
+  </div>
+</div>
+
+<script>
+(function () {
+  'use strict';
+
+  const EMPTY = 0, BLACK = 1, WHITE = 2;
+  const DIRS = [[-1,-1],[-1,0],[-1,1],[0,-1],[0,1],[1,-1],[1,0],[1,1]];
+
+  // ---------------------------------------------------------------- DOM
+  const boardEl   = document.getElementById('board');
+  const statusEl  = document.getElementById('status');
+  const overlay   = document.getElementById('overlay');
+  const ovTitle   = document.getElementById('ovTitle');
+  const ovScore   = document.getElementById('ovScore');
+  const scoreEls  = { 1: document.getElementById('scoreBlack'), 2: document.getElementById('scoreWhite') };
+  const playerEls = { 1: document.getElementById('pBlack'),      2: document.getElementById('pWhite') };
+  const nameEls   = { 1: document.getElementById('nameBlack'),   2: document.getElementById('nameWhite') };
+
+  // ---------------------------------------------------------------- state
+  let board, turn, history, busy, over;
+  let mode = 'cpu';          // 'cpu' | 'pvp'
+  let cpuColor = WHITE;      // human plays BLACK
+  let cellEls = [], discEls = [];
+  let timer = null;
+
+  const inB = (r, c) => r >= 0 && r < 8 && c >= 0 && c < 8;
+  const other = p => 3 - p;
+
+  // ---------------------------------------------------------------- board build
+  function buildCells() {
+    boardEl.innerHTML = '';
+    cellEls = []; discEls = [];
+    for (let r = 0; r < 8; r++) {
+      cellEls[r] = []; discEls[r] = [];
+      for (let c = 0; c < 8; c++) {
+        const el = document.createElement('div');
+        el.className = 'cell';
+        el.dataset.r = r;
+        el.dataset.c = c;
+        boardEl.appendChild(el);
+        cellEls[r][c] = el;
+        discEls[r][c] = null;
+      }
+    }
+  }
+
+  // ---------------------------------------------------------------- rules
+  function getFlips(b, r, c, p) {
+    if (b[r][c] !== EMPTY) return [];
+    const o = other(p), out = [];
+    for (let d = 0; d < 8; d++) {
+      const dr = DIRS[d][0], dc = DIRS[d][1];
+      let rr = r + dr, cc = c + dc;
+      const line = [];
+      while (inB(rr, cc) && b[rr][cc] === o) {
+        line.push([rr, cc]);
+        rr += dr; cc += dc;
+      }
+      if (line.length && inB(rr, cc) && b[rr][cc] === p) {
+        for (let i = 0; i < line.length; i++) out.push(line[i]);
+      }
+    }
+    return out;
+  }
+
+  function legalMoves(b, p) {
+    const out = [];
+    for (let r = 0; r < 8; r++) {
+      for (let c = 0; c < 8; c++) {
+        const f = getFlips(b, r, c, p);
+        if (f.length) out.push({ r, c, flips: f });
+      }
+    }
+    return out;
+  }
+
+  function countOf(b, p) {
+    let n = 0;
+    for (let r = 0; r < 8; r++)
+      for (let c = 0; c < 8; c++)
+        if (b[r][c] === p) n++;
+    return n;
+  }
+
+  // ---------------------------------------------------------------- rendering
+  function addDisc(r, c, color, animate) {
+    const d = document.createElement('div');
+    d.className = 'disc ' + (color === BLACK ? 'black' : 'white');
+    if (animate) {
+      d.classList.add('place');
+      d.addEventListener('animationend', () => d.classList.remove('place'), { once: true });
+    }
+    cellEls[r][c].appendChild(d);
+    discEls[r][c] = d;
+  }
+
+  function flipDisc(r, c, color, delay) {
+    const d = discEls[r][c];
+    if (!d) return;
+    d.classList.remove('black', 'white', 'flipToBlack', 'flipToWhite');
+    void d.offsetWidth;                       // restart animation
+    d.classList.add(color === BLACK ? 'black' : 'white');
+    d.style.animationDelay = delay + 'ms';
+    const cls = color === BLACK ? 'flipToBlack' : 'flipToWhite';
+    d.classList.add(cls);
+    d.addEventListener('animationend', () => {
+      d.classList.remove('flipToBlack', 'flipToWhite');
+      d.style.animationDelay = '';
+    }, { once: true });
+  }
+
+  function renderAll() {
+    for (let r = 0; r < 8; r++) {
+      for (let c = 0; c < 8; c++) {
+        const v = board[r][c];
+        const d = discEls[r][c];
+        if (v === EMPTY) {
+          if (d) { d.remove(); discEls[r][c] = null; }
+        } else {
+          const cls = v === BLACK ? 'black' : 'white';
+          if (!d) addDisc(r, c, v, false);
+          else if (!d.classList.contains(cls)) {
+            d.classList.remove('black', 'white');
+            d.classList.add(cls);
+          }
+        }
+      }
+    }
+  }
+
+  function updateScores() {
+    scoreEls[BLACK].textContent = countOf(board, BLACK);
+    scoreEls[WHITE].textContent = countOf(board, WHITE);
+  }
+
+  function highlightActive() {
+    playerEls[BLACK].classList.toggle('active', !over && turn === BLACK);
+    playerEls[WHITE].classList.toggle('active', !over && turn === WHITE);
+  }
+
+  function clearHints() {
+    for (let r = 0; r < 8; r++)
+      for (let c = 0; c < 8; c++)
+        cellEls[r][c].classList.remove('hint');
+  }
+
+  function showHints(moves) {
+    clearHints();
+    if (mode === 'cpu' && turn === cpuColor) return;
+    for (let i = 0; i < moves.length; i++) {
+      cellEls[moves[i].r][moves[i].c].classList.add('hint');
+    }
+  }
+
+  function label(p) {
+    if (mode === 'cpu') return p === cpuColor ? 'Computer' : 'You';
+    return p === BLACK ? 'Black' : 'White';
+  }
+
+  function setStatus(t) { statusEl.textContent = t; }
+
+  function updateNames() {
+    nameEls[BLACK].textContent = mode === 'cpu' ? 'You' : 'Black';
+    nameEls[WHITE].textContent = mode === 'cpu' ? 'Computer' : 'White';
+  }
+
+  // ---------------------------------------------------------------- flow
+  function refresh() {
+    if (over) { highlightActive(); return; }
+    highlightActive();
+    updateScores();
+
+    const moves = legalMoves(board, turn);
+
+    if (moves.length === 0) {
+      const oppMoves = legalMoves(board, other(turn));
+      if (oppMoves.length === 0) { finish(); return; }
+
+      turn = other(turn);
+      clearHints();
+      highlightActive();
+      setStatus(label(turn) + ' has no legal move — pass');
+      timer = setTimeout(() => { timer = null; refresh(); }, 900);
+      return;
+    }
+
+    showHints(moves);
+
+    if (mode === 'cpu' && turn === cpuColor) {
+      setStatus('Computer is thinking…');
+      busy = true;
+      timer = setTimeout(() => {
+        timer = null;
+        const m = chooseMove();
+        busy = false;
+        if (m) play(m.r, m.c, m.flips);
+        else refresh();
+      }, 240);
+    } else {
+      setStatus(label(turn) + ' to move');
+    }
+  }
+
+  function play(r, c, flips) {
+    busy = true;
+    history.push({ board: board.map(row => row.slice()), turn });
+
+    board[r][c] = turn;
+    addDisc(r, c, turn, true);
+
+    for (let i = 0; i < flips.length; i++) {
+      const fr = flips[i][0], fc = flips[i][1];
+      board[fr][fc] = turn;
+      flipDisc(fr, fc, turn, i * 45);
+    }
+
+    updateScores();
+    clearHints();
+    turn = other(turn);
+    highlightActive();
+    setStatus(label(turn) + ' to move');
+
+    const wait = 250 + flips.length * 45;
+    timer = setTimeout(() => {
+      timer = null;
+      busy = false;
+      refresh();
+    }, wait);
+  }
+
+  function finish() {
+    over = true;
+    clearHints();
+    highlightActive();
+    const b = countOf(board, BLACK), w = countOf(board, WHITE);
+    let msg;
+    if (b > w) msg = 'Black wins!';
+    else if (w > b) msg = 'White wins!';
+    else msg = 'Draw!';
+
+    if (mode === 'cpu') {
+      if ((b > w && cpuColor === BLACK) || (w > b && cpuColor === WHITE)) msg = 'Computer wins!';
+      else if (b !== w) msg = 'You win!';
+    }
+
+    setStatus(msg + '   ' + b + ' – ' + w);
+    ovTitle.textContent = msg;
+    ovScore.textContent = b + ' – ' + w;
+    overlay.classList.add('show');
+  }
+
+  // ---------------------------------------------------------------- input
+  function tap(r, c) {
+    if (over || busy) return;
+    if (mode === 'cpu' && turn === cpuColor) return;
+    const flips = getFlips(board, r, c, turn);
+    if (!flips.length) return;
+    play(r, c, flips);
+  }
+
+  boardEl.addEventListener('pointerdown', function (e) {
+    const cell = e.target.closest('.cell');
+    if (!cell) return;
+    e.preventDefault();
+    tap(+cell.dataset.r, +cell.dataset.c);
+  }, { passive: false });
+
+  boardEl.addEventListener('contextmenu', e => e.preventDefault());
+
+  // ---------------------------------------------------------------- AI
+  const W = [
+    [ 120, -25,  20,   5,   5,  20, -25, 120],
+    [ -25, -45,  -5,  -5,  -5,  -5, -45, -25],
+    [  20,  -5,  15,   3,   3,  15,  -5,  20],
+    [   5,  -5,   3,   3,   3,   3,  -5,   5],
+    [   5,  -5,   3,   3,   3,   3,  -5,   5],
+    [  20,  -5,  15,   3,   3,  15,  -5,  20],
+    [ -25, -45,  -5,  -5,  -5,  -5, -45, -25],
+    [ 120, -25,  20,   5,   5,  20, -25, 120]
+  ];
+
+  function evaluate(b, me) {
+    const opp = other(me);
+    let s = 0, mc = 0, oc = 0;
+    for (let r = 0; r < 8; r++) {
+      for (let c = 0; c < 8; c++) {
+        const v = b[r][c];
+        if (v === me)      { s += W[r][c]; mc++; }
+        else if (v === opp) { s -= W[r][c]; oc++; }
+      }
+    }
+    s += (mc - oc);
+    s += (legalMoves(b, me).length - legalMoves(b, opp).length) * 10;
+    return s;
+  }
+
+  function applyTo(b, m, p) {
+    b[m.r][m.c] = p;
+    for (let i = 0; i < m.flips.length; i++) {
+      b[m.flips[i][0]][m.flips[i][1]] = p;
+    }
+  }
+
+  function search(b, player, depth, alpha, beta, me) {
+    const moves = legalMoves(b, player);
+
+    if (moves.length === 0) {
+      if (legalMoves(b, other(player)).length === 0) {
+        const d = countOf(b, me) - countOf(b, other(me));
+        return d === 0 ? 0 : (d > 0 ? 100000 + d : -100000 + d);
+      }
+      return search(b, other(player), depth, alpha, beta, me);
+    }
+    if (depth === 0) return evaluate(b, me);
+
+    const maximizing = (player === me);
+    let best = maximizing ? -Infinity : Infinity;
+
+    moves.sort((x, y) => W[y.r][y.c] - W[x.r][x.c]);
+
+    for (let i = 0; i < moves.length; i++) {
+      const nb = b.map(row => row.slice());
+      applyTo(nb, moves[i], player);
+      const v = search(nb, other(player), depth - 1, alpha, beta, me);
+
+      if (maximizing) {
+        if (v > best) best = v;
+        if (best > alpha) alpha = best;
+      } else {
+        if (v < best) best = v;
+        if (best < beta) beta = best;
+      }
+      if (beta <= alpha) break;
+    }
+    return best;
+  }
+
+  function chooseMove() {
+    const moves = legalMoves(board, cpuColor);
+    if (!moves.length) return null;
+
+    const empties = 64 - countOf(board, BLACK) - countOf(board, WHITE);
+    const depth = empties <= 10 ? 6 : 4;
+
+    moves.sort((x, y) => W[y.r][y.c] - W[x.r][x.c]);
+
+    let best = moves[0], bestVal = -Infinity, alpha = -Infinity;
+
+    for (let i = 0; i < moves.length; i++) {
+      const nb = board.map(row => row.slice());
+      applyTo(nb, moves[i], cpuColor);
+      const v = search(nb, other(cpuColor), depth - 1, alpha, Infinity, cpuColor);
+      const jittered = v + Math.random() * 3;
+
+      if (jittered > bestVal) { bestVal = jittered; best = moves[i]; }
+      if (v > alpha) alpha = v;
+    }
+    return best;
+  }
+
+  // ---------------------------------------------------------------- game control
+  function clearTimer() {
+    if (timer) { clearTimeout(timer); timer = null; }
+  }
+
+  function newGame() {
+    clearTimer();
+    overlay.classList.remove('show');
+    busy = false;
+    over = false;
+    history = [];
+
+    board = [];
+    for (let r = 0; r < 8; r++) board.push(new Array(8).fill(EMPTY));
+    board[3][3] = WHITE; board[3][4] = BLACK;
+    board[4][3] = BLACK; board[4][4] = WHITE;
+
+    turn = BLACK;
+
+    for (let r = 0; r < 8; r++)
+      for (let c = 0; c < 8; c++)
+        if (discEls[r][c]) { discEls[r][c].remove(); discEls[r][c] = null; }
+
+    addDisc(3, 3, WHITE, true);
+    addDisc(3, 4, BLACK, true);
+    addDisc(4, 3, BLACK, true);
+    addDisc(4, 4, WHITE, true);
+
+    updateNames();
+    updateScores();
+    refresh();
+  }
+
+  function undo() {
+    if (busy || !history.length) return;
+    clearTimer();
+    overlay.classList.remove('show');
+    over = false;
+    busy = false;
+
+    let snap = history.pop();
+    while (mode === 'cpu' && snap.turn === cpuColor && history.length) {
+      snap = history.pop();
+    }
+
+    board = snap.board.map(row => row.slice());
+    turn = snap.turn;
+
+    renderAll();
+    updateScores();
+    refresh();
+  }
+
+  // ---------------------------------------------------------------- buttons
+  document.getElementById('newGame').addEventListener('click', newGame);
+  document.getElementById('ovBtn').addEventListener('click', newGame);
+  document.getElementById('undo').addEventListener('click', undo);
+
+  const modeBtn = document.getElementById('modeBtn');
+  modeBtn.addEventListener('click', function () {
+    mode = (mode === 'cpu') ? 'pvp' : 'cpu';
+    modeBtn.textContent = (mode === 'cpu') ? 'vs CPU' : '2 Players';
+    newGame();
+  });
+
+  // ---------------------------------------------------------------- boot
+  buildCells();
+  newGame();
+})();
+</script>
+</body>
+</html>

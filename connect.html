@@ -1,0 +1,553 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#070b14">
+<title>Connect Four</title>
+<style>
+  :root{
+    --red1:#ff9aab; --red2:#e01e3c; --red3:#8c0c20;
+    --yel1:#ffefa8; --yel2:#f5b90a; --yel3:#9c6c00;
+  }
+  *{ box-sizing:border-box; }
+  html,body{ height:100%; }
+  body{
+    margin:0;
+    min-height:100dvh;
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    justify-content:center;
+    gap:12px;
+    padding:14px 12px calc(14px + env(safe-area-inset-bottom));
+    background:radial-gradient(130% 85% at 50% 0%, #1b2c4f 0%, #0a1120 48%, #04070d 100%);
+    color:#e9f0ff;
+    font-family:ui-rounded, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    -webkit-tap-highlight-color:transparent;
+    -webkit-user-select:none; user-select:none;
+    -webkit-touch-callout:none;
+  }
+
+  /* ---------- top bar ---------- */
+  .topbar{
+    width:min(92vw, 460px);
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap:10px;
+  }
+  h1{
+    margin:0;
+    font-size:clamp(.95rem, 3.6vw, 1.15rem);
+    letter-spacing:.5px;
+    font-weight:800;
+    background:linear-gradient(90deg,#ff6b81,#ffd166);
+    -webkit-background-clip:text; background-clip:text;
+    color:transparent;
+    white-space:nowrap;
+  }
+  .scores{ display:flex; gap:10px; align-items:center; }
+  .scoreItem{
+    display:flex; align-items:center; gap:4px;
+    font-size:.72rem; font-weight:600; color:#9fb0d0;
+  }
+  .scoreItem b{ color:#e9f0ff; font-size:.85rem; }
+
+  .dot{
+    width:12px; height:12px; border-radius:50%;
+    display:inline-block; flex:none;
+    box-shadow:0 0 0 1px rgba(0,0,0,.4) inset;
+  }
+  .dot.p1{ background:radial-gradient(circle at 34% 28%, var(--red1), var(--red2) 60%, var(--red3)); }
+  .dot.p2{ background:radial-gradient(circle at 34% 28%, var(--yel1), var(--yel2) 60%, var(--yel3)); }
+  .dot.draw{ background:#57688c; }
+
+  /* ---------- status ---------- */
+  .statusline{
+    width:min(92vw, 460px);
+    display:flex; align-items:center; justify-content:center; gap:9px;
+    min-height:34px;
+    font-size:clamp(.85rem, 3.4vw, 1rem);
+    font-weight:600;
+    color:#cfe0ff;
+  }
+  .statusline .dot{ width:14px; height:14px; }
+
+  /* ---------- board ---------- */
+  .board{
+    box-sizing:content-box;
+    width:min(92vw, 460px, 70dvh);
+    aspect-ratio:7 / 6;
+    padding:clamp(6px, 1.7vw, 12px);
+    border-radius:clamp(14px, 3.4vw, 24px);
+    background:linear-gradient(180deg,#3f80ff 0%, #1f4dc4 55%, #13308f 100%);
+    box-shadow:
+      0 22px 45px rgba(0,0,0,.65),
+      inset 0 2px 0 rgba(255,255,255,.18),
+      inset 0 -9px 0 rgba(0,0,0,.28);
+    touch-action:manipulation;
+    cursor:pointer;
+    position:relative;
+  }
+  .grid{
+    width:100%; height:100%;
+    display:grid;
+    grid-template-columns:repeat(7, 1fr);
+    grid-template-rows:repeat(6, 1fr);
+  }
+  .cell{ position:relative; }
+  .cell::before{
+    content:'';
+    position:absolute; inset:0;
+    border-radius:50%;
+    transform:scale(.86);
+    background:#08111f;
+    box-shadow:
+      inset 0 5px 10px rgba(0,0,0,.8),
+      inset 0 -3px 6px rgba(130,180,255,.1);
+  }
+
+  .disc{
+    position:absolute; inset:0;
+    border-radius:50%;
+    transform:scale(.86);
+    opacity:0;
+    pointer-events:none;
+    will-change:transform;
+  }
+  .disc.p1{ background:radial-gradient(circle at 34% 28%, var(--red1), var(--red2) 58%, var(--red3)); }
+  .disc.p2{ background:radial-gradient(circle at 34% 28%, var(--yel1), var(--yel2) 58%, var(--yel3)); }
+  .disc.show{ opacity:1; }
+  .disc.preview{ opacity:.35; }
+  .disc.drop{
+    animation-name:dropIn;
+    animation-duration:calc(.16s + var(--fall, 1) * .05s);
+    animation-timing-function:cubic-bezier(.5,.02,.75,.4);
+    animation-fill-mode:both;
+  }
+  .disc.win{
+    box-shadow:
+      0 0 0 3px rgba(255,255,255,.95),
+      0 0 22px 7px rgba(255,255,255,.75);
+    z-index:3;
+  }
+  @keyframes dropIn{
+    from{ transform:translateY(calc(var(--fall, 1) * -100%)) scale(.86); }
+    to  { transform:translateY(0) scale(.86); }
+  }
+
+  /* ---------- controls ---------- */
+  .controls{
+    width:min(92vw, 460px);
+    display:flex; gap:8px;
+  }
+  button{
+    flex:1 1 0;
+    min-width:0;
+    font:inherit;
+    font-weight:700;
+    font-size:clamp(.74rem, 2.9vw, .9rem);
+    line-height:1.15;
+    color:#e9f0ff;
+    background:linear-gradient(180deg,#2c3f66,#1a2742);
+    border:1px solid rgba(255,255,255,.13);
+    border-radius:14px;
+    padding:10px 6px;
+    min-height:48px;
+    cursor:pointer;
+    touch-action:manipulation;
+    transition:transform .08s ease, filter .15s ease, opacity .15s ease;
+  }
+  button:active{ transform:scale(.96); filter:brightness(1.25); }
+  #diffBtn{ background:linear-gradient(180deg,#33452f,#1d2a1b); }
+  #diffBtn.hard{ background:linear-gradient(180deg,#4a2b2b,#2a1717); }
+  #diffBtn.dim{ opacity:.55; }
+</style>
+</head>
+<body>
+
+  <div class="topbar">
+    <h1>Connect&nbsp;Four</h1>
+    <div class="scores">
+      <div class="scoreItem"><span class="dot p1"></span><span id="lbl1">You</span><b id="s1">0</b></div>
+      <div class="scoreItem"><span class="dot p2"></span><span id="lbl2">CPU</span><b id="s2">0</b></div>
+      <div class="scoreItem"><span class="dot draw"></span><span>Draw</span><b id="sd">0</b></div>
+    </div>
+  </div>
+
+  <div class="statusline">
+    <span class="dot p1" id="turnDot"></span>
+    <span id="statusText">Your turn</span>
+  </div>
+
+  <div class="board" id="board">
+    <div class="grid" id="grid"></div>
+  </div>
+
+  <div class="controls">
+    <button id="newGameBtn">New Game</button>
+    <button id="modeBtn">vs CPU</button>
+    <button id="diffBtn">Level: Normal</button>
+  </div>
+
+<script>
+(function () {
+  'use strict';
+
+  /* ============ constants ============ */
+  const COLS = 7, ROWS = 6;
+  const RED = 1, YELLOW = 2;
+  const HUMAN = RED, CPU = YELLOW;
+  const DIRS = [[0, 1], [1, 0], [1, 1], [1, -1]];
+  const ORDER = [3, 2, 4, 1, 5, 0, 6];   // centre-first move ordering
+
+  /* difficulty -> search depth */
+  const LEVELS = [
+    { key: 'easy',    label: 'Easy',      depth: 2 },
+    { key: 'normal',  label: 'Normal',    depth: 3 },
+    { key: 'hard',    label: 'Difficult', depth: 5 }
+  ];
+
+  /* precompute every 4-in-a-row window (indexes into a flat grid) */
+  const WINDOWS = [];
+  for (let r = 0; r < ROWS; r++) {
+    for (let c = 0; c < COLS; c++) {
+      for (const [dr, dc] of DIRS) {
+        const er = r + dr * 3, ec = c + dc * 3;
+        if (er < 0 || er >= ROWS || ec < 0 || ec >= COLS) continue;
+        const w = [];
+        for (let k = 0; k < 4; k++) w.push((r + dr * k) * COLS + (c + dc * k));
+        WINDOWS.push(w);
+      }
+    }
+  }
+
+  /* ============ DOM ============ */
+  const boardEl  = document.getElementById('board');
+  const gridEl   = document.getElementById('grid');
+  const statusEl = document.getElementById('statusText');
+  const turnDot  = document.getElementById('turnDot');
+  const modeBtn  = document.getElementById('modeBtn');
+  const diffBtn  = document.getElementById('diffBtn');
+  const newBtn   = document.getElementById('newGameBtn');
+  const s1 = document.getElementById('s1');
+  const s2 = document.getElementById('s2');
+  const sd = document.getElementById('sd');
+  const lbl1 = document.getElementById('lbl1');
+  const lbl2 = document.getElementById('lbl2');
+
+  /* ============ build the board DOM ============ */
+  const discs = [];                       // discs[row][col], row 0 = TOP
+  for (let r = 0; r < ROWS; r++) {
+    const row = [];
+    for (let c = 0; c < COLS; c++) {
+      const cell = document.createElement('div');
+      cell.className = 'cell';
+      const disc = document.createElement('div');
+      disc.className = 'disc';
+      cell.appendChild(disc);
+      gridEl.appendChild(cell);
+      row.push(disc);
+    }
+    discs.push(row);
+  }
+
+  /* ============ state ============ */
+  let grid = new Array(ROWS * COLS).fill(0);
+  let current = RED;
+  let gameOver = false;
+  let busy = false;               // AI is thinking
+  let vsComputer = true;
+  let levelIndex = 1;             // 0 = easy, 1 = normal, 2 = difficult
+  let searchDepth = LEVELS[levelIndex].depth;
+  let scores = { 1: 0, 2: 0, d: 0 };
+  let previewDisc = null;
+  let gen = 0;                    // generation token, invalidates pending AI moves
+
+  /* ============ grid helpers ============ */
+  const landingRow = (g, c) => {
+    for (let r = ROWS - 1; r >= 0; r--) if (g[r * COLS + c] === 0) return r;
+    return -1;
+  };
+
+  function winningLine(g, r, c) {
+    const p = g[r * COLS + c];
+    if (!p) return null;
+    for (const [dr, dc] of DIRS) {
+      const cells = [[r, c]];
+      for (const s of [1, -1]) {
+        let rr = r + dr * s, cc = c + dc * s;
+        while (rr >= 0 && rr < ROWS && cc >= 0 && cc < COLS && g[rr * COLS + cc] === p) {
+          cells.push([rr, cc]);
+          rr += dr * s; cc += dc * s;
+        }
+      }
+      if (cells.length >= 4) return cells;
+    }
+    return null;
+  }
+
+  /* ============ AI ============ */
+  function evaluate(g) {
+    let score = 0;
+    for (let i = 0; i < WINDOWS.length; i++) {
+      const w = WINDOWS[i];
+      let ai = 0, hu = 0;
+      for (let k = 0; k < 4; k++) {
+        const v = g[w[k]];
+        if (v === CPU) ai++;
+        else if (v === HUMAN) hu++;
+      }
+      if (ai && hu) continue;
+      if (ai === 3) score += 60;
+      else if (ai === 2) score += 12;
+      else if (ai === 1) score += 2;
+      if (hu === 3) score -= 80;
+      else if (hu === 2) score -= 14;
+      else if (hu === 1) score -= 2;
+    }
+    // centre control
+    for (let r = 0; r < ROWS; r++) {
+      const v = g[r * COLS + 3];
+      if (v === CPU) score += 6;
+      else if (v === HUMAN) score -= 6;
+    }
+    return score;
+  }
+
+  function minimax(g, depth, alpha, beta, maximizing, lastR, lastC) {
+    if (lastR >= 0) {
+      if (winningLine(g, lastR, lastC)) {
+        const winner = g[lastR * COLS + lastC];
+        return winner === CPU ? 100000 + depth * 100 : -100000 - depth * 100;
+      }
+    }
+    if (depth === 0) return evaluate(g);
+
+    const moves = [];
+    for (const c of ORDER) if (landingRow(g, c) >= 0) moves.push(c);
+    if (moves.length === 0) return 0;
+
+    if (maximizing) {
+      let best = -Infinity;
+      for (const c of moves) {
+        const r = landingRow(g, c);
+        g[r * COLS + c] = CPU;
+        const v = minimax(g, depth - 1, alpha, beta, false, r, c);
+        g[r * COLS + c] = 0;
+        if (v > best) best = v;
+        if (best > alpha) alpha = best;
+        if (alpha >= beta) break;
+      }
+      return best;
+    } else {
+      let best = Infinity;
+      for (const c of moves) {
+        const r = landingRow(g, c);
+        g[r * COLS + c] = HUMAN;
+        const v = minimax(g, depth - 1, alpha, beta, true, r, c);
+        g[r * COLS + c] = 0;
+        if (v < best) best = v;
+        if (best < beta) beta = best;
+        if (alpha >= beta) break;
+      }
+      return best;
+    }
+  }
+
+  function chooseMove() {
+    const g = grid.slice();
+    let bestScore = -Infinity, bestCols = [];
+    for (const c of ORDER) {
+      const r = landingRow(g, c);
+      if (r < 0) continue;
+      g[r * COLS + c] = CPU;
+      const v = minimax(g, searchDepth, -Infinity, Infinity, false, r, c);
+      g[r * COLS + c] = 0;
+      if (v > bestScore) { bestScore = v; bestCols = [c]; }
+      else if (v === bestScore) bestCols.push(c);
+    }
+    if (!bestCols.length) return -1;
+    return bestCols[(Math.random() * bestCols.length) | 0];
+  }
+
+  /* ============ UI helpers ============ */
+  function setStatus(text, player) {
+    statusEl.textContent = text;
+    turnDot.className = 'dot ' + (player === RED ? 'p1' : player === YELLOW ? 'p2' : 'draw');
+  }
+
+  function updateStatus() {
+    if (gameOver) return;
+    if (vsComputer) {
+      setStatus(current === HUMAN ? 'Your turn' : 'Computer thinking…', current);
+    } else {
+      setStatus(current === RED ? "Red's turn" : "Yellow's turn", current);
+    }
+  }
+
+  function updateScores() {
+    s1.textContent = scores[1];
+    s2.textContent = scores[2];
+    sd.textContent = scores.d;
+  }
+
+  function clearPreview() {
+    if (previewDisc) {
+      previewDisc.classList.remove('preview', 'p1', 'p2');
+      previewDisc = null;
+    }
+  }
+
+  function placeDisc(r, c, player) {
+    grid[r * COLS + c] = player;
+    const d = discs[r][c];
+    d.classList.remove('preview', 'p1', 'p2');
+    d.style.setProperty('--fall', String(r + 1));
+    d.classList.add('show', 'p' + player, 'drop');
+    d.addEventListener('animationend', () => d.classList.remove('drop'), { once: true });
+  }
+
+  /* ============ game flow ============ */
+  function doMove(col) {
+    const r = landingRow(grid, col);
+    if (r < 0) return;
+
+    clearPreview();
+    const player = current;
+    placeDisc(r, col, player);
+
+    const line = winningLine(grid, r, col);
+    if (line) {
+      gameOver = true;
+      scores[player]++;
+      updateScores();
+      for (const [wr, wc] of line) discs[wr][wc].classList.add('win');
+      if (vsComputer) {
+        setStatus(player === HUMAN ? 'You win! 🎉' : 'Computer wins', player);
+      } else {
+        setStatus(player === RED ? 'Red wins! 🎉' : 'Yellow wins! 🎉', player);
+      }
+      return;
+    }
+
+    if (grid.indexOf(0) === -1) {
+      gameOver = true;
+      scores.d++;
+      updateScores();
+      setStatus("It's a draw!", 0);
+      return;
+    }
+
+    current = player === RED ? YELLOW : RED;
+    updateStatus();
+
+    if (vsComputer && current === CPU) {
+      busy = true;
+      const myGen = gen;
+      setTimeout(() => {
+        if (myGen !== gen) return;      // board was reset meanwhile
+        const c = chooseMove();
+        busy = false;
+        if (c >= 0 && !gameOver) doMove(c);
+      }, 340);
+    }
+  }
+
+  function humanPlay(col) {
+    if (gameOver || busy) return;
+    if (vsComputer && current !== HUMAN) return;
+    doMove(col);
+  }
+
+  function resetGame() {
+    gen++;
+    grid = new Array(ROWS * COLS).fill(0);
+    current = RED;
+    gameOver = false;
+    busy = false;
+    clearPreview();
+    for (let r = 0; r < ROWS; r++) {
+      for (let c = 0; c < COLS; c++) {
+        const d = discs[r][c];
+        d.className = 'disc';
+        d.style.removeProperty('--fall');
+      }
+    }
+    updateStatus();
+  }
+
+  function updateModeUI() {
+    modeBtn.textContent = vsComputer ? 'vs CPU' : '2 Players';
+    lbl1.textContent = vsComputer ? 'You' : 'Red';
+    lbl2.textContent = vsComputer ? 'CPU' : 'Yellow';
+    diffBtn.classList.toggle('dim', !vsComputer);
+  }
+
+  function updateLevelUI() {
+    const lv = LEVELS[levelIndex];
+    diffBtn.textContent = 'Level: ' + lv.label;
+    diffBtn.classList.toggle('hard', lv.key === 'hard');
+    searchDepth = lv.depth;
+  }
+
+  /* ============ input ============ */
+  function columnFromClientX(clientX) {
+    const rect = gridEl.getBoundingClientRect();
+    const x = clientX - rect.left;
+    if (x < 0 || x > rect.width) return -1;
+    const col = Math.floor(x / (rect.width / COLS));
+    return Math.max(0, Math.min(COLS - 1, col));
+  }
+
+  boardEl.addEventListener('pointerdown', (e) => {
+    if (e.pointerType === 'mouse' && e.button !== 0) return;
+    const col = columnFromClientX(e.clientX);
+    if (col < 0) return;
+    humanPlay(col);
+  });
+
+  boardEl.addEventListener('pointermove', (e) => {
+    if (e.pointerType !== 'mouse') return;
+    if (gameOver || busy || (vsComputer && current !== HUMAN)) { clearPreview(); return; }
+    const col = columnFromClientX(e.clientX);
+    if (col < 0) { clearPreview(); return; }
+    const r = landingRow(grid, col);
+    if (r < 0) { clearPreview(); return; }
+    const d = discs[r][col];
+    if (d === previewDisc) return;
+    clearPreview();
+    d.classList.add('preview', 'p' + current);
+    previewDisc = d;
+  });
+
+  boardEl.addEventListener('pointerleave', clearPreview);
+
+  newBtn.addEventListener('click', resetGame);
+
+  modeBtn.addEventListener('click', () => {
+    vsComputer = !vsComputer;
+    updateModeUI();
+    resetGame();
+  });
+
+  diffBtn.addEventListener('click', () => {
+    levelIndex = (levelIndex + 1) % LEVELS.length;
+    updateLevelUI();
+    // takes effect on the computer's next move — no reset needed
+    if (vsComputer && current === CPU && !gameOver) {
+      // let the player see the new level in the status line
+      updateStatus();
+    }
+  });
+
+  /* ============ boot ============ */
+  updateModeUI();
+  updateLevelUI();
+  updateScores();
+  updateStatus();
+})();
+</script>
+</body>
+</html>
