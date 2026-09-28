@@ -1,0 +1,646 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>Candy Match</title>
+<style>
+  :root{
+    --c0:#ff4d6d; --c1:#ff9f1c; --c2:#ffe14d;
+    --c3:#2ee6a8; --c4:#3aa0ff; --c5:#b56bff;
+    --cell:48px;
+  }
+  *{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
+  html,body{height:100%;margin:0;}
+  body{
+    font-family:system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;
+    background:radial-gradient(circle at 50% -10%, #3a1b6e 0%, #1a0b33 45%, #08040f 100%);
+    color:#fff; overflow:hidden; user-select:none;
+    touch-action:none; overscroll-behavior:none;
+    display:flex; justify-content:center;
+  }
+  .game{
+    display:flex; flex-direction:column;
+    height:100dvh; width:100%; max-width:540px;
+    padding:10px 12px 14px; gap:10px;
+  }
+
+  /* ---------- HUD ---------- */
+  .hud{display:flex; align-items:center; gap:10px;}
+  .pill{
+    flex:1; display:flex; flex-direction:column; align-items:center;
+    background:rgba(255,255,255,.07);
+    border:1px solid rgba(255,255,255,.11);
+    border-radius:16px; padding:7px 10px;
+    box-shadow:0 4px 14px rgba(0,0,0,.25);
+  }
+  .pill .label{font-size:10px; letter-spacing:.14em; text-transform:uppercase; opacity:.55;}
+  .pill .val{font-size:22px; font-weight:800; line-height:1.1; font-variant-numeric:tabular-nums;}
+  .icon-btn{
+    width:54px; height:54px; border-radius:16px; flex:none;
+    background:rgba(255,255,255,.07);
+    border:1px solid rgba(255,255,255,.11);
+    color:#fff; font-size:22px; cursor:pointer;
+    display:grid; place-items:center;
+    transition:transform .12s, background .2s;
+  }
+  .icon-btn:active{transform:scale(.92); background:rgba(255,255,255,.16);}
+
+  /* ---------- Board ---------- */
+  #board-wrap{flex:1; min-height:0; display:grid; place-items:center;}
+  #board{
+    position:relative;
+    border-radius:18px;
+    background:rgba(255,255,255,.045);
+    box-shadow:
+      inset 0 0 0 1px rgba(255,255,255,.08),
+      inset 0 10px 40px rgba(0,0,0,.35),
+      0 22px 50px rgba(0,0,0,.55);
+    overflow:hidden;
+    touch-action:none;
+  }
+  .tile{
+    position:absolute; top:0; left:0;
+    width:var(--cell); height:var(--cell);
+    transition:transform .22s cubic-bezier(.25,.85,.35,1);
+    will-change:transform;
+  }
+  .candy{
+    position:absolute; inset:8%;
+    background-color:var(--c);
+    background-image:
+      radial-gradient(circle at 32% 26%, rgba(255,255,255,.95), rgba(255,255,255,.25) 38%, rgba(255,255,255,0) 62%),
+      linear-gradient(160deg, rgba(255,255,255,.28), rgba(0,0,0,.18));
+    box-shadow:
+      inset 0 -6px 12px rgba(0,0,0,.30),
+      inset 0 5px 10px rgba(255,255,255,.30);
+    transition:transform .16s ease, opacity .16s ease, filter .16s ease;
+  }
+
+  /* shapes + colours per type */
+  .t0 .candy{--c:var(--c0); border-radius:50%; inset:8%;}
+  .t1 .candy{--c:var(--c1); border-radius:28%; inset:8%;}
+  .t2 .candy{--c:var(--c2); inset:4%; clip-path:polygon(50% 1%, 99% 50%, 50% 99%, 1% 50%);}
+  .t3 .candy{--c:var(--c3); inset:7%; clip-path:polygon(24% 3%, 76% 3%, 100% 50%, 76% 97%, 24% 97%, 0 50%);}
+  .t4 .candy{--c:var(--c4); inset:3%; clip-path:polygon(50% 0%, 62% 33%, 98% 35%, 70% 57%, 80% 93%, 50% 72%, 20% 93%, 30% 57%, 2% 35%, 38% 33%);}
+  .t5 .candy{--c:var(--c5); inset:5%; clip-path:polygon(50% 2%, 98% 95%, 2% 95%);}
+
+  .tile.sel .candy{transform:scale(1.18); filter:brightness(1.35) saturate(1.2);}
+  .tile.pop .candy{animation:pop .26s ease-out forwards;}
+  @keyframes pop{
+    0%{transform:scale(1); opacity:1;}
+    40%{transform:scale(1.3); opacity:1; filter:brightness(2);}
+    100%{transform:scale(0); opacity:0;}
+  }
+
+  .float{
+    position:absolute; pointer-events:none;
+    font-weight:900; font-size:20px; letter-spacing:-.02em;
+    color:#fff; text-shadow:0 2px 10px rgba(0,0,0,.75), 0 0 18px rgba(255,220,120,.7);
+    transform:translate(-50%,-50%);
+    animation:floatUp .85s cubic-bezier(.2,.8,.3,1) forwards;
+    white-space:nowrap;
+  }
+  @keyframes floatUp{
+    0%{opacity:0; transform:translate(-50%,-50%) scale(.6);}
+    25%{opacity:1; transform:translate(-50%,-60%) scale(1.1);}
+    100%{opacity:0; transform:translate(-50%,-190%) scale(1);}
+  }
+
+  .hint{
+    margin:0; text-align:center; font-size:12px; letter-spacing:.06em;
+    opacity:.35; font-weight:600;
+  }
+
+  /* ---------- Overlay ---------- */
+  .overlay{
+    position:fixed; inset:0; z-index:20;
+    display:grid; place-items:center;
+    background:rgba(6,2,16,.78);
+    backdrop-filter:blur(8px); -webkit-backdrop-filter:blur(8px);
+    transition:opacity .3s ease;
+  }
+  .overlay.hidden{opacity:0; pointer-events:none;}
+  .card{
+    text-align:center; padding:34px 44px; border-radius:26px;
+    background:linear-gradient(165deg,#2e1b58,#150c2b);
+    border:1px solid rgba(255,255,255,.13);
+    box-shadow:0 30px 70px rgba(0,0,0,.7), inset 0 1px 0 rgba(255,255,255,.12);
+    animation:cardIn .35s cubic-bezier(.2,1.4,.5,1);
+  }
+  @keyframes cardIn{from{transform:scale(.8); opacity:0;} to{transform:scale(1); opacity:1;}}
+  .card h1{margin:0 0 6px; font-size:26px; letter-spacing:-.02em;}
+  .card p{margin:0; opacity:.6; font-size:13px; letter-spacing:.12em; text-transform:uppercase;}
+  .card .final{
+    font-size:52px; font-weight:900; margin:8px 0 4px;
+    background:linear-gradient(180deg,#fff,#ffc93c);
+    -webkit-background-clip:text; background-clip:text; color:transparent;
+    font-variant-numeric:tabular-nums;
+  }
+  .card button{
+    margin-top:18px; padding:15px 40px; border:none; border-radius:999px;
+    font-size:17px; font-weight:900; letter-spacing:.02em; color:#2a1500; cursor:pointer;
+    background:linear-gradient(180deg,#ffe98a,#ffb703);
+    box-shadow:0 10px 26px rgba(255,183,3,.4), inset 0 -3px 0 rgba(0,0,0,.15);
+    transition:transform .12s;
+  }
+  .card button:active{transform:translateY(2px) scale(.97);}
+</style>
+</head>
+<body>
+
+<div class="game">
+  <header class="hud">
+    <div class="pill"><span class="label">Score</span><span class="val" id="score">0</span></div>
+    <div class="pill"><span class="label">Moves</span><span class="val" id="moves">30</span></div>
+    <button class="icon-btn" id="sound" aria-label="Toggle sound">🔊</button>
+  </header>
+
+  <div id="board-wrap"><div id="board"></div></div>
+
+  <p class="hint">Swipe a candy — or tap two neighbours</p>
+
+  <div class="overlay hidden" id="overlay">
+    <div class="card">
+      <h1>Out of moves!</h1>
+      <p>Final score</p>
+      <div class="final" id="finalScore">0</div>
+      <button id="restart">Play again</button>
+    </div>
+  </div>
+</div>
+
+<script>
+(() => {
+  'use strict';
+
+  /* ======================= CONFIG ======================= */
+  const ROWS = 8, COLS = 8, TYPES = 6, START_MOVES = 30;
+
+  /* ======================= DOM ======================= */
+  const boardEl    = document.getElementById('board');
+  const wrapEl     = document.getElementById('board-wrap');
+  const scoreEl    = document.getElementById('score');
+  const movesEl    = document.getElementById('moves');
+  const overlayEl  = document.getElementById('overlay');
+  const finalEl    = document.getElementById('finalScore');
+  const soundBtn   = document.getElementById('sound');
+
+  /* ======================= STATE ======================= */
+  let board = [];          // board[r][c] = tile | null
+  let cell = 48;
+  let busy = false;
+  let score = 0;
+  let moves = START_MOVES;
+  let selected = null;
+  let drag = null;
+  let muted = false;
+  let actx = null;
+
+  const wait = ms => new Promise(r => setTimeout(r, ms));
+  const rnd  = n => Math.floor(Math.random() * n);
+  const inBounds = (r, c) => r >= 0 && r < ROWS && c >= 0 && c < COLS;
+
+  /* ======================= AUDIO (WebAudio, no files) ======================= */
+  function initAudio() {
+    if (!actx) {
+      const AC = window.AudioContext || window.webkitAudioContext;
+      if (!AC) return;
+      actx = new AC();
+    }
+    if (actx.state === 'suspended') actx.resume();
+  }
+
+  function tone(freq, dur, opts = {}) {
+    if (muted || !actx) return;
+    const { type = 'sine', vol = 0.1, delay = 0, slideTo = null } = opts;
+    const t0 = actx.currentTime + delay;
+    const osc = actx.createOscillator();
+    const g   = actx.createGain();
+    osc.type = type;
+    osc.frequency.setValueAtTime(freq, t0);
+    if (slideTo) osc.frequency.exponentialRampToValueAtTime(Math.max(1, slideTo), t0 + dur);
+    g.gain.setValueAtTime(0.0001, t0);
+    g.gain.exponentialRampToValueAtTime(vol, t0 + 0.012);
+    g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+    osc.connect(g).connect(actx.destination);
+    osc.start(t0);
+    osc.stop(t0 + dur + 0.04);
+  }
+
+  const sfx = {
+    swap: () => tone(620, 0.075, { type: 'triangle', vol: 0.07, slideTo: 820 }),
+    bad:  () => tone(210, 0.16, { type: 'sawtooth', vol: 0.05, slideTo: 120 }),
+    drop: () => tone(150, 0.11, { type: 'sine', vol: 0.085, slideTo: 78 }),
+    match(combo, count) {
+      const scale = [523.25, 587.33, 659.25, 783.99, 880, 1046.5, 1174.66];
+      const base = scale[Math.min(combo - 1, scale.length - 1)];
+      tone(base, 0.15, { type: 'triangle', vol: 0.10 });
+      tone(base * 1.5, 0.13, { type: 'sine', vol: 0.06, delay: 0.045 });
+      if (count >= 4) tone(base * 2, 0.18, { type: 'sine', vol: 0.07, delay: 0.09 });
+    }
+  };
+
+  /* ======================= TILES ======================= */
+  function setVisual(t, r, c) {
+    t.el.style.transform = `translate(${c * cell}px, ${r * cell}px)`;
+  }
+
+  function moveTile(t, r, c) {
+    t.r = r; t.c = c;
+    setVisual(t, r, c);
+  }
+
+  function createTile(type, r, c, visualRow) {
+    const el = document.createElement('div');
+    el.className = 'tile t' + type;
+    const inner = document.createElement('div');
+    inner.className = 'candy';
+    el.appendChild(inner);
+    el.style.transition = 'none';
+    el.style.transform =
+      `translate(${c * cell}px, ${(visualRow == null ? r : visualRow) * cell}px)`;
+    boardEl.appendChild(el);
+    return { type, el, r, c };
+  }
+
+  /* Clear the "no-transition" state after a reflow so future moves animate. */
+  function revealTiles(tiles) {
+    requestAnimationFrame(() => {
+      tiles.forEach(t => { t.el.style.transition = ''; });
+      void boardEl.offsetWidth;                     // commit before-state
+      tiles.forEach(t => setVisual(t, t.r, t.c));   // then animate to target
+    });
+  }
+
+  /* ======================= LAYOUT ======================= */
+  function layout() {
+    const availW = wrapEl.clientWidth;
+    const availH = wrapEl.clientHeight;
+    if (!availW || !availH) return;
+
+    cell = Math.floor(Math.min(availW / COLS, availH / ROWS));
+    cell = Math.max(26, Math.min(cell, 76));
+
+    boardEl.style.setProperty('--cell', cell + 'px');
+    boardEl.style.width  = cell * COLS + 'px';
+    boardEl.style.height = cell * ROWS + 'px';
+
+    const tiles = [];
+    for (let r = 0; r < ROWS; r++)
+      for (let c = 0; c < COLS; c++)
+        if (board[r] && board[r][c]) tiles.push(board[r][c]);
+
+    tiles.forEach(t => { t.el.style.transition = 'none'; });
+    tiles.forEach(t => setVisual(t, t.r, t.c));
+    void boardEl.offsetWidth;
+    tiles.forEach(t => { t.el.style.transition = ''; });
+  }
+
+  /* ======================= MATCH DETECTION ======================= */
+  function findMatches() {
+    const found = new Set();
+
+    // horizontal runs
+    for (let r = 0; r < ROWS; r++) {
+      let run = 1;
+      for (let c = 1; c <= COLS; c++) {
+        const a = board[r][c - 1];
+        const b = c < COLS ? board[r][c] : null;
+        if (a && b && a.type === b.type) { run++; }
+        else {
+          if (run >= 3) for (let k = c - run; k < c; k++) if (board[r][k]) found.add(board[r][k]);
+          run = 1;
+        }
+      }
+    }
+    // vertical runs
+    for (let c = 0; c < COLS; c++) {
+      let run = 1;
+      for (let r = 1; r <= ROWS; r++) {
+        const a = board[r - 1][c];
+        const b = r < ROWS ? board[r][c] : null;
+        if (a && b && a.type === b.type) { run++; }
+        else {
+          if (run >= 3) for (let k = r - run; k < r; k++) if (board[k][c]) found.add(board[k][c]);
+          run = 1;
+        }
+      }
+    }
+    return [...found];
+  }
+
+  function hasMove() {
+    const test = (r1, c1, r2, c2) => {
+      const a = board[r1][c1], b = board[r2][c2];
+      if (!a || !b) return false;
+      board[r1][c1] = b; board[r2][c2] = a;
+      const ok = findMatches().length > 0;
+      board[r1][c1] = a; board[r2][c2] = b;
+      return ok;
+    };
+    for (let r = 0; r < ROWS; r++) {
+      for (let c = 0; c < COLS; c++) {
+        if (c + 1 < COLS && test(r, c, r, c + 1)) return true;
+        if (r + 1 < ROWS && test(r, c, r + 1, c)) return true;
+      }
+    }
+    return false;
+  }
+
+  /* ======================= EFFECTS ======================= */
+  function showFloat(x, y, text) {
+    const d = document.createElement('div');
+    d.className = 'float';
+    d.textContent = text;
+    d.style.left = x + 'px';
+    d.style.top  = y + 'px';
+    boardEl.appendChild(d);
+    setTimeout(() => d.remove(), 900);
+  }
+
+  function updateHUD() {
+    scoreEl.textContent = score;
+    movesEl.textContent = Math.max(0, moves);
+  }
+
+  /* ======================= CORE LOOP ======================= */
+  async function resolve() {
+    let combo = 0;
+
+    while (true) {
+      const matches = findMatches();
+      if (!matches.length) break;
+
+      combo++;
+      const gain = matches.length * 10 * combo;
+      score += gain;
+      updateHUD();
+      sfx.match(combo, matches.length);
+
+      let sx = 0, sy = 0;
+      for (const t of matches) {
+        sx += (t.c + 0.5) * cell;
+        sy += (t.r + 0.5) * cell;
+        board[t.r][t.c] = null;
+        t.el.classList.add('pop');
+      }
+      showFloat(sx / matches.length, sy / matches.length, '+' + gain);
+
+      await wait(250);
+      matches.forEach(t => t.el.remove());
+      await gravity();
+    }
+    return combo;
+  }
+
+  async function gravity() {
+    const spawned = [];
+    let moved = false;
+
+    for (let c = 0; c < COLS; c++) {
+      let write = ROWS - 1;
+
+      for (let r = ROWS - 1; r >= 0; r--) {
+        const t = board[r][c];
+        if (!t) continue;
+        if (r !== write) {
+          board[write][c] = t;
+          board[r][c] = null;
+          moveTile(t, write, c);
+          moved = true;
+        }
+        write--;
+      }
+
+      const empties = write + 1;
+      for (let r = write; r >= 0; r--) {
+        const t = createTile(rnd(TYPES), r, c, r - empties);
+        board[r][c] = t;
+        spawned.push(t);
+      }
+    }
+
+    if (spawned.length) revealTiles(spawned);
+    if (moved || spawned.length) sfx.drop();
+
+    await wait(300);
+  }
+
+  function swapTiles(a, b) {
+    const ar = a.r, ac = a.c, br = b.r, bc = b.c;
+    board[ar][ac] = b;
+    board[br][bc] = a;
+    a.r = br; a.c = bc;
+    b.r = ar; b.c = ac;
+    setVisual(a, br, bc);
+    setVisual(b, ar, ac);
+  }
+
+  async function attemptSwap(r1, c1, r2, c2) {
+    if (busy || moves <= 0) return;
+    const a = board[r1][c1], b = board[r2][c2];
+    if (!a || !b) return;
+
+    busy = true;
+    sfx.swap();
+    swapTiles(a, b);
+    await wait(210);
+
+    if (!findMatches().length) {
+      sfx.bad();
+      swapTiles(a, b);
+      await wait(210);
+      busy = false;
+      return;
+    }
+
+    moves--;
+    updateHUD();
+
+    await resolve();
+    busy = false;
+    endCheck();
+  }
+
+  /* ======================= SHUFFLE / GAME END ======================= */
+  function shuffleBoard() {
+    const types = [];
+    for (let r = 0; r < ROWS; r++)
+      for (let c = 0; c < COLS; c++)
+        types.push(board[r][c].type);
+
+    let attempts = 0;
+    do {
+      for (let i = types.length - 1; i > 0; i--) {
+        const j = rnd(i + 1);
+        [types[i], types[j]] = [types[j], types[i]];
+      }
+      let i = 0;
+      for (let r = 0; r < ROWS; r++) {
+        for (let c = 0; c < COLS; c++) {
+          const t = board[r][c];
+          t.type = types[i++];
+          t.el.className = 'tile t' + t.type;
+        }
+      }
+      attempts++;
+    } while (attempts < 60 && (findMatches().length > 0 || !hasMove()));
+  }
+
+  function endCheck() {
+    if (moves <= 0) {
+      setTimeout(() => {
+        finalEl.textContent = score;
+        overlayEl.classList.remove('hidden');
+      }, 400);
+      return;
+    }
+    if (!hasMove()) {
+      shuffleBoard();
+      showFloat((COLS * cell) / 2, (ROWS * cell) / 2, 'Shuffle!');
+      sfx.swap();
+    }
+  }
+
+  /* ======================= INPUT ======================= */
+  function pointToCell(x, y) {
+    const rect = boardEl.getBoundingClientRect();
+    const c = Math.floor((x - rect.left) / cell);
+    const r = Math.floor((y - rect.top) / cell);
+    return inBounds(r, c) ? { r, c } : null;
+  }
+
+  function setSelection(r, c) {
+    clearSelection();
+    const t = board[r][c];
+    if (!t) return;
+    selected = { r, c };
+    t.el.classList.add('sel');
+  }
+
+  function clearSelection() {
+    if (selected) {
+      const t = board[selected.r] && board[selected.r][selected.c];
+      if (t) t.el.classList.remove('sel');
+    }
+    selected = null;
+  }
+
+  boardEl.addEventListener('pointerdown', e => {
+    initAudio();
+    if (busy || moves <= 0) return;
+    const p = pointToCell(e.clientX, e.clientY);
+    if (!p) return;
+    e.preventDefault();
+    drag = { r: p.r, c: p.c, x: e.clientX, y: e.clientY, moved: false };
+    try { boardEl.setPointerCapture(e.pointerId); } catch (_) {}
+  });
+
+  boardEl.addEventListener('pointermove', e => {
+    if (!drag || drag.moved || busy) return;
+    const dx = e.clientX - drag.x;
+    const dy = e.clientY - drag.y;
+    if (Math.hypot(dx, dy) < Math.max(12, cell * 0.42)) return;
+
+    drag.moved = true;
+    let dr = 0, dc = 0;
+    if (Math.abs(dx) > Math.abs(dy)) dc = dx > 0 ? 1 : -1;
+    else                             dr = dy > 0 ? 1 : -1;
+
+    const { r, c } = drag;
+    if (inBounds(r + dr, c + dc)) {
+      clearSelection();
+      attemptSwap(r, c, r + dr, c + dc);
+    }
+  });
+
+  boardEl.addEventListener('pointerup', e => {
+    if (!drag) return;
+    const d = drag;
+    drag = null;
+
+    if (d.moved || busy || moves <= 0) return;
+
+    // Tap behaviour: select / swap with a previously selected neighbour
+    if (selected) {
+      if (selected.r === d.r && selected.c === d.c) { clearSelection(); return; }
+      const adjacent = Math.abs(selected.r - d.r) + Math.abs(selected.c - d.c) === 1;
+      if (adjacent) {
+        const s = selected;
+        clearSelection();
+        attemptSwap(s.r, s.c, d.r, d.c);
+        return;
+      }
+    }
+    setSelection(d.r, d.c);
+  });
+
+  boardEl.addEventListener('pointercancel', () => { drag = null; });
+  boardEl.addEventListener('contextmenu', e => e.preventDefault());
+
+  /* ======================= NEW GAME ======================= */
+  function newGame() {
+    boardEl.innerHTML = '';
+    board = Array.from({ length: ROWS }, () => Array(COLS).fill(null));
+    score = 0;
+    moves = START_MOVES;
+    busy = false;
+    selected = null;
+    drag = null;
+    updateHUD();
+    overlayEl.classList.add('hidden');
+
+    layout();
+
+    const tiles = [];
+    for (let r = 0; r < ROWS; r++)
+      for (let c = 0; c < COLS; c++)
+        tiles.push(board[r][c] = createTile(rnd(TYPES), r, c));
+
+    // Remove any pre-existing matches
+    let guard = 0;
+    while (guard++ < 300) {
+      const m = findMatches();
+      if (!m.length) break;
+      for (const t of m) {
+        t.type = rnd(TYPES);
+        t.el.className = 'tile t' + t.type;
+      }
+    }
+    if (!hasMove()) shuffleBoard();
+
+    revealTiles(tiles);
+  }
+
+  /* ======================= CONTROLS ======================= */
+  soundBtn.addEventListener('click', () => {
+    muted = !muted;
+    soundBtn.textContent = muted ? '🔇' : '🔊';
+    if (!muted) { initAudio(); sfx.swap(); }
+  });
+
+  document.getElementById('restart').addEventListener('click', () => {
+    initAudio();
+    sfx.match(1, 3);
+    newGame();
+  });
+
+  /* ======================= BOOT ======================= */
+  let resizeTimer = null;
+  const onResize = () => {
+    clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(() => {
+      layout();
+      const s = getComputedStyle(boardEl).getPropertyValue('--cell');
+      boardEl.style.setProperty('--cell', s);
+    }, 80);
+  };
+  window.addEventListener('resize', onResize);
+  window.addEventListener('orientationchange', onResize);
+
+  requestAnimationFrame(() => { newGame(); });
+})();
+</script>
+</body>
+</html>

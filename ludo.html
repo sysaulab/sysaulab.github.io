@@ -20,8 +20,8 @@
   }
   #app{display:flex;flex-direction:column;height:100%;padding:10px;gap:8px;}
 
-  #top{display:flex;align-items:center;justify-content:center;gap:10px;}
-  #chips{display:flex;justify-content:center;gap:6px;flex-wrap:wrap;}
+  #top{display:flex;align-items:center;justify-content:center;gap:8px;}
+  #chips{display:flex;justify-content:center;gap:6px;flex-wrap:wrap;flex:1 1 auto;min-width:0;}
   .chip{
     display:flex;align-items:center;gap:5px;padding:5px 10px;border-radius:999px;
     background:var(--panel);font-size:12px;font-weight:700;color:var(--muted);
@@ -32,13 +32,14 @@
   .chip .dot{width:10px;height:10px;border-radius:50%;flex:none;}
   .chip .cnt{opacity:.75;font-variant-numeric:tabular-nums;}
 
-  #reset{
+  #reset,#mute{
     background:var(--panel);border:none;color:var(--muted);
     width:34px;height:34px;border-radius:12px;font-size:16px;cursor:pointer;
     display:flex;align-items:center;justify-content:center;flex:none;
     transition:background .15s,color .15s;
   }
-  #reset:active{background:#2c3346;color:#fff;}
+  #reset:active,#mute:active{background:#2c3346;color:#fff;}
+  #mute.off{color:#5a6377;}
 
   #boardWrap{flex:1;display:flex;align-items:center;justify-content:center;min-height:0;}
   canvas{display:block;border-radius:16px;box-shadow:0 10px 34px rgba(0,0,0,.55);}
@@ -53,7 +54,7 @@
   #die{
     width:60px;height:60px;border-radius:15px;background:#fff;display:grid;
     grid-template-columns:repeat(3,1fr);grid-template-rows:repeat(3,1fr);
-    padding:7px;gap:1px;flex:none;border:none;cursor:pointer;padding:7px;
+    padding:7px;gap:1px;flex:none;border:none;cursor:pointer;
     box-shadow:0 4px 0 #b9bec9, 0 8px 16px rgba(0,0,0,.45);
     transition:transform .08s, box-shadow .08s, opacity .2s;
   }
@@ -74,6 +75,7 @@
   <div id="top">
     <div id="chips"></div>
     <button id="reset" aria-label="New game">↻</button>
+    <button id="mute" aria-label="Toggle sound">🔊</button>
   </div>
   <div id="boardWrap"><canvas id="board"></canvas></div>
   <div id="bottom">
@@ -85,6 +87,174 @@
 <script>
 (function(){
 'use strict';
+
+/* ============================================================
+   AUDIO ENGINE  (all sounds synthesised — no files needed)
+   ============================================================ */
+
+const SFX = (function(){
+  let ac = null;          // AudioContext
+  let master = null;      // master gain
+  let noiseBuf = null;    // reusable white-noise buffer
+  let muted = false;
+
+  try { muted = localStorage.getItem('ludo.muted') === '1'; } catch(e){}
+
+  /* --- context --- */
+  function ctx(){
+    if(ac) return ac;
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if(!AC) return null;
+    ac = new AC();
+    master = ac.createGain();
+    master.gain.value = 0.55;
+    master.connect(ac.destination);
+    return ac;
+  }
+
+  function unlock(){
+    const c = ctx();
+    if(c && c.state === 'suspended') c.resume();
+  }
+
+  function setMuted(m){
+    muted = !!m;
+    try { localStorage.setItem('ludo.muted', muted ? '1' : '0'); } catch(e){}
+  }
+  const isMuted = () => muted;
+
+  /* --- primitives --- */
+
+  // A pitched blip with an exponential envelope.
+  function tone(freq, dur, o){
+    o = o || {};
+    const c = ctx(); if(!c || muted) return;
+    const t0  = c.currentTime + (o.delay || 0);
+    const vol = o.vol == null ? 0.22 : o.vol;
+    const atk = o.attack == null ? 0.008 : o.attack;
+
+    const osc = c.createOscillator();
+    const g   = c.createGain();
+
+    osc.type = o.type || 'sine';
+    osc.frequency.setValueAtTime(freq, t0);
+    if(o.to) osc.frequency.exponentialRampToValueAtTime(Math.max(20, o.to), t0 + dur);
+
+    g.gain.setValueAtTime(0.0001, t0);
+    g.gain.exponentialRampToValueAtTime(vol, t0 + atk);
+    g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+
+    osc.connect(g); g.connect(master);
+    osc.start(t0);
+    osc.stop(t0 + dur + 0.03);
+  }
+
+  // A filtered noise burst (rattles, thuds, swooshes).
+  function noise(dur, o){
+    o = o || {};
+    const c = ctx(); if(!c || muted) return;
+
+    if(!noiseBuf){
+      const len = Math.floor(c.sampleRate);      // 1 second of white noise
+      noiseBuf = c.createBuffer(1, len, c.sampleRate);
+      const d = noiseBuf.getChannelData(0);
+      for(let i=0;i<len;i++) d[i] = Math.random()*2 - 1;
+    }
+
+    const t0  = c.currentTime + (o.delay || 0);
+    const vol = o.vol == null ? 0.22 : o.vol;
+
+    const src = c.createBufferSource();
+    src.buffer = noiseBuf;
+    src.loop = true;
+
+    const flt = c.createBiquadFilter();
+    flt.type = o.filter || 'bandpass';
+    flt.frequency.setValueAtTime(o.freq || 1800, t0);
+    if(o.to) flt.frequency.exponentialRampToValueAtTime(Math.max(40, o.to), t0 + dur);
+    flt.Q.value = o.q == null ? 1 : o.q;
+
+    const g = c.createGain();
+    g.gain.setValueAtTime(0.0001, t0);
+    g.gain.exponentialRampToValueAtTime(vol, t0 + 0.006);
+    g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+
+    src.connect(flt); flt.connect(g); g.connect(master);
+    src.start(t0);
+    src.stop(t0 + dur + 0.03);
+  }
+
+  /* --- game sounds --- */
+
+  const api = {
+    unlock, setMuted, isMuted,
+
+    /* dice tumbling in the cup */
+    roll(){
+      for(let i=0;i<5;i++){
+        noise(0.05, {
+          freq: 2200 + Math.random()*2000,
+          q: 3, vol: 0.14, delay: i*0.055
+        });
+      }
+    },
+
+    /* dice hitting the table / result revealed */
+    land(){
+      noise(0.09, { freq: 1000, to: 260, q: 1.2, vol: 0.26 });
+      tone(170, 0.13, { type:'triangle', vol: 0.16, to: 110 });
+    },
+
+    /* one hop of a token */
+    step(i){
+      const f = 520 + ((i || 0) % 5) * 55;
+      tone(f, 0.065, { type:'square', vol: 0.075, to: f*1.35 });
+      noise(0.028, { freq: 3200, q: 2.5, vol: 0.05 });
+    },
+
+    /* token sent back to base */
+    capture(){
+      tone(430, 0.34, { type:'sawtooth', vol: 0.20, to: 78 });
+      noise(0.30, { freq: 1700, to: 190, q: 1, vol: 0.20 });
+      tone(120, 0.30, { type:'sine', vol: 0.16, to: 55, delay: 0.02 });
+    },
+
+    /* token reached the goal triangle */
+    goal(){
+      [523.25, 659.25, 783.99, 1046.50].forEach((f,i) =>
+        tone(f, 0.30, { type:'triangle', vol: 0.20, delay: i*0.085 }));
+    },
+
+    /* landed on a safe star (unused hook, kept for completeness) */
+    safe(){ tone(880, 0.11, { type:'sine', vol: 0.12 }); },
+
+    /* no legal move */
+    noMoves(){
+      tone(320, 0.20, { type:'sine', vol: 0.16, to: 190 });
+      tone(240, 0.24, { type:'sine', vol: 0.12, to: 150, delay: 0.09 });
+    },
+
+    /* three sixes — turn forfeited */
+    penalty(){
+      tone(210, 0.38, { type:'square',   vol: 0.14, to: 85 });
+      tone(150, 0.40, { type:'sawtooth', vol: 0.11, to: 62, delay: 0.05 });
+    },
+
+    /* soft ping when the turn passes */
+    turn(){ tone(700, 0.085, { type:'sine', vol: 0.09 }); },
+
+    /* victory fanfare */
+    win(){
+      const notes = [523.25, 659.25, 783.99, 1046.50, 783.99, 1046.50, 1318.51];
+      notes.forEach((f,i) => {
+        tone(f,     0.34, { type:'triangle', vol: 0.22, delay: i*0.125 });
+        tone(f/2,   0.34, { type:'sine',     vol: 0.10, delay: i*0.125 });
+      });
+    }
+  };
+
+  return api;
+})();
 
 /* ============================================================
    BOARD DATA
@@ -155,6 +325,7 @@ const chipsEl = document.getElementById('chips');
 const msgEl   = document.getElementById('msg');
 const dieBtn  = document.getElementById('die');
 const resetBtn= document.getElementById('reset');
+const muteBtn = document.getElementById('mute');
 
 let cell = 30;
 
@@ -308,6 +479,8 @@ function rollDice(){
   dieBtn.classList.add('rolling');
   updateUI();
 
+  SFX.roll();
+
   const my = gameToken;
   let ticks = 0;
   const iv = setInterval(() => {
@@ -326,6 +499,7 @@ function finishRoll(my){
   if(my !== gameToken) return;
   diceValue = 1 + Math.floor(Math.random()*6);
   renderDie();
+  SFX.land();
 
   // three sixes rule
   if(diceValue === 6){
@@ -334,6 +508,7 @@ function finishRoll(my){
       sixStreak = 0;
       msgEl.textContent = 'Three 6s — turn lost!';
       phase = 'busy';
+      SFX.penalty();
       setTimeout(() => { if(my === gameToken) nextPlayer(); }, 900);
       return;
     }
@@ -344,6 +519,7 @@ function finishRoll(my){
   if(legal.length === 0){
     phase = 'busy';
     msgEl.textContent = 'No moves available';
+    SFX.noMoves();
     setTimeout(() => { if(my === gameToken) nextPlayer(); }, 750);
     return;
   }
@@ -458,10 +634,14 @@ function completeMove(pi, move, tk){
     winner = pi;
     phase = 'over';
     updateUI();
+    SFX.win();
     return;
   }
 
   const gotHome = (move.to === 57);
+  if(captured) SFX.capture();
+  else if(gotHome) SFX.goal();
+
   const extra = (diceValue === 6) || captured || gotHome;
 
   if(extra){
@@ -486,6 +666,7 @@ function nextPlayer(){
   phase = 'roll';
   renderDie();
   updateUI();
+  SFX.turn();
   const my = gameToken;
   if(isAI(curPlayer)){
     setTimeout(() => { if(my === gameToken) rollDice(); }, 750);
@@ -505,6 +686,7 @@ function tickAnim(now){
   let guard = 0;
   while(anim && now - anim.start >= anim.dur && guard++ < 2000){
     anim.i++;
+    if(guard <= 3) SFX.step(anim.i);   // one hop = one blip
     if(anim.i >= anim.cells.length - 1){
       const last = anim.cells[anim.cells.length - 1];
       anim.token.rx = last[0];
@@ -760,6 +942,7 @@ window.addEventListener('orientationchange', () => setTimeout(resize, 120));
    ============================================================ */
 
 canvas.addEventListener('pointerdown', e => {
+  SFX.unlock();
   if(phase !== 'move' || winner >= 0) return;
   if(isAI(curPlayer)) return;
 
@@ -785,11 +968,35 @@ canvas.addEventListener('pointerdown', e => {
   }
 });
 
-dieBtn.addEventListener('click', rollDice);
+dieBtn.addEventListener('click', () => {
+  SFX.unlock();
+  rollDice();
+});
 
 resetBtn.addEventListener('click', () => {
+  SFX.unlock();
   newGame();
   resize();
+});
+
+/* ---- mute toggle ---- */
+function syncMute(){
+  const m = SFX.isMuted();
+  muteBtn.textContent = m ? '🔇' : '🔊';
+  muteBtn.classList.toggle('off', m);
+  muteBtn.setAttribute('aria-label', m ? 'Unmute sound' : 'Mute sound');
+}
+muteBtn.addEventListener('click', () => {
+  SFX.unlock();
+  SFX.setMuted(!SFX.isMuted());
+  syncMute();
+  if(!SFX.isMuted()) SFX.turn();   // confirmation blip
+});
+syncMute();
+
+/* ---- unlock audio on first gesture (mobile autoplay policy) ---- */
+['pointerdown','touchstart','keydown'].forEach(ev => {
+  window.addEventListener(ev, () => SFX.unlock(), { once:true, passive:true });
 });
 
 /* ============================================================
