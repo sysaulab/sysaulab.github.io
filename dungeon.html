@@ -18,15 +18,17 @@ html,body{
 }
 #hud{
   background:#161b22;border:1px solid #30363d;border-radius:10px;
-  padding:7px 40px 7px 9px;flex:none;font-size:12px;position:relative;
+  padding:7px 74px 7px 9px;flex:none;font-size:12px;position:relative;
 }
-#menubtn{
-  position:absolute;top:7px;right:7px;width:28px;height:28px;
+#menubtn,#mutebtn{
+  position:absolute;top:7px;width:28px;height:28px;
   border:1px solid #30363d;background:#21262d;color:#8b949e;
   border-radius:7px;font-size:15px;line-height:1;font-family:inherit;
   cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0;
 }
-#menubtn:active{background:#30363d;color:#e6edf3}
+#menubtn{right:7px}
+#mutebtn{right:40px;font-size:13px}
+#menubtn:active,#mutebtn:active{background:#30363d;color:#e6edf3}
 .hudrow{display:flex;align-items:center;gap:6px;margin-bottom:5px}
 .hudrow:last-child{margin-bottom:0}
 .bar{flex:1;height:13px;background:#0d1117;border:1px solid #30363d;border-radius:7px;overflow:hidden;position:relative}
@@ -193,6 +195,12 @@ button.act.man small{color:#a9c8ff}
 #welcomebtns button.pri:active{background:#388bfd}
 #welcomebtns button.dng{background:#3d1414;border-color:#5c1a1a;color:#f85149}
 #welcomebtns button.dng:active{background:#5c1a1a}
+#wmute{
+  width:100%;margin-top:10px;appearance:none;border:1px solid #21262d;
+  background:transparent;color:#6e7681;border-radius:9px;padding:10px;
+  font-size:12px;font-family:inherit;cursor:pointer;letter-spacing:.4px;
+}
+#wmute:active{background:#21262d;color:#c9d1d9}
 </style>
 </head>
 <body>
@@ -214,6 +222,7 @@ button.act.man small{color:#a9c8ff}
   <p class="tag">Eight dungeons. One long dark.</p>
   <div id="saveinfo"></div>
   <div id="welcomebtns"></div>
+  <button id="wmute">🔊  Sound: On</button>
 </div></div>
 
 <script>
@@ -246,6 +255,153 @@ function vnoise(x,y,s){
 function fbm(x,y,s){
   return vnoise(x,y,s)*0.62 + vnoise(x*2.1,y*2.1,s+31)*0.26 + vnoise(x*4.3,y*4.3,s+77)*0.12;
 }
+
+/* =======================================================================
+   SFX — a tiny PC-speaker style sound engine
+   ======================================================================= */
+const SFX = (function(){
+  const MUTE_KEY = 'ashen_reach_mute';
+  let ctx=null, master=null, muted=false;
+  let stepFlip=false, lastStep=0;
+
+  try{ muted = (localStorage.getItem(MUTE_KEY)==='1'); }catch(e){}
+
+  function init(){
+    if(ctx) return true;
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if(!AC) return false;
+    try{
+      ctx = new AC();
+      master = ctx.createGain();
+      master.gain.value = 0.15;
+      master.connect(ctx.destination);
+    }catch(e){ ctx=null; return false; }
+    return true;
+  }
+  function unlock(){
+    if(!init()) return;
+    try{ if(ctx.state !== 'running') ctx.resume(); }catch(e){}
+  }
+  function ready(){ return !!ctx; }
+
+  /* single square-wave blip, optional pitch sweep */
+  function tone(freq,dur,o){
+    if(!ctx||muted) return;
+    o = o||{};
+    const t0  = ctx.currentTime + (o.delay||0);
+    const vol = (o.vol==null) ? 0.35 : o.vol;
+    const osc = ctx.createOscillator();
+    const g   = ctx.createGain();
+    osc.type = o.type || 'square';
+    osc.frequency.setValueAtTime(freq,t0);
+    if(o.to) osc.frequency.exponentialRampToValueAtTime(Math.max(20,o.to), t0+dur);
+    g.gain.setValueAtTime(0.0001,t0);
+    g.gain.exponentialRampToValueAtTime(vol, t0+0.005);
+    g.gain.exponentialRampToValueAtTime(0.0001, t0+dur);
+    osc.connect(g); g.connect(master);
+    osc.start(t0); osc.stop(t0+dur+0.03);
+  }
+
+  /* 1-bit-ish noise burst (hits, traps, fire) */
+  function noise(dur,vol,cut,delay){
+    if(!ctx||muted) return;
+    const t0  = ctx.currentTime + (delay||0);
+    const len = Math.max(1,Math.floor(ctx.sampleRate*dur));
+    const buf = ctx.createBuffer(1,len,ctx.sampleRate);
+    const d   = buf.getChannelData(0);
+    for(let i=0;i<len;i++) d[i] = Math.random()*2-1;
+    const src = ctx.createBufferSource(); src.buffer = buf;
+    let node = src;
+    if(cut){
+      const f = ctx.createBiquadFilter();
+      f.type='lowpass'; f.frequency.value = cut;
+      src.connect(f); node = f;
+    }
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(vol,t0);
+    g.gain.exponentialRampToValueAtTime(0.0001, t0+dur);
+    node.connect(g); g.connect(master);
+    src.start(t0); src.stop(t0+dur);
+  }
+
+  /* a run of notes: [[freq,dur],...] */
+  function seq(notes,o){
+    o = o||{};
+    const gap = o.gap||0, vol = (o.vol==null?0.35:o.vol), type = o.type||'square';
+    let t = 0;
+    for(const n of notes){
+      tone(n[0], n[1], {delay:t, vol:vol, type:type});
+      t += n[1] + gap;
+    }
+  }
+
+  const api = {
+    unlock, ready,
+    isMuted(){ return muted; },
+    setMuted(v){ muted = !!v; try{ localStorage.setItem(MUTE_KEY, muted?'1':'0'); }catch(e){} },
+    toggle(){ api.setMuted(!muted); return muted; },
+
+    /* --- movement --- */
+    step(){
+      const now = performance.now();
+      if(now-lastStep < 70) return;
+      lastStep = now;
+      stepFlip = !stepFlip;
+      tone(stepFlip?150:118, 0.032, {vol:0.20});
+    },
+    bump(){ tone(92,0.085,{vol:0.30,to:58}); },
+
+    /* --- interface --- */
+    ui(){ tone(680,0.035,{vol:0.24}); },
+    uiOpen(){ tone(523,0.05,{vol:0.28}); tone(784,0.07,{vol:0.28,delay:0.055}); },
+    uiClose(){ tone(700,0.05,{vol:0.24}); tone(440,0.07,{vol:0.24,delay:0.05}); },
+    error(){ tone(140,0.15,{vol:0.32,to:105}); },
+    talk(){ tone(440,0.05,{vol:0.22}); tone(554,0.06,{vol:0.22,delay:0.085}); },
+
+    /* --- combat --- */
+    encounter(){ seq([[880,0.07],[659,0.07],[880,0.09]],{vol:0.36,gap:0.028}); },
+    bossEncounter(){ seq([[165,0.18],[147,0.18],[124,0.36]],{vol:0.44,gap:0.035}); },
+    hit(){ tone(880,0.06,{vol:0.38,to:300}); noise(0.055,0.16,3200); },
+    crit(){
+      seq([[1200,0.045],[1600,0.045],[2050,0.09]],{vol:0.38,gap:0.004});
+      noise(0.09,0.20,4200);
+    },
+    heavy(){ tone(520,0.12,{vol:0.42,to:130}); noise(0.1,0.24,2200); },
+    hurt(){ tone(240,0.12,{vol:0.40,to:88}); noise(0.08,0.18,1300); },
+    guardHit(){ tone(300,0.09,{vol:0.26,to:180}); noise(0.06,0.12,1800); },
+    guard(){ tone(280,0.14,{vol:0.32,to:470}); },
+    fire(){
+      noise(0.32,0.28,1500);
+      tone(420,0.32,{vol:0.32,to:75});
+      tone(880,0.22,{vol:0.16,to:200,delay:0.02});
+    },
+    heal(){ seq([[523,0.07],[659,0.07],[784,0.07],[1047,0.16]],{vol:0.30,gap:0.012}); },
+    kill(){ seq([[700,0.05],[500,0.05],[300,0.12]],{vol:0.32,gap:0.004}); },
+    flee(){ noise(0.22,0.18,900); tone(700,0.22,{vol:0.22,to:200}); },
+    death(){ seq([[440,0.16],[349,0.16],[262,0.16],[196,0.55]],{vol:0.40,gap:0.03}); },
+    levelup(){ seq([[523,0.09],[659,0.09],[784,0.09],[1047,0.09],[1319,0.26]],{vol:0.40,gap:0.02}); },
+    victory(){ seq([[523,0.12],[659,0.12],[784,0.12],[1047,0.14],[784,0.12],[1047,0.42]],{vol:0.42,gap:0.022}); },
+    win(){ seq([[523,0.14],[659,0.14],[784,0.14],[1047,0.16],[784,0.14],[1047,0.18],[1319,0.6]],{vol:0.45,gap:0.03}); },
+
+    /* --- items / loot --- */
+    potion(){ seq([[600,0.05],[900,0.05],[1200,0.11]],{vol:0.30,gap:0.012}); },
+    ether(){ seq([[900,0.05],[1200,0.05],[1500,0.11]],{vol:0.28,gap:0.012}); },
+    chest(){ seq([[880,0.06],[1175,0.06],[1568,0.15]],{vol:0.34,gap:0.01}); },
+    gold(){ seq([[1319,0.05],[1760,0.10]],{vol:0.28,gap:0.02}); },
+    buy(){ seq([[1047,0.05],[1319,0.05],[1568,0.13]],{vol:0.32,gap:0.01}); },
+    trap(){ noise(0.18,0.34,2600); tone(165,0.18,{vol:0.38,to:68}); },
+    rest(){ seq([[392,0.15],[330,0.15],[262,0.38]],{vol:0.28,gap:0.03}); },
+
+    /* --- travel --- */
+    stairs(){ seq([[500,0.07],[400,0.07],[320,0.07],[250,0.15]],{vol:0.30,gap:0.01}); },
+    stairsUp(){ seq([[250,0.07],[320,0.07],[400,0.07],[500,0.15]],{vol:0.30,gap:0.01}); },
+    enterDungeon(){ seq([[196,0.20],[147,0.20],[110,0.42]],{vol:0.38,gap:0.03}); },
+    leaveDungeon(){ seq([[330,0.12],[440,0.12],[587,0.26]],{vol:0.32,gap:0.02}); },
+    town(){ seq([[523,0.08],[659,0.08],[784,0.17]],{vol:0.28,gap:0.02}); },
+    travel(){ seq([[700,0.06],[900,0.06],[1100,0.15]],{vol:0.28,gap:0.01}); },
+  };
+  return api;
+})();
 
 const TILE = {
   plains  :{ch:'"',cls:'t-plains',  walk:true ,name:'open plains'},
@@ -734,6 +890,7 @@ function renderHUD(){
 
   document.getElementById('hud').innerHTML=`
     <button id="menubtn" aria-label="Menu">☰</button>
+    <button id="mutebtn" aria-label="Sound">${SFX.isMuted()?'🔇':'🔊'}</button>
     <div class="hudrow">
       <div class="hudlabel">HP</div>
       <div class="bar hp"><i style="width:${hpPct}%"></i><span>${p.hp} / ${pMaxHp()}</span></div>
@@ -836,6 +993,18 @@ function addWelcomeBtn(label, fn, cls){
   document.getElementById('welcomebtns').appendChild(b);
 }
 
+function updateMuteUI(){
+  const wb=document.getElementById('wmute');
+  if(wb) wb.textContent = SFX.isMuted() ? '🔇  Sound: Off' : '🔊  Sound: On';
+}
+
+function toggleMute(){
+  const nowMuted = SFX.toggle();
+  updateMuteUI();
+  if(S && S.p) renderHUD();
+  if(!nowMuted) SFX.uiOpen();
+}
+
 function showWelcome(){
   const w    = document.getElementById('welcome');
   const info = document.getElementById('saveinfo');
@@ -843,6 +1012,7 @@ function showWelcome(){
   w.classList.remove('off');
   btns.innerHTML='';
   info.innerHTML='';
+  updateMuteUI();
 
   if(S && S.p){
     const p = S.p;
@@ -869,6 +1039,7 @@ function showWelcome(){
 }
 
 function confirmNewGame(){
+  SFX.ui();
   const info = document.getElementById('saveinfo');
   const btns = document.getElementById('welcomebtns');
   info.innerHTML = `
@@ -883,13 +1054,15 @@ function confirmNewGame(){
     hasExistingSave = false;
     startGame(true);
   }, 'dng');
-  addWelcomeBtn('Cancel', showWelcome);
+  addWelcomeBtn('Cancel', ()=>{ SFX.ui(); showWelcome(); });
 }
 
 function startGame(fresh){
   document.getElementById('welcome').classList.add('off');
   heldKeys.clear();
   stopKeyMove();
+  SFX.unlock();
+  SFX.uiOpen();
   if(fresh){
     newGame();
   } else {
@@ -900,6 +1073,7 @@ function startGame(fresh){
 }
 
 function openMenu(){
+  SFX.uiOpen();
   if(isModalOpen()) closeModal();
   showWelcome();
 }
@@ -930,7 +1104,10 @@ document.getElementById('modal').addEventListener('click',e=>{
 
 document.getElementById('hud').addEventListener('click', e=>{
   if(e.target.closest('#menubtn')) openMenu();
+  else if(e.target.closest('#mutebtn')) toggleMute();
 });
+
+document.getElementById('wmute').addEventListener('click', toggleMute);
 
 /* =======================================================================
    INPUT — KEYBOARD
@@ -1077,11 +1254,12 @@ function step(dx,dy,silent){
   const nx=S.px+dx, ny=S.py+dy;
   if(!inb(m,nx,ny)) return false;
   const t=m.t[ny*m.w+nx];
-  if(!TILE[t].walk){ if(!silent) logMsg('The way is blocked.','dim'); render(); return false; }
+  if(!TILE[t].walk){ if(!silent) logMsg('The way is blocked.','dim'); SFX.bump(); render(); return false; }
   const e=enemyAt(m,nx,ny);
   if(e){ S.run=null; startCombat(e); return false; }
 
   S.px=nx; S.py=ny;
+  SFX.step();
   const halted = onEnterTile(m,nx,ny);
   if(S.mode==='explore') endTurn();
   if(halted) S.run=null;
@@ -1101,12 +1279,15 @@ function onEnterTile(m,x,y){
       const amt=25+ri(0,30)+dIdx*30;
       S.p.gold+=amt;
       logMsg(`A chest! You find ${amt} gold.`,'loot');
+      SFX.chest();
     } else if(r<0.82){
       S.p.potions++;
       logMsg('A chest! You find a potion.','loot');
+      SFX.chest();
     } else {
       S.p.ethers++;
       logMsg('A chest! You find an ether.','loot');
+      SFX.chest();
     }
     save();
     return true;
@@ -1116,17 +1297,20 @@ function onEnterTile(m,x,y){
     const dmg=Math.max(2,Math.round(pMaxHp()*0.11)+ri(0,4));
     S.p.hp-=dmg;
     logMsg(`A hidden spike bites into you! (-${dmg} HP)`,'bad');
+    SFX.trap();
     if(S.p.hp<=0){ die(); return true; }
     save();
     return true;
   }
   if(t==='stairs'){
     logMsg('You descend a crumbling stair.','info');
+    SFX.stairs();
     descend(S.dungeon.idx, S.dungeon.floor+1, false);
     return true;
   }
   if(t==='up'){
     logMsg('You climb back up.','info');
+    SFX.stairsUp();
     descend(S.dungeon.idx, S.dungeon.floor-1, true);
     return true;
   }
@@ -1230,6 +1414,7 @@ function enterDungeon(idx){
     S.lock[idx]={floors:{}, cleared:false};
   }
   logMsg(`You step into ${dungeonLabel(idx)}.`,'big');
+  SFX.enterDungeon();
   loadFloor(idx,0);
   save();
 }
@@ -1268,6 +1453,7 @@ function leaveDungeon(){
   S.dungeon=null;
   heldKeys.clear(); stopKeyMove();
   logMsg('You emerge into daylight.','info');
+  SFX.leaveDungeon();
   render(); save();
 }
 
@@ -1280,7 +1466,9 @@ function clearDungeon(){
     S.won=true;
     logMsg('The last drake falls. The Ashen Reach is quiet at last.','big');
     logMsg('YOU WIN. You may keep exploring, or start a new game.','good');
+    SFX.win();
   } else {
+    SFX.victory();
     const next=nextTarget();
     if(next) logMsg(`Next: ${dungeonLabel(next.idx)}.`,'info');
   }
@@ -1304,6 +1492,7 @@ function startCombat(enemy){
   heldKeys.clear();
   stopKeyMove();
   logMsg(`⚔ ${enemy.name} attacks!`, enemy.boss?'big':'bad');
+  if(enemy.boss) SFX.bossEncounter(); else SFX.encounter();
   render();
 }
 
@@ -1325,21 +1514,23 @@ function doAction(a){
 }
 
 function usePotion(){
-  if(S.p.potions<=0){ logMsg('You have no potions.','dim'); render(); return; }
+  if(S.p.potions<=0){ logMsg('You have no potions.','dim'); SFX.error(); render(); return; }
   S.p.potions--;
   const amt=Math.min(45, pMaxHp()-S.p.hp);
   S.p.hp+=amt;
   logMsg(`You drink a potion. (+${amt} HP)`,'good');
+  SFX.potion();
   if(S.mode==='explore'){ endTurn(); }
   render(); save();
 }
 
 function useEther(){
-  if(S.p.ethers<=0){ logMsg('You have no ethers.','dim'); render(); return; }
+  if(S.p.ethers<=0){ logMsg('You have no ethers.','dim'); SFX.error(); render(); return; }
   S.p.ethers--;
   const amt=Math.min(30, pMaxMp()-S.p.mp);
   S.p.mp+=amt;
   logMsg(`You drink an ether. (+${amt} MP)`,'info');
+  SFX.ether();
   if(S.mode==='explore'){ endTurn(); }
   render(); save();
 }
@@ -1358,11 +1549,13 @@ function combatAction(a){
     const chance=clamp(0.45 + (S.p.lvl - 1)*0.02 - (e.boss?0.35:0), 0.15, 0.9);
     if(Math.random()<chance){
       logMsg('You slip away into the dark.','info');
+      SFX.flee();
       S.mode='explore'; S.combat=null;
       render(); save();
       return;
     }
     logMsg('You fail to escape!','bad');
+    SFX.error();
     enemyTurn();
     return;
   }
@@ -1374,6 +1567,7 @@ function resolvePlayerHit(atk, e, verb){
   if(crit) d=Math.round(d*1.65);
   e.hp-=d;
   logMsg(`${verb} ${e.name} for ${d} damage${crit?' — CRITICAL!':'.'}`, crit?'loot':'good');
+  if(crit) SFX.crit(); else SFX.hit();
   if(e.hp<=0){ winCombat(); return; }
   enemyTurn();
 }
@@ -1386,11 +1580,13 @@ function enemyTurn(){
     const d=Math.max(1,Math.round(dmgRoll(e.atk,pDef())*0.5));
     S.p.hp-=d;
     logMsg(`${e.name} hits your guard for ${d}.`, 'dim');
+    SFX.guardHit();
     C.guard=false;
   } else {
     const d=dmgRoll(e.atk,pDef());
     S.p.hp-=d;
     logMsg(`${e.name} hits you for ${d} damage.`,'bad');
+    SFX.hurt();
   }
   if(S.p.hp<=0){ S.p.hp=0; die(); return; }
   C.turn++;
@@ -1400,6 +1596,7 @@ function enemyTurn(){
 function winCombat(){
   const e=S.combat.e;
   logMsg(`${e.name} is destroyed!`,'good');
+  SFX.kill();
   S.p.xp+=e.xp;
   S.p.gold+=e.gold;
   logMsg(`+${e.xp} XP, +${e.gold} gold.`,'loot');
@@ -1420,6 +1617,7 @@ function winCombat(){
   if(leveled){
     S.p.hp=pMaxHp(); S.p.mp=pMaxMp();
     logMsg(`✦ You reach level ${S.p.lvl}! Fully restored.`,'good');
+    SFX.levelup();
     const newSkills=SKILLS.filter(s=>s.lvl===S.p.lvl);
     newSkills.forEach(s=>logMsg(`New skill learned: ${s.name} — ${s.desc}`,'info'));
   }
@@ -1442,6 +1640,7 @@ function die(){
   S.run=null;
   heldKeys.clear(); stopKeyMove();
   logMsg(`You fall... (-${lost} gold)`,'bad');
+  SFX.death();
   S.map='town';
   S.px=S.town.start[0]; S.py=S.town.start[1];
   S.dungeon=null;
@@ -1454,14 +1653,18 @@ function die(){
    MODALS
    ======================================================================= */
 function openModal(title){
+  const wasOpen = isModalOpen();
   heldKeys.clear();
   stopKeyMove();
   document.getElementById('modaltitle').textContent=title;
   document.getElementById('modalbody').innerHTML='';
   document.getElementById('modalfoot').innerHTML='';
   document.getElementById('modal').classList.add('on');
+  if(!wasOpen) SFX.uiOpen();
 }
 function closeModal(){
+  if(!isModalOpen()) return;
+  SFX.uiClose();
   document.getElementById('modal').classList.remove('on');
 }
 function modalFootBtn(label,fn,cls){
@@ -1495,17 +1698,20 @@ function openSkillMenu(){
 function useSkill(sk){
   const C=S.combat; if(!C) return;
   const e=C.e;
-  if(S.p.mp<sk.mp){ logMsg('Not enough MP.','dim'); render(); return; }
+  if(S.p.mp<sk.mp){ logMsg('Not enough MP.','dim'); SFX.error(); render(); return; }
   S.p.mp-=sk.mp;
 
   if(sk.id==='power'){
+    SFX.heavy();
     resolvePlayerHit(Math.round(pAtk()*1.8), e, 'You slam');
   } else if(sk.id==='cleave'){
+    SFX.heavy();
     resolvePlayerHit(Math.round(pAtk()*2.6), e, 'You cleave');
   } else if(sk.id==='fire'){
     const d=dmgRoll(Math.round(pAtk()*1.4), 0);
     e.hp-=d;
     logMsg(`Fireball sears ${e.name} for ${d} damage!`,'loot');
+    SFX.fire();
     if(e.hp<=0){ winCombat(); return; }
     enemyTurn();
   } else if(sk.id==='guard'){
@@ -1513,12 +1719,14 @@ function useSkill(sk){
     const heal=Math.round(pMaxHp()*0.10);
     S.p.hp=Math.min(pMaxHp(), S.p.hp+heal);
     logMsg(`You raise your guard. (+${heal} HP)`,'info');
+    SFX.guard();
     enemyTurn();
   } else if(sk.id==='mend'){
     const heal=Math.round(pMaxHp()*0.35);
     const amt=Math.min(heal, pMaxHp()-S.p.hp);
     S.p.hp+=amt;
     logMsg(`Warm light knits your wounds. (+${amt} HP)`,'good');
+    SFX.heal();
     enemyTurn();
   }
   render();
@@ -1544,6 +1752,7 @@ function openItemMenu(){
     const amt=Math.min(45,pMaxHp()-S.p.hp);
     S.p.hp+=amt;
     logMsg(`You drink a potion. (+${amt} HP)`,'good');
+    SFX.potion();
     enemyTurn(); render();
   });
   mk('Ether','Restore 30 MP',S.p.ethers,()=>{
@@ -1552,6 +1761,7 @@ function openItemMenu(){
     const amt=Math.min(30,pMaxMp()-S.p.mp);
     S.p.mp+=amt;
     logMsg(`You drink an ether. (+${amt} MP)`,'info');
+    SFX.ether();
     enemyTurn(); render();
   });
   modalFootBtn('Back',()=>{ closeModal(); render(); });
@@ -1588,10 +1798,11 @@ function openShop(){
       b.textContent=`${it.cost}g`;
       b.disabled=S.p.gold<it.cost;
       b.onclick=()=>{
-        if(S.p.gold<it.cost) return;
+        if(S.p.gold<it.cost){ SFX.error(); return; }
         S.p.gold-=it.cost;
         it.fn();
         logMsg(`Bought ${it.nm}.`,'loot');
+        SFX.buy();
         save();
         renderShop();
         renderHUD();
@@ -1613,10 +1824,11 @@ function openInn(){
     <div class="statline"><span>Cost</span><span style="color:#d29922">${cost} gold</span></div>
     <div class="statline"><span>Your gold</span><span style="color:#d29922">${S.p.gold}</span></div>`;
   const b=modalFootBtn('Rest ('+cost+'g)',()=>{
-    if(S.p.gold<cost){ logMsg('You cannot afford a room.','dim'); return; }
+    if(S.p.gold<cost){ logMsg('You cannot afford a room.','dim'); SFX.error(); return; }
     S.p.gold-=cost;
     S.p.hp=pMaxHp(); S.p.mp=pMaxMp();
     logMsg('You sleep deeply. Fully restored.','good');
+    SFX.rest();
     closeModal(); render(); save();
   });
   if(S.p.gold<cost) b.disabled=true;
@@ -1624,6 +1836,7 @@ function openInn(){
 
 function openElder(){
   openModal('The Elder');
+  SFX.talk();
   const body=document.getElementById('modalbody');
   const t=nextTarget();
   let txt='';
@@ -1706,6 +1919,7 @@ function openTravel(){
       const e=S.entrances[i];
       S.map='ow'; S.px=e.x; S.py=e.y; S.dungeon=null;
       logMsg(`You travel to ${dungeonLabel(i)}.`,'info');
+      SFX.travel();
       closeModal(); render(); save();
     };
     row.appendChild(b);
@@ -1718,12 +1932,14 @@ function enterTown(){
   S.map='town';
   S.px=S.town.start[0]; S.py=S.town.start[1];
   logMsg('You pass through the gate into Ashfall.','info');
+  SFX.town();
   render(); save();
 }
 function leaveTown(){
   S.map='ow';
   S.px=S.owTown.x; S.py=S.owTown.y;
   logMsg('You step out into the Ashen Reach.','info');
+  SFX.town();
   render(); save();
 }
 
@@ -1765,8 +1981,14 @@ function load(){
    BOOT
    ======================================================================= */
 (function boot(){
+  /* unlock the audio context on the first real user gesture */
+  ['pointerdown','touchstart','keydown'].forEach(ev=>{
+    document.addEventListener(ev, ()=>{ SFX.unlock(); }, {passive:true});
+  });
+
   hasExistingSave = load();
   showWelcome();
+  updateMuteUI();
   window.addEventListener('resize',()=>renderMap());
   document.getElementById('map').addEventListener('touchstart',e=>e.preventDefault(),{passive:false});
 })();

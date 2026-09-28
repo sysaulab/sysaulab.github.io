@@ -95,6 +95,372 @@ function roundRectPath(x, y, w, h, r) {
 const touchUI = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
 
 /* ============================================================
+   AUDIO ENGINE  (procedural music + sfx, no external files)
+   ============================================================ */
+const Sound = (() => {
+  /* ---------- config ---------- */
+  const MASTER_VOL = 0.85;
+  const MUSIC_VOL  = 0.55;
+  const BPM        = 112;
+  const STEP_DUR   = 60 / BPM / 4;   // 16th note
+  const LOOKAHEAD  = 0.15;
+
+  /* ---------- state ---------- */
+  let ac = null, master = null, musicBus = null, sfxBus = null;
+  let noiseBuf = null;
+  let ready = false;
+  let muted = false;
+  try { muted = localStorage.getItem('endlessPlatMuted') === '1'; } catch (e) {}
+
+  let schedTimer = null;
+  let step = 0;
+  let nextTime = 0;
+  let musicPlaying = false;
+
+  const mtof = m => 440 * Math.pow(2, (m - 69) / 12);
+
+  /* ---------- musical data ---------- */
+  //        root  chord tones (root / third / fifth)
+  const CHORDS = {
+    C:  { bass: 36, triad: [60, 64, 67] },
+    G:  { bass: 43, triad: [59, 62, 67] },
+    Am: { bass: 45, triad: [57, 60, 64] },
+    F:  { bass: 41, triad: [57, 60, 65] },
+    Dm: { bass: 38, triad: [57, 62, 65] },
+    Em: { bass: 40, triad: [59, 64, 67] }
+  };
+
+  /* 32-bar loop (~69 s at 112 BPM):  A - B - C - D  */
+  const PROG = [
+    'C','G','Am','F', 'C','G','F','G',     // A
+    'Am','F','C','G', 'Am','F','G','G',    // B
+    'F','G','Em','Am', 'F','G','C','C',    // C
+    'C','G','Am','F', 'F','G','C','C'      // D
+  ];
+
+  /* 8 eighth-note slots per bar; -1 = rest, 0/1/2 = chord tone */
+  const MEL = [
+    [ 0,-1, 1, 2,-1, 1,-1,-1],
+    [ 2, 1, 0,-1, 1,-1, 2,-1],
+    [ 0, 1, 2, 1, 2, 1, 0,-1],
+    [-1, 2,-1, 1, 0,-1, 1,-1],
+    [ 1, 2,-1, 0,-1, 2, 1,-1]
+  ];
+
+  /* 8 eighth-note slots per bar; -1 = rest, 3 = root + octave */
+  const ARP = [
+    [ 0, 1, 2, 1, 2, 3, 2, 1],
+    [ 0,-1, 2,-1, 1,-1, 2,-1],
+    [ 0, 1, 2, 3, 2, 1, 2, 1],
+    [ 0,-1, 1,-1, 2,-1, 3,-1]
+  ];
+
+  /* ---------- init ---------- */
+  function makeNoise() {
+    const len = Math.floor(ac.sampleRate * 1.0);
+    const buf = ac.createBuffer(1, len, ac.sampleRate);
+    const d = buf.getChannelData(0);
+    for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
+    return buf;
+  }
+
+  function init() {
+    if (ac) return;
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) return;
+    try { ac = new AC(); } catch (e) { ac = null; return; }
+
+    master = ac.createGain();
+    master.gain.value = muted ? 0.0001 : MASTER_VOL;
+    master.connect(ac.destination);
+
+    musicBus = ac.createGain();
+    musicBus.gain.value = 0.0001;
+    musicBus.connect(master);
+
+    sfxBus = ac.createGain();
+    sfxBus.gain.value = 0.85;
+    sfxBus.connect(master);
+
+    noiseBuf = makeNoise();
+    ready = true;
+    if (!schedTimer) schedTimer = setInterval(scheduler, 25);
+  }
+
+  function unlock() {
+    init();
+    if (!ac) return;
+    if (ac.state === 'suspended') { try { ac.resume(); } catch (e) {} }
+  }
+
+  function suspend() { if (ac && ac.state === 'running') { try { ac.suspend(); } catch (e) {} } }
+  function resume()  { if (ac && ac.state === 'suspended') { try { ac.resume(); } catch (e) {} } }
+
+  /* ---------- music transport ---------- */
+  function startMusic() {
+    if (!ac || musicPlaying) return;
+    musicPlaying = true;
+    step = 0;
+    nextTime = ac.currentTime + 0.08;
+    musicBus.gain.cancelScheduledValues(ac.currentTime);
+    musicBus.gain.setValueAtTime(Math.max(0.0001, musicBus.gain.value), ac.currentTime);
+    musicBus.gain.linearRampToValueAtTime(MUSIC_VOL, ac.currentTime + 1.4);
+  }
+
+  function stopMusic() {
+    if (!ac || !musicPlaying) return;
+    musicPlaying = false;
+    musicBus.gain.cancelScheduledValues(ac.currentTime);
+    musicBus.gain.setValueAtTime(Math.max(0.0001, musicBus.gain.value), ac.currentTime);
+    musicBus.gain.linearRampToValueAtTime(0.0001, ac.currentTime + 0.7);
+  }
+
+  function duck(amount, time) {
+    if (!ac || !musicPlaying) return;
+    const t = ac.currentTime;
+    musicBus.gain.cancelScheduledValues(t);
+    musicBus.gain.setValueAtTime(Math.max(0.0001, musicBus.gain.value), t);
+    musicBus.gain.linearRampToValueAtTime(Math.max(0.0001, MUSIC_VOL * amount), t + 0.05);
+    musicBus.gain.linearRampToValueAtTime(MUSIC_VOL, t + 0.05 + time);
+  }
+
+  /* ---------- sequencer ---------- */
+  function scheduler() {
+    if (!ac || !musicPlaying) return;
+    if (nextTime < ac.currentTime) nextTime = ac.currentTime + 0.02;
+    while (nextTime < ac.currentTime + LOOKAHEAD) {
+      scheduleStep(step, nextTime);
+      step++;
+      nextTime += STEP_DUR;
+    }
+  }
+
+  function scheduleStep(s, t) {
+    const bar = Math.floor(s / 16) % PROG.length;
+    const bs  = s % 16;
+    const ch  = CHORDS[PROG[bar]];
+    const section = (bar / 8) | 0;
+
+    /* --- drums --- */
+    if (bs === 0 || bs === 8) kick(t, 0.34);
+    if (bs === 4 || bs === 12) snare(t, 0.14);
+    if (section === 2) {
+      if (bs % 4 === 0) hat(t, 0.038);
+    } else if (bs % 2 === 0) {
+      hat(t, bs % 4 === 0 ? 0.046 : 0.024);
+    }
+
+    /* --- bass --- */
+    if (bs === 0)  bassNote(ch.bass,      t, 0.20);
+    if (bs === 6)  bassNote(ch.bass,      t, 0.14);
+    if (bs === 8)  bassNote(ch.bass + 7,  t, 0.16);
+    if (bs === 14) bassNote(ch.bass + 12, t, 0.12);
+
+    /* --- arpeggio --- */
+    if (bs % 2 === 0) {
+      const ap = ARP[bar % ARP.length];
+      const v = ap[bs / 2];
+      if (v >= 0) {
+        const n = (v === 3) ? ch.triad[0] + 12 : ch.triad[v];
+        arpNote(n, t, 0.07);
+      }
+    }
+
+    /* --- melody --- */
+    if (bs % 2 === 0) {
+      const mel = MEL[(hash(bar * 7.13) * MEL.length) | 0];
+      const v = mel[bs / 2];
+      if (v >= 0) melNote(ch.triad[v] + 12, t, 0.082, 0.24);
+    }
+  }
+
+  /* ---------- instruments ---------- */
+  function kick(t, vol) {
+    const o = ac.createOscillator();
+    o.type = 'sine';
+    o.frequency.setValueAtTime(118, t);
+    o.frequency.exponentialRampToValueAtTime(44, t + 0.10);
+    const g = ac.createGain();
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(vol, t + 0.005);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 0.24);
+    o.connect(g); g.connect(musicBus);
+    o.start(t); o.stop(t + 0.27);
+  }
+
+  function snare(t, vol) {
+    const src = ac.createBufferSource();
+    src.buffer = noiseBuf;
+    const hp = ac.createBiquadFilter();
+    hp.type = 'highpass'; hp.frequency.value = 1500;
+    const g = ac.createGain();
+    g.gain.setValueAtTime(vol, t);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 0.12);
+    src.connect(hp); hp.connect(g); g.connect(musicBus);
+    src.start(t); src.stop(t + 0.15);
+
+    const o = ac.createOscillator();
+    o.type = 'triangle';
+    o.frequency.setValueAtTime(210, t);
+    o.frequency.exponentialRampToValueAtTime(140, t + 0.07);
+    const g2 = ac.createGain();
+    g2.gain.setValueAtTime(0.0001, t);
+    g2.gain.exponentialRampToValueAtTime(vol * 0.6, t + 0.004);
+    g2.gain.exponentialRampToValueAtTime(0.0001, t + 0.09);
+    o.connect(g2); g2.connect(musicBus);
+    o.start(t); o.stop(t + 0.12);
+  }
+
+  function hat(t, vol) {
+    const src = ac.createBufferSource();
+    src.buffer = noiseBuf;
+    const hp = ac.createBiquadFilter();
+    hp.type = 'highpass'; hp.frequency.value = 7500;
+    const g = ac.createGain();
+    g.gain.setValueAtTime(vol, t);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 0.04);
+    src.connect(hp); hp.connect(g); g.connect(musicBus);
+    src.start(t); src.stop(t + 0.06);
+  }
+
+  function bassNote(midi, t, vol) {
+    const o = ac.createOscillator();
+    o.type = 'triangle';
+    o.frequency.setValueAtTime(mtof(midi), t);
+    const lp = ac.createBiquadFilter();
+    lp.type = 'lowpass'; lp.frequency.value = 720; lp.Q.value = 0.6;
+    const g = ac.createGain();
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(vol, t + 0.012);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 0.40);
+    o.connect(lp); lp.connect(g); g.connect(musicBus);
+    o.start(t); o.stop(t + 0.44);
+  }
+
+  function arpNote(midi, t, vol) {
+    const o = ac.createOscillator();
+    o.type = 'triangle';
+    o.frequency.setValueAtTime(mtof(midi), t);
+    const g = ac.createGain();
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(vol, t + 0.008);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 0.20);
+    o.connect(g); g.connect(musicBus);
+    o.start(t); o.stop(t + 0.23);
+  }
+
+  function melNote(midi, t, vol, dur) {
+    const o = ac.createOscillator();
+    o.type = 'triangle';
+    o.frequency.setValueAtTime(mtof(midi), t);
+    const lp = ac.createBiquadFilter();
+    lp.type = 'lowpass'; lp.frequency.value = 3200;
+    const g = ac.createGain();
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(vol, t + 0.022);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 0.022 + dur);
+    o.connect(lp); lp.connect(g); g.connect(musicBus);
+    o.start(t); o.stop(t + dur + 0.1);
+  }
+
+  /* ---------- sfx helpers ---------- */
+  function sfxBlip(freqA, freqB, dur, type, vol, delay) {
+    if (!ac) return;
+    const t = ac.currentTime + (delay || 0);
+    const o = ac.createOscillator();
+    o.type = type;
+    o.frequency.setValueAtTime(freqA, t);
+    if (freqB && freqB !== freqA) o.frequency.exponentialRampToValueAtTime(freqB, t + dur);
+    const g = ac.createGain();
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(vol, t + 0.008);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    o.connect(g); g.connect(sfxBus);
+    o.start(t); o.stop(t + dur + 0.05);
+  }
+
+  function sfxNoise(dur, vol, type, freq, delay) {
+    if (!ac) return;
+    const t = ac.currentTime + (delay || 0);
+    const src = ac.createBufferSource();
+    src.buffer = noiseBuf;
+    const f = ac.createBiquadFilter();
+    f.type = type; f.frequency.value = freq;
+    const g = ac.createGain();
+    g.gain.setValueAtTime(vol, t);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    src.connect(f); f.connect(g); g.connect(sfxBus);
+    src.start(t); src.stop(t + dur + 0.03);
+  }
+
+  /* ---------- sfx table ---------- */
+  function play(name) {
+    if (!ac || !ready) return;
+    if (ac.state === 'suspended') { try { ac.resume(); } catch (e) {} }
+
+    switch (name) {
+      case 'jump':
+        sfxBlip(300, 640, 0.13, 'triangle', 0.13);
+        break;
+
+      case 'land':
+        sfxNoise(0.06, 0.05, 'lowpass', 700);
+        sfxBlip(150, 90, 0.07, 'sine', 0.07);
+        break;
+
+      case 'coin':
+        sfxBlip(1046, 1046, 0.06, 'triangle', 0.085);
+        sfxBlip(1568, 1568, 0.11, 'triangle', 0.075, 0.055);
+        break;
+
+      case 'stomp':
+        sfxNoise(0.10, 0.16, 'lowpass', 900);
+        sfxBlip(460, 130, 0.14, 'square', 0.10);
+        break;
+
+      case 'hurt':
+        sfxBlip(420, 90, 0.40, 'sawtooth', 0.14);
+        sfxNoise(0.20, 0.10, 'lowpass', 1200);
+        duck(0.35, 0.9);
+        break;
+
+      case 'respawn': {
+        const notes = [72, 76, 79, 84];
+        notes.forEach((m, i) => sfxBlip(mtof(m), mtof(m), 0.16, 'triangle', 0.075, i * 0.065));
+        break;
+      }
+
+      case 'gameover': {
+        const notes = [76, 72, 69, 64, 60];
+        notes.forEach((m, i) => sfxBlip(mtof(m), mtof(m), 0.34, 'triangle', 0.10, i * 0.14));
+        break;
+      }
+    }
+  }
+
+  /* ---------- mute ---------- */
+  function setMuted(m) {
+    muted = m;
+    try { localStorage.setItem('endlessPlatMuted', m ? '1' : '0'); } catch (e) {}
+    if (ac) {
+      const t = ac.currentTime;
+      master.gain.cancelScheduledValues(t);
+      master.gain.setValueAtTime(Math.max(0.0001, master.gain.value), t);
+      master.gain.linearRampToValueAtTime(m ? 0.0001 : MASTER_VOL, t + 0.09);
+    }
+  }
+
+  return {
+    unlock, suspend, resume,
+    startMusic, stopMusic, duck,
+    sfx: play,
+    toggleMute: () => setMuted(!muted),
+    isMuted: () => muted,
+    isReady: () => ready
+  };
+})();
+
+/* ============================================================
    STATE
    ============================================================ */
 let player, platforms, coins, enemies, particles;
@@ -138,6 +504,11 @@ function releasePointer(id) {
   if (!activePointers.has(id)) return;
   activePointers.delete(id);
   applyTouchKeys();
+}
+
+/* ---------- audio button geometry ---------- */
+function audioBtnRect() {
+  return { x: W - 62, y: 82, w: 40, h: 40 };
 }
 
 /* ============================================================
@@ -188,6 +559,9 @@ function reset() {
   camera.y = player.y + player.h / 2 - H * 0.58;
 
   while (genX < camera.x + W + 900) generateChunk();
+
+  // Restart the soundtrack from the top (no-op until audio is unlocked)
+  Sound.startMusic();
 }
 
 /* ============================================================
@@ -320,7 +694,12 @@ function update(dt) {
 
     if (dyingTimer <= 0) {
       if (lives > 0) respawn();
-      else { state = 'gameover'; gameOverTimer = 0; }
+      else {
+        state = 'gameover';
+        gameOverTimer = 0;
+        Sound.stopMusic();
+        Sound.sfx('gameover');
+      }
     }
     return;
   }
@@ -353,6 +732,7 @@ function update(dt) {
     player.jumpBuffer = 0;
     player.standingPlatform = null;
     spawnBurst(player.x + player.w / 2, player.y + player.h, 'rgba(255,255,255,0.9)', 5);
+    Sound.sfx('jump');
   }
 
   const rising = player.vy < 0;
@@ -382,12 +762,17 @@ function update(dt) {
   }
 
   // Physics
+  const wasOnGround = player.onGround;
+  const preVy = player.vy;
   player.prevBottom = player.y + player.h;
   player.onGround = false;
   player.standingPlatform = null;
   const steps = Math.max(1, Math.ceil(dt / (1 / 120)));
   const sdt = dt / steps;
   for (let i = 0; i < steps; i++) physicsStep(sdt);
+
+  // Landing thud (subtle, only for real falls)
+  if (!wasOnGround && player.onGround && preVy > 430) Sound.sfx('land');
 
   // Checkpoint
   if (player.onGround && player.standingPlatform) {
@@ -412,6 +797,7 @@ function update(dt) {
     if (dx * dx + dy * dy < c.r * c.r) {
       c.got = true; score += 10;
       spawnBurst(c.x, c.y, '#ffd93d', 8);
+      Sound.sfx('coin');
     }
   }
 
@@ -428,6 +814,7 @@ function update(dt) {
         player.vy = JUMP_VELOCITY * 0.7;
         score += 50;
         spawnBurst(e.x + e.w / 2, e.y + e.h / 2, '#8b5cf6', 14);
+        Sound.sfx('stomp');
       } else if (player.invincible <= 0) {
         killPlayer('enemy', e);
         return;
@@ -489,6 +876,8 @@ function killPlayer(reason, source) {
   shakeTime = 0.25;
   shakeMag = 9;
 
+  Sound.sfx('hurt');
+
   if (reason === 'enemy' && source) {
     const dir = (player.x + player.w / 2 < source.x + source.w / 2) ? -1 : 1;
     player.vx = dir * 280;
@@ -519,6 +908,7 @@ function respawn() {
   camera.y = player.y + player.h / 2 - H * 0.58;
 
   spawnBurst(player.x + player.w / 2, player.y + player.h / 2, '#7cf8a0', 20);
+  Sound.sfx('respawn');
 }
 
 /* ============================================================
@@ -889,6 +1279,43 @@ function drawHeart(cx, cy, s, filled) {
   }
 }
 
+/* ---------- audio toggle button ---------- */
+function drawAudioButton() {
+  const r = audioBtnRect();
+  const cx = r.x + r.w / 2, cy = r.y + r.h / 2;
+
+  ctx.save();
+  ctx.fillStyle = 'rgba(8, 16, 32, 0.32)';
+  roundRectPath(r.x, r.y, r.w, r.h, 13);
+  ctx.fill();
+
+  ctx.fillStyle = 'rgba(255,255,255,0.88)';
+  ctx.beginPath();
+  ctx.moveTo(cx - 9, cy - 4);
+  ctx.lineTo(cx - 4, cy - 4);
+  ctx.lineTo(cx + 2, cy - 10);
+  ctx.lineTo(cx + 2, cy + 10);
+  ctx.lineTo(cx - 4, cy + 4);
+  ctx.lineTo(cx - 9, cy + 4);
+  ctx.closePath();
+  ctx.fill();
+
+  if (Sound.isMuted()) {
+    ctx.strokeStyle = '#ff6b6b';
+    ctx.lineWidth = 2.4;
+    ctx.beginPath();
+    ctx.moveTo(cx - 10, cy - 9);
+    ctx.lineTo(cx + 12, cy + 9);
+    ctx.stroke();
+  } else {
+    ctx.strokeStyle = 'rgba(255,255,255,0.85)';
+    ctx.lineWidth = 1.8;
+    ctx.beginPath(); ctx.arc(cx + 3, cy, 6, -0.95, 0.95); ctx.stroke();
+    ctx.beginPath(); ctx.arc(cx + 3, cy, 10, -0.95, 0.95); ctx.stroke();
+  }
+  ctx.restore();
+}
+
 /* ---------- HUD ---------- */
 function drawHUD() {
   ctx.save();
@@ -920,10 +1347,12 @@ function drawHUD() {
   ctx.fillText(String(best), W - 30, 68);
   ctx.textAlign = 'left';
 
+  drawAudioButton();
+
   if (!touchUI) {
     ctx.fillStyle = 'rgba(255,255,255,0.45)';
     ctx.font = '600 13px ui-sans-serif, system-ui, sans-serif';
-    ctx.fillText('← → / A D  move      SPACE / W  jump      R  restart', 28, H - 24);
+    ctx.fillText('← → / A D  move      SPACE / W  jump      R  restart      M  mute', 28, H - 24);
   }
 
   ctx.restore();
@@ -966,6 +1395,9 @@ function drawGameOver() {
    KEYBOARD INPUT
    ============================================================ */
 window.addEventListener('keydown', (e) => {
+  Sound.unlock();
+  if (state === 'playing') Sound.startMusic();
+
   switch (e.code) {
     case 'ArrowLeft': case 'KeyA':
       keys.left = true; break;
@@ -981,6 +1413,9 @@ window.addEventListener('keydown', (e) => {
       break;
     case 'KeyR':
       if (state !== 'dying') reset();
+      break;
+    case 'KeyM':
+      Sound.toggleMute();
       break;
   }
 });
@@ -999,7 +1434,21 @@ window.addEventListener('keyup', (e) => {
 canvas.addEventListener('pointerdown', (e) => {
   e.preventDefault();
 
+  Sound.unlock();
+  if (state === 'playing') Sound.startMusic();
+
   try { canvas.setPointerCapture(e.pointerId); } catch (err) { /* ignore */ }
+
+  const rect = canvas.getBoundingClientRect();
+  const px = e.clientX - rect.left;
+  const py = e.clientY - rect.top;
+
+  // Audio toggle button
+  const b = audioBtnRect();
+  if (px >= b.x && px <= b.x + b.w && py >= b.y && py <= b.y + b.h) {
+    Sound.toggleMute();
+    return;
+  }
 
   if (state === 'gameover') {
     if (gameOverTimer > GAMEOVER_PROMPT_DELAY) reset();
@@ -1008,11 +1457,7 @@ canvas.addEventListener('pointerdown', (e) => {
 
   if (state !== 'playing') return;
 
-  const rect = canvas.getBoundingClientRect();
-  const x = e.clientX - rect.left;
-  const y = e.clientY - rect.top;
-
-  activePointers.set(e.pointerId, zoneAt(x, y));
+  activePointers.set(e.pointerId, zoneAt(px, py));
   applyTouchKeys();
 }, { passive: false });
 
@@ -1033,6 +1478,9 @@ document.addEventListener('visibilitychange', () => {
     activePointers.clear();
     applyTouchKeys();
     keys.left = keys.right = keys.jump = false;
+    Sound.suspend();
+  } else {
+    Sound.resume();
   }
 });
 
