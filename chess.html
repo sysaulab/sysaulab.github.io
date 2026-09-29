@@ -1,0 +1,1316 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#12161f">
+<title>Chess</title>
+<style>
+  *{ box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html,body{ margin:0; height:100%; overflow:hidden; }
+  body{
+    background: radial-gradient(circle at 50% -10%, #2b3550 0%, #12161f 65%);
+    color:#e8ecf5;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    display:flex; align-items:center; justify-content:center;
+    min-height:100vh; min-height:100dvh;
+    -webkit-user-select:none; user-select:none;
+    touch-action: manipulation;
+  }
+  .app{
+    --board: max(240px, min(calc(100vw - 24px), 560px, calc(100vh - 168px)));
+    display:flex; flex-direction:column; gap:12px;
+    padding: 8px 12px calc(8px + env(safe-area-inset-bottom));
+  }
+  @supports (height:100dvh){
+    .app{ --board: max(240px, min(calc(100vw - 24px), 560px, calc(100dvh - 168px))); }
+  }
+
+  /* ---------- top bar ---------- */
+  .topbar{ display:flex; align-items:center; gap:10px; min-height:46px; padding:0 2px; }
+  .turn-dot{
+    width:14px; height:14px; border-radius:50%; flex:none;
+    background:#f4f4ef; box-shadow:0 0 0 2px rgba(0,0,0,.45), 0 0 10px rgba(255,255,255,.35);
+    transition: background .2s, box-shadow .2s;
+  }
+  .turn-dot.black{ background:#25231f; box-shadow:0 0 0 2px rgba(255,255,255,.35), 0 0 10px rgba(0,0,0,.6); }
+  .status{ flex:1; font-size:15px; font-weight:650; letter-spacing:.2px; line-height:1.25; }
+  .status.alert{ color:#ff8a80; }
+  .status.win{ color:#8ce99a; }
+  .actions{ display:flex; gap:6px; }
+  .icon-btn{
+    width:42px; height:42px; border-radius:12px; border:0;
+    background: rgba(255,255,255,.07);
+    color:#cfd9e8; font-size:18px; line-height:1; cursor:pointer;
+    display:flex; align-items:center; justify-content:center;
+    transition: background .15s, transform .08s;
+    font-family:inherit;
+  }
+  .icon-btn:active{ transform: scale(.92); background: rgba(255,255,255,.15); }
+  .icon-btn.off{ opacity:.4; }
+  .icon-btn:disabled{ opacity:.3; }
+
+  /* ---------- board ---------- */
+  .board{
+    --sq: calc(var(--board) / 8);
+    width: var(--board); height: var(--board);
+    display:grid;
+    grid-template-columns: repeat(8, 1fr);
+    grid-template-rows: repeat(8, 1fr);
+    border-radius: 12px;
+    overflow:hidden;
+    position:relative;
+    box-shadow: 0 18px 50px rgba(0,0,0,.55), 0 0 0 1px rgba(255,255,255,.09), inset 0 0 0 1px rgba(0,0,0,.3);
+  }
+  .sq{ position:relative; display:flex; align-items:center; justify-content:center; }
+  .sq.light{ background:#eeeed2; }
+  .sq.dark{ background:#769656; }
+
+  .sq.last::before{
+    content:''; position:absolute; inset:0;
+    background: rgba(255, 226, 84, .42);
+    pointer-events:none;
+  }
+  .sq.sel::before{
+    content:''; position:absolute; inset:0;
+    background: rgba(255, 200, 40, .68);
+    pointer-events:none;
+  }
+  .sq.check::after{
+    content:''; position:absolute; inset:0; pointer-events:none;
+    background: radial-gradient(circle at 50% 50%, rgba(255,60,60,.95) 0%, rgba(255,60,60,.55) 42%, rgba(255,60,60,0) 72%);
+  }
+
+  .piece{
+    position:relative; z-index:2;
+    font-family: "Segoe UI Symbol", "Noto Sans Symbols 2", "Apple Symbols", "DejaVu Sans", sans-serif;
+    font-size: calc(var(--sq) * 0.80);
+    line-height:1;
+    pointer-events:none;
+    will-change: transform;
+  }
+  .piece.w{
+    color:#fbfbf7;
+    -webkit-text-stroke: calc(var(--sq) * 0.028) #2a2a2a;
+    filter: drop-shadow(0 2px 2px rgba(0,0,0,.4));
+  }
+  .piece.b{
+    color:#2a2724;
+    -webkit-text-stroke: calc(var(--sq) * 0.022) #100f0e;
+    filter: drop-shadow(0 1px 1px rgba(255,255,255,.18));
+  }
+  @keyframes pop{ 0%{ transform: scale(.55); } 60%{ transform: scale(1.12); } 100%{ transform: scale(1); } }
+  .piece.pop{ animation: pop .22s cubic-bezier(.34,1.56,.64,1); }
+
+  .dot{
+    position:absolute; z-index:3; width:30%; height:30%; border-radius:50%;
+    background: rgba(18, 38, 18, .32);
+    pointer-events:none;
+  }
+  .ring{
+    position:absolute; z-index:3; inset:5%;
+    border-radius:50%;
+    border: calc(var(--sq) * 0.075) solid rgba(18, 38, 18, .30);
+    pointer-events:none;
+  }
+
+  .coord{
+    position:absolute; z-index:4; font-size: calc(var(--sq) * 0.20);
+    font-weight:700; opacity:.55; pointer-events:none;
+    font-family: inherit;
+  }
+  .coord.file{ right: calc(var(--sq) * 0.06); bottom: calc(var(--sq) * 0.02); }
+  .coord.rank{ left: calc(var(--sq) * 0.06); top: calc(var(--sq) * 0.02); }
+  .sq.light .coord{ color:#7a8a5a; }
+  .sq.dark  .coord{ color:#eaefdc; }
+
+  /* ---------- bottom bar ---------- */
+  .bottombar{ display:flex; justify-content:center; }
+  .mode-pill{
+    border:0; background: rgba(255,255,255,.06); color:#93a3ba;
+    padding:10px 20px; border-radius:12px; font-size:13px; font-weight:650;
+    font-family:inherit; cursor:pointer; letter-spacing:.2px;
+    transition: background .15s, color .15s, transform .08s;
+  }
+  .mode-pill:active{ background: rgba(255,255,255,.14); color:#fff; transform: scale(.97); }
+
+  /* ---------- overlays ---------- */
+  .overlay{
+    position:fixed; inset:0; z-index:50;
+    background: rgba(8,11,17,.72);
+    backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
+    display:flex; align-items:center; justify-content:center;
+    opacity:1; transition: opacity .18s;
+  }
+  .overlay.hidden{ opacity:0; pointer-events:none; }
+
+  .promo-card{
+    background: linear-gradient(180deg,#2a3346,#1b2230);
+    border:1px solid rgba(255,255,255,.1);
+    border-radius:20px; padding:18px 18px 14px;
+    box-shadow: 0 24px 60px rgba(0,0,0,.6);
+    text-align:center;
+  }
+  .promo-title{ font-size:14px; font-weight:650; color:#a9b8cd; margin-bottom:12px; letter-spacing:.4px; text-transform:uppercase; }
+  .promo-choices{ display:flex; gap:10px; }
+  .promo-btn{
+    width:66px; height:66px; border-radius:14px; border:1px solid rgba(255,255,255,.1);
+    background: rgba(255,255,255,.06); cursor:pointer;
+    display:flex; align-items:center; justify-content:center;
+    transition: transform .1s, background .15s;
+  }
+  .promo-btn:active{ transform: scale(.92); background: rgba(255,255,255,.16); }
+  .promo-btn .piece{ font-size: 44px; -webkit-text-stroke-width: 1px; }
+
+  /* ---------- home screen ---------- */
+  .screen{
+    position:fixed; inset:0; z-index:60;
+    display:flex; align-items:center; justify-content:center;
+    padding: 24px calc(20px + env(safe-area-inset-right)) calc(24px + env(safe-area-inset-bottom)) calc(20px + env(safe-area-inset-left));
+    background: radial-gradient(circle at 50% 0%, #313d5c 0%, #12161f 68%);
+    transition: opacity .28s ease, visibility .28s;
+  }
+  .screen.hidden{ opacity:0; visibility:hidden; pointer-events:none; }
+  .home-inner{ width:100%; max-width:400px; text-align:center; }
+  .logo{
+    font-size:60px; line-height:1; color:#f2f5ff;
+    text-shadow: 0 6px 26px rgba(120,160,255,.55);
+    margin-bottom:6px;
+    animation: floaty 3.4s ease-in-out infinite;
+  }
+  @keyframes floaty{ 0%,100%{ transform: translateY(0); } 50%{ transform: translateY(-7px); } }
+  .home-inner h1{
+    margin:0; font-size:34px; letter-spacing:2px; font-weight:750;
+    background: linear-gradient(180deg,#ffffff,#a9bcdd);
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+  }
+  .sub{ margin:8px 0 0; font-size:13.5px; color:#8b9ab2; letter-spacing:.3px; }
+
+  .diff-grid{ display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-top:28px; }
+  .diff-btn{
+    display:flex; flex-direction:column; align-items:center; gap:3px;
+    padding:18px 8px 15px; border-radius:18px;
+    border:1px solid rgba(255,255,255,.10);
+    background: rgba(255,255,255,.055);
+    color:#e8ecf5; cursor:pointer; font-family:inherit;
+    transition: transform .1s, background .15s, border-color .15s;
+  }
+  .diff-btn:active{ transform: scale(.95); background: rgba(255,255,255,.15); border-color: rgba(255,255,255,.25); }
+  .diff-btn.wide{ grid-column: span 2; flex-direction:row; justify-content:center; gap:10px; padding:16px 8px; }
+  .diff-icon{ font-size:25px; line-height:1; }
+  .diff-name{ font-size:16px; font-weight:700; letter-spacing:.3px; }
+  .diff-desc{ font-size:11px; color:#8b9ab2; letter-spacing:.2px; }
+  .diff-btn.wide .diff-desc{ margin-left:2px; }
+
+  /* ---------- result card ---------- */
+  .result-card{ width:min(340px, 88vw); padding:26px 22px 20px; }
+  .result-icon{ font-size:48px; line-height:1; margin-bottom:8px; }
+  .result-title{ font-size:23px; font-weight:750; letter-spacing:.3px; }
+  .result-sub{ font-size:13.5px; color:#a9b8cd; margin-top:5px; }
+  .result-actions{ display:flex; gap:10px; margin-top:22px; }
+  .btn{
+    flex:1; padding:14px 10px; border-radius:13px; border:0;
+    font-family:inherit; font-size:15px; font-weight:680; cursor:pointer;
+    transition: transform .08s, filter .15s;
+  }
+  .btn:active{ transform: scale(.96); }
+  .btn.primary{ background: linear-gradient(180deg,#5b8def,#3f6fd8); color:#fff; box-shadow:0 8px 20px rgba(63,111,216,.38); }
+  .btn.ghost{ background: rgba(255,255,255,.08); color:#cfd9e8; }
+
+  @media (max-height: 660px){
+    .status{ font-size:14px; }
+    .icon-btn{ width:38px; height:38px; }
+    .logo{ font-size:46px; }
+    .home-inner h1{ font-size:27px; }
+    .diff-grid{ margin-top:18px; gap:9px; }
+    .diff-btn{ padding:13px 8px 11px; }
+  }
+</style>
+</head>
+<body>
+
+<div class="app">
+  <header class="topbar">
+    <div class="turn-dot" id="turnDot"></div>
+    <div class="status" id="status">White to move</div>
+    <div class="actions">
+      <button class="icon-btn" id="undoBtn" aria-label="Undo">↶</button>
+      <button class="icon-btn" id="soundBtn" aria-label="Toggle sound">🔊</button>
+      <button class="icon-btn" id="menuBtn" aria-label="Menu">☰</button>
+    </div>
+  </header>
+
+  <div class="board" id="board"></div>
+
+  <footer class="bottombar">
+    <button class="mode-pill" id="modePill">vs Computer · Easy</button>
+  </footer>
+</div>
+
+<!-- ===== HOME SCREEN ===== -->
+<div class="screen" id="homeScreen">
+  <div class="home-inner">
+    <div class="logo">♞</div>
+    <h1>CHESS</h1>
+    <p class="sub">Choose your game</p>
+
+    <div class="diff-grid" id="diffGrid">
+      <button class="diff-btn" data-diff="easy">
+        <span class="diff-icon">🙂</span>
+        <span class="diff-name">Easy</span>
+        <span class="diff-desc">Casual &amp; forgiving</span>
+      </button>
+      <button class="diff-btn" data-diff="medium">
+        <span class="diff-icon">🧐</span>
+        <span class="diff-name">Medium</span>
+        <span class="diff-desc">A fair fight</span>
+      </button>
+      <button class="diff-btn" data-diff="hard">
+        <span class="diff-icon">😈</span>
+        <span class="diff-name">Hard</span>
+        <span class="diff-desc">Thinks ahead</span>
+      </button>
+      <button class="diff-btn wide" data-diff="human">
+        <span class="diff-icon">👥</span>
+        <span class="diff-name">2 Players</span>
+        <span class="diff-desc">Pass &amp; play</span>
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- ===== PROMOTION ===== -->
+<div class="overlay hidden" id="promoOverlay">
+  <div class="promo-card">
+    <div class="promo-title">Promote to</div>
+    <div class="promo-choices" id="promoChoices"></div>
+  </div>
+</div>
+
+<!-- ===== GAME OVER ===== -->
+<div class="overlay hidden" id="overOverlay">
+  <div class="promo-card result-card">
+    <div class="result-icon" id="resultIcon">♔</div>
+    <div class="result-title" id="resultTitle">Checkmate</div>
+    <div class="result-sub" id="resultSub">White wins</div>
+    <div class="result-actions">
+      <button class="btn primary" id="rematchBtn">Rematch</button>
+      <button class="btn ghost" id="menuBtn2">Menu</button>
+    </div>
+  </div>
+</div>
+
+<script>
+"use strict";
+
+/* =========================================================
+   CONSTANTS
+   ========================================================= */
+const FILES = "abcdefgh";
+const GLYPH = { k:"♚", q:"♛", r:"♜", b:"♝", n:"♞", p:"♟" };
+
+const KNIGHT_D = [[-2,-1],[-2,1],[-1,-2],[-1,2],[1,-2],[1,2],[2,-1],[2,1]];
+const KING_D   = [[-1,-1],[-1,0],[-1,1],[0,-1],[0,1],[1,-1],[1,0],[1,1]];
+const ROOK_D   = [[-1,0],[1,0],[0,-1],[0,1]];
+const BISHOP_D = [[-1,-1],[-1,1],[1,-1],[1,1]];
+
+const VAL = { p:100, n:320, b:330, r:500, q:900, k:20000 };
+const MATE = 100000;
+
+const PST = {
+  p: [
+     0,  0,  0,  0,  0,  0,  0,  0,
+    50, 50, 50, 50, 50, 50, 50, 50,
+    10, 10, 20, 30, 30, 20, 10, 10,
+     5,  5, 10, 25, 25, 10,  5,  5,
+     0,  0,  0, 20, 20,  0,  0,  0,
+     5, -5,-10,  0,  0,-10, -5,  5,
+     5, 10, 10,-20,-20, 10, 10,  5,
+     0,  0,  0,  0,  0,  0,  0,  0
+  ],
+  n: [
+   -50,-40,-30,-30,-30,-30,-40,-50,
+   -40,-20,  0,  0,  0,  0,-20,-40,
+   -30,  0, 10, 15, 15, 10,  0,-30,
+   -30,  5, 15, 20, 20, 15,  5,-30,
+   -30,  0, 15, 20, 20, 15,  0,-30,
+   -30,  5, 10, 15, 15, 10,  5,-30,
+   -40,-20,  0,  5,  5,  0,-20,-40,
+   -50,-40,-30,-30,-30,-30,-40,-50
+  ],
+  b: [
+   -20,-10,-10,-10,-10,-10,-10,-20,
+   -10,  0,  0,  0,  0,  0,  0,-10,
+   -10,  0,  5, 10, 10,  5,  0,-10,
+   -10,  5,  5, 10, 10,  5,  5,-10,
+   -10,  0, 10, 10, 10, 10,  0,-10,
+   -10, 10, 10, 10, 10, 10, 10,-10,
+   -10,  5,  0,  0,  0,  0,  5,-10,
+   -20,-10,-10,-10,-10,-10,-10,-20
+  ],
+  r: [
+     0,  0,  0,  0,  0,  0,  0,  0,
+     5, 10, 10, 10, 10, 10, 10,  5,
+    -5,  0,  0,  0,  0,  0,  0, -5,
+    -5,  0,  0,  0,  0,  0,  0, -5,
+    -5,  0,  0,  0,  0,  0,  0, -5,
+    -5,  0,  0,  0,  0,  0,  0, -5,
+    -5,  0,  0,  0,  0,  0,  0, -5,
+     0,  0,  0,  5,  5,  0,  0,  0
+  ],
+  q: [
+   -20,-10,-10, -5, -5,-10,-10,-20,
+   -10,  0,  0,  0,  0,  0,  0,-10,
+   -10,  0,  5,  5,  5,  5,  0,-10,
+    -5,  0,  5,  5,  5,  5,  0, -5,
+     0,  0,  5,  5,  5,  5,  0, -5,
+   -10,  5,  5,  5,  5,  5,  0,-10,
+   -10,  0,  5,  0,  0,  0,  0,-10,
+   -20,-10,-10, -5, -5,-10,-10,-20
+  ],
+  k: [
+   -30,-40,-40,-50,-50,-40,-40,-30,
+   -30,-40,-40,-50,-50,-40,-40,-30,
+   -30,-40,-40,-50,-50,-40,-40,-30,
+   -30,-40,-40,-50,-50,-40,-40,-30,
+   -20,-30,-30,-40,-40,-30,-30,-20,
+   -10,-20,-20,-20,-20,-20,-20,-10,
+    20, 20,  0,  0,  0,  0, 20, 20,
+    20, 30, 10,  0,  0, 10, 30, 20
+  ],
+  ke: [
+   -50,-40,-30,-20,-20,-30,-40,-50,
+   -30,-20,-10,  0,  0,-10,-20,-30,
+   -30,-10, 20, 30, 30, 20,-10,-30,
+   -30,-10, 30, 40, 40, 30,-10,-30,
+   -30,-10, 30, 40, 40, 30,-10,-30,
+   -30,-10, 20, 30, 30, 20,-10,-30,
+   -30,-30,  0,  0,  0,  0,-30,-30,
+   -50,-30,-30,-30,-30,-30,-30,-50
+  ]
+};
+
+/* =========================================================
+   AI CONFIG
+   ========================================================= */
+const AI_LEVELS = {
+  easy:   { maxDepth:1, timeMs:200,  noise:140, blunder:0.28, qdepth:0, label:"Easy",   desc:"Casual & forgiving" },
+  medium: { maxDepth:3, timeMs:700,  noise:40,  blunder:0.06, qdepth:2, label:"Medium", desc:"A fair fight" },
+  hard:   { maxDepth:5, timeMs:1600, noise:0,   blunder:0,    qdepth:3, label:"Hard",   desc:"Thinks ahead" }
+};
+
+/* =========================================================
+   GAME STATE
+   ========================================================= */
+function initialState(){
+  const b = new Array(64).fill(null);
+  const back = ["r","n","b","q","k","b","n","r"];
+  for(let c = 0; c < 8; c++){
+    b[c]      = { t: back[c], c: "b" };
+    b[8 + c]  = { t: "p",     c: "b" };
+    b[48 + c] = { t: "p",     c: "w" };
+    b[56 + c] = { t: back[c], c: "w" };
+  }
+  return {
+    board: b, turn: "w",
+    castling: { K:true, Q:true, k:true, q:true },
+    ep: null, halfmove: 0, fullmove: 1
+  };
+}
+
+function cloneState(st){
+  return {
+    board: st.board.slice(),
+    turn: st.turn,
+    castling: { K: st.castling.K, Q: st.castling.Q, k: st.castling.k, q: st.castling.q },
+    ep: st.ep, halfmove: st.halfmove, fullmove: st.fullmove
+  };
+}
+
+/* =========================================================
+   MOVE GENERATION
+   ========================================================= */
+function isAttacked(b, sq, by){
+  const r = sq >> 3, c = sq & 7;
+
+  const pdir = (by === "w") ? 1 : -1;
+  for(const dc of [-1, 1]){
+    const rr = r + pdir, cc = c + dc;
+    if(rr >= 0 && rr < 8 && cc >= 0 && cc < 8){
+      const p = b[rr * 8 + cc];
+      if(p && p.c === by && p.t === "p") return true;
+    }
+  }
+  for(const [dr, dc] of KNIGHT_D){
+    const rr = r + dr, cc = c + dc;
+    if(rr < 0 || rr > 7 || cc < 0 || cc > 7) continue;
+    const p = b[rr * 8 + cc];
+    if(p && p.c === by && p.t === "n") return true;
+  }
+  for(const [dr, dc] of KING_D){
+    const rr = r + dr, cc = c + dc;
+    if(rr < 0 || rr > 7 || cc < 0 || cc > 7) continue;
+    const p = b[rr * 8 + cc];
+    if(p && p.c === by && p.t === "k") return true;
+  }
+  for(const [dr, dc] of ROOK_D){
+    let rr = r + dr, cc = c + dc;
+    while(rr >= 0 && rr < 8 && cc >= 0 && cc < 8){
+      const p = b[rr * 8 + cc];
+      if(p){ if(p.c === by && (p.t === "r" || p.t === "q")) return true; break; }
+      rr += dr; cc += dc;
+    }
+  }
+  for(const [dr, dc] of BISHOP_D){
+    let rr = r + dr, cc = c + dc;
+    while(rr >= 0 && rr < 8 && cc >= 0 && cc < 8){
+      const p = b[rr * 8 + cc];
+      if(p){ if(p.c === by && (p.t === "b" || p.t === "q")) return true; break; }
+      rr += dr; cc += dc;
+    }
+  }
+  return false;
+}
+
+function findKing(b, color){
+  for(let i = 0; i < 64; i++){
+    const p = b[i];
+    if(p && p.c === color && p.t === "k") return i;
+  }
+  return -1;
+}
+
+function isInCheck(st, color){
+  const k = findKing(st.board, color);
+  if(k < 0) return false;
+  return isAttacked(st.board, k, color === "w" ? "b" : "w");
+}
+
+function genMoves(st){
+  const b = st.board, us = st.turn, them = us === "w" ? "b" : "w";
+  const moves = [];
+  const push = m => moves.push(m);
+
+  for(let i = 0; i < 64; i++){
+    const p = b[i];
+    if(!p || p.c !== us) continue;
+    const r = i >> 3, c = i & 7;
+
+    if(p.t === "p"){
+      const dir    = us === "w" ? -1 : 1;
+      const startR = us === "w" ?  6 : 1;
+      const promoR = us === "w" ?  0 : 7;
+      const r1 = r + dir;
+
+      if(r1 >= 0 && r1 < 8){
+        const one = r1 * 8 + c;
+        if(!b[one]){
+          if(r1 === promoR){
+            for(const q of ["q","r","b","n"]) push({ from:i, to:one, promo:q });
+          } else {
+            push({ from:i, to:one });
+            const r2 = r + 2 * dir;
+            if(r === startR && !b[r2 * 8 + c]) push({ from:i, to:r2 * 8 + c, double:true });
+          }
+        }
+        for(const dc of [-1, 1]){
+          const cc = c + dc;
+          if(cc < 0 || cc > 7) continue;
+          const t = r1 * 8 + cc;
+          const tp = b[t];
+          if(tp && tp.c === them){
+            if(r1 === promoR){
+              for(const q of ["q","r","b","n"]) push({ from:i, to:t, cap:true, promo:q });
+            } else {
+              push({ from:i, to:t, cap:true });
+            }
+          } else if(!tp && st.ep === t){
+            push({ from:i, to:t, cap:true, ep:true, epCap: r * 8 + cc });
+          }
+        }
+      }
+    }
+    else if(p.t === "n"){
+      for(const [dr, dc] of KNIGHT_D){
+        const rr = r + dr, cc = c + dc;
+        if(rr < 0 || rr > 7 || cc < 0 || cc > 7) continue;
+        const t = rr * 8 + cc, tp = b[t];
+        if(tp && tp.c === us) continue;
+        push({ from:i, to:t, cap: !!tp });
+      }
+    }
+    else if(p.t === "k"){
+      for(const [dr, dc] of KING_D){
+        const rr = r + dr, cc = c + dc;
+        if(rr < 0 || rr > 7 || cc < 0 || cc > 7) continue;
+        const t = rr * 8 + cc, tp = b[t];
+        if(tp && tp.c === us) continue;
+        push({ from:i, to:t, cap: !!tp });
+      }
+      if(us === "w" && i === 60){
+        if(st.castling.K && !b[61] && !b[62] &&
+           b[63] && b[63].t === "r" && b[63].c === "w" &&
+           !isAttacked(b,60,"b") && !isAttacked(b,61,"b") && !isAttacked(b,62,"b"))
+          push({ from:60, to:62, castle:"K" });
+        if(st.castling.Q && !b[59] && !b[58] && !b[57] &&
+           b[56] && b[56].t === "r" && b[56].c === "w" &&
+           !isAttacked(b,60,"b") && !isAttacked(b,59,"b") && !isAttacked(b,58,"b"))
+          push({ from:60, to:58, castle:"Q" });
+      }
+      if(us === "b" && i === 4){
+        if(st.castling.k && !b[5] && !b[6] &&
+           b[7] && b[7].t === "r" && b[7].c === "b" &&
+           !isAttacked(b,4,"w") && !isAttacked(b,5,"w") && !isAttacked(b,6,"w"))
+          push({ from:4, to:6, castle:"K" });
+        if(st.castling.q && !b[3] && !b[2] && !b[1] &&
+           b[0] && b[0].t === "r" && b[0].c === "b" &&
+           !isAttacked(b,4,"w") && !isAttacked(b,3,"w") && !isAttacked(b,2,"w"))
+          push({ from:4, to:2, castle:"Q" });
+      }
+    }
+    else {
+      const dirs = p.t === "r" ? ROOK_D
+                 : p.t === "b" ? BISHOP_D
+                 : ROOK_D.concat(BISHOP_D);
+      for(const [dr, dc] of dirs){
+        let rr = r + dr, cc = c + dc;
+        while(rr >= 0 && rr < 8 && cc >= 0 && cc < 8){
+          const t = rr * 8 + cc, tp = b[t];
+          if(tp){
+            if(tp.c !== us) push({ from:i, to:t, cap:true });
+            break;
+          }
+          push({ from:i, to:t });
+          rr += dr; cc += dc;
+        }
+      }
+    }
+  }
+  return moves;
+}
+
+function applyMove(st, m){
+  const b = st.board;
+  const p = b[m.from];
+  const us = p.c, them = us === "w" ? "b" : "w";
+  let captured = b[m.to];
+
+  b[m.from] = null;
+
+  if(m.ep){
+    captured = b[m.epCap];
+    b[m.epCap] = null;
+  }
+  b[m.to] = m.promo ? { t: m.promo, c: us } : p;
+
+  if(m.castle){
+    if(m.castle === "K"){
+      const rf = us === "w" ? 63 : 7, rt = us === "w" ? 61 : 5;
+      b[rt] = b[rf]; b[rf] = null;
+    } else {
+      const rf = us === "w" ? 56 : 0, rt = us === "w" ? 59 : 3;
+      b[rt] = b[rf]; b[rf] = null;
+    }
+  }
+
+  if(p.t === "k"){
+    if(us === "w"){ st.castling.K = false; st.castling.Q = false; }
+    else          { st.castling.k = false; st.castling.q = false; }
+  }
+  if(m.from === 63 || m.to === 63) st.castling.K = false;
+  if(m.from === 56 || m.to === 56) st.castling.Q = false;
+  if(m.from === 7  || m.to === 7 ) st.castling.k = false;
+  if(m.from === 0  || m.to === 0 ) st.castling.q = false;
+
+  st.ep = m.double ? ((m.from + m.to) / 2) : null;
+  st.halfmove = (p.t === "p" || captured) ? 0 : st.halfmove + 1;
+  if(us === "b") st.fullmove++;
+  st.turn = them;
+
+  return captured;
+}
+
+function legalMoves(st){
+  const pseudo = genMoves(st);
+  const out = [];
+  const us = st.turn;
+  const opp = us === "w" ? "b" : "w";
+  for(const m of pseudo){
+    const c = cloneState(st);
+    applyMove(c, m);
+    const k = findKing(c.board, us);
+    if(k === -1 || !isAttacked(c.board, k, opp)) out.push(m);
+  }
+  return out;
+}
+
+function insufficientMaterial(b){
+  let minorsW = 0, minorsB = 0;
+  for(const p of b){
+    if(!p) continue;
+    if(p.t === "p" || p.t === "r" || p.t === "q") return false;
+    if(p.t === "n" || p.t === "b"){ if(p.c === "w") minorsW++; else minorsB++; }
+  }
+  return minorsW <= 1 && minorsB <= 1;
+}
+
+function computeStatus(st){
+  const moves = legalMoves(st);
+  const check = isInCheck(st, st.turn);
+
+  if(moves.length === 0){
+    if(check) return { moves, check, over:true, type:"checkmate", winner: st.turn === "w" ? "b" : "w" };
+    return { moves, check, over:true, type:"stalemate", winner:null };
+  }
+  if(st.halfmove >= 100) return { moves, check, over:true, type:"draw", reason:"50-move rule", winner:null };
+  if(insufficientMaterial(st.board)) return { moves, check, over:true, type:"draw", reason:"insufficient material", winner:null };
+
+  return { moves, check, over:false, winner:null };
+}
+
+/* =========================================================
+   AI SEARCH
+   ========================================================= */
+let searchDeadline = 0, searchNodes = 0, searchAborted = false;
+
+function timeUp(){
+  if(searchAborted) return true;
+  if((++searchNodes & 511) === 0 && performance.now() > searchDeadline) searchAborted = true;
+  return searchAborted;
+}
+
+function evaluate(st){
+  const b = st.board;
+  let total = 0;
+  for(let i = 0; i < 64; i++){
+    const p = b[i];
+    if(p && p.t !== "k" && p.t !== "p") total += VAL[p.t];
+  }
+  const endgame = total < 1300;
+
+  let score = 0;
+  for(let i = 0; i < 64; i++){
+    const p = b[i];
+    if(!p) continue;
+    const idx = p.c === "w" ? i : ((7 - (i >> 3)) * 8 + (i & 7));
+    const table = p.t === "k" ? (endgame ? PST.ke : PST.k) : PST[p.t];
+    const v = VAL[p.t] + (table ? table[idx] : 0);
+    score += p.c === "w" ? v : -v;
+  }
+  return st.turn === "w" ? score : -score;
+}
+
+function orderMoves(st, moves){
+  for(const m of moves){
+    let s = 0;
+    const victim = m.ep ? { t:"p" } : st.board[m.to];
+    const mover = st.board[m.from];
+    if(victim && mover) s += 10 * VAL[victim.t] - VAL[mover.t];
+    if(m.promo) s += VAL[m.promo];
+    m._s = s;
+  }
+  moves.sort((a, b) => b._s - a._s);
+}
+
+function quiesce(st, alpha, beta, ply, qd){
+  if(timeUp()) return evaluate(st);
+
+  const stand = evaluate(st);
+  if(qd <= 0) return stand;
+  if(stand >= beta) return beta;
+  if(stand > alpha) alpha = stand;
+
+  const caps = legalMoves(st).filter(m => m.cap || m.promo);
+  orderMoves(st, caps);
+
+  for(const m of caps){
+    const c = cloneState(st);
+    applyMove(c, m);
+    const s = -quiesce(c, -beta, -alpha, ply + 1, qd - 1);
+    if(searchAborted) return alpha;
+    if(s >= beta) return beta;
+    if(s > alpha) alpha = s;
+  }
+  return alpha;
+}
+
+function search(st, depth, ply, alpha, beta, qd){
+  if(timeUp()) return evaluate(st);
+
+  if(depth <= 0) return quiesce(st, alpha, beta, ply, qd);
+
+  const moves = legalMoves(st);
+  if(moves.length === 0){
+    if(isInCheck(st, st.turn)) return -(MATE - ply);
+    return 0;
+  }
+
+  orderMoves(st, moves);
+
+  for(const m of moves){
+    const c = cloneState(st);
+    applyMove(c, m);
+    const s = -search(c, depth - 1, ply + 1, -beta, -alpha, qd);
+    if(searchAborted) return alpha;
+    if(s >= beta) return beta;
+    if(s > alpha) alpha = s;
+  }
+  return alpha;
+}
+
+function chooseAIMove(st, cfg){
+  const moves = legalMoves(st);
+  if(!moves.length) return null;
+  if(moves.length === 1) return moves[0];
+
+  // Deliberate imperfection for lower difficulties
+  if(cfg.blunder && Math.random() < cfg.blunder){
+    return moves[Math.floor(Math.random() * moves.length)];
+  }
+
+  orderMoves(st, moves);
+
+  const jitter = new Map();
+  for(const m of moves){
+    jitter.set(m, cfg.noise ? (Math.random() * 2 - 1) * cfg.noise : 0);
+  }
+
+  searchNodes = 0;
+  searchAborted = false;
+  searchDeadline = performance.now() + cfg.timeMs;
+
+  let best = moves[0];
+
+  for(let d = 1; d <= cfg.maxDepth; d++){
+    let alpha = -Infinity;
+    let localBest = moves[0], localBestScore = -Infinity;
+    const scores = [];
+
+    for(const m of moves){
+      const c = cloneState(st);
+      applyMove(c, m);
+      let s = -search(c, d - 1, 1, -Infinity, -alpha, cfg.qdepth);
+      s += jitter.get(m);
+      scores.push(s);
+      if(s > localBestScore){ localBestScore = s; localBest = m; }
+      if(s > alpha) alpha = s;
+      if(searchAborted) break;
+    }
+
+    if(searchAborted) break;
+
+    best = localBest;
+
+    // Re-order root moves by their score so the next iteration prunes better
+    const paired = moves.map((m, i) => ({ m, s: scores[i] }));
+    paired.sort((a, b) => b.s - a.s);
+    for(let i = 0; i < moves.length; i++) moves[i] = paired[i].m;
+
+    if(localBestScore > MATE - 100) break;          // mate found
+    if(performance.now() > searchDeadline) break;   // out of time
+  }
+
+  return best;
+}
+
+/* =========================================================
+   AUDIO
+   ========================================================= */
+let actx = null, masterGain = null, soundOn = true;
+
+function audioInit(){
+  if(actx) return;
+  const AC = window.AudioContext || window.webkitAudioContext;
+  if(!AC) return;
+  actx = new AC();
+  masterGain = actx.createGain();
+  masterGain.gain.value = 0.55;
+  masterGain.connect(actx.destination);
+}
+
+function tone(freq, dur, type, vol, delay, slideTo){
+  if(!actx) return;
+  const t0 = actx.currentTime + (delay || 0);
+  const o = actx.createOscillator();
+  const g = actx.createGain();
+  o.type = type || "sine";
+  o.frequency.setValueAtTime(freq, t0);
+  if(slideTo) o.frequency.exponentialRampToValueAtTime(slideTo, t0 + dur);
+  g.gain.setValueAtTime(0.0001, t0);
+  g.gain.exponentialRampToValueAtTime(vol, t0 + 0.006);
+  g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+  o.connect(g); g.connect(masterGain);
+  o.start(t0); o.stop(t0 + dur + 0.05);
+}
+
+function noiseClick(freq, vol, dur, delay){
+  if(!actx) return;
+  const len = Math.max(1, Math.floor(actx.sampleRate * dur));
+  const buf = actx.createBuffer(1, len, actx.sampleRate);
+  const d = buf.getChannelData(0);
+  for(let i = 0; i < len; i++){
+    d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / len, 2.2);
+  }
+  const src = actx.createBufferSource();
+  src.buffer = buf;
+  const f = actx.createBiquadFilter();
+  f.type = "bandpass";
+  f.frequency.value = freq;
+  f.Q.value = 1.1;
+  const g = actx.createGain();
+  g.gain.value = vol;
+  src.connect(f); f.connect(g); g.connect(masterGain);
+  src.start(actx.currentTime + (delay || 0));
+}
+
+const SFX = {
+  select(){ tone(660, 0.045, "sine", 0.09); },
+  move(){
+    noiseClick(1700, 0.20, 0.045);
+    tone(210, 0.085, "sine", 0.16, 0, 115);
+  },
+  capture(){
+    noiseClick(820, 0.30, 0.09);
+    tone(150, 0.16, "triangle", 0.26, 0, 70);
+  },
+  castle(){
+    noiseClick(1500, 0.18, 0.04);
+    noiseClick(1150, 0.18, 0.05, 0.09);
+  },
+  check(){
+    tone(880, 0.10, "square", 0.075);
+    tone(1174, 0.15, "square", 0.075, 0.085);
+  },
+  promote(){
+    [523, 659, 784, 1046].forEach((f, i) => tone(f, 0.17, "triangle", 0.14, i * 0.065));
+  },
+  win(){
+    [523, 659, 784, 1046].forEach((f, i) => tone(f, 0.42, "sine", 0.17, i * 0.11));
+  },
+  lose(){
+    [440, 392, 330, 262].forEach((f, i) => tone(f, 0.38, "sine", 0.15, i * 0.13));
+  },
+  draw(){
+    tone(392, 0.28, "sine", 0.15);
+    tone(392, 0.42, "sine", 0.13, 0.19);
+  },
+  click(){ tone(520, 0.05, "sine", 0.10); }
+};
+
+function playSound(name){
+  if(!soundOn) return;
+  audioInit();
+  if(!actx) return;
+  if(actx.state === "suspended") actx.resume();
+  const fn = SFX[name];
+  if(fn) fn();
+}
+
+/* =========================================================
+   UI
+   ========================================================= */
+const boardEl      = document.getElementById("board");
+const statusEl     = document.getElementById("status");
+const turnDot      = document.getElementById("turnDot");
+const undoBtn      = document.getElementById("undoBtn");
+const soundBtn     = document.getElementById("soundBtn");
+const menuBtn      = document.getElementById("menuBtn");
+const modePill     = document.getElementById("modePill");
+const homeScreen   = document.getElementById("homeScreen");
+const diffGrid     = document.getElementById("diffGrid");
+const overlay      = document.getElementById("promoOverlay");
+const promoChoices = document.getElementById("promoChoices");
+const overOverlay  = document.getElementById("overOverlay");
+const resultIcon   = document.getElementById("resultIcon");
+const resultTitle  = document.getElementById("resultTitle");
+const resultSub    = document.getElementById("resultSub");
+const rematchBtn   = document.getElementById("rematchBtn");
+const menuBtn2     = document.getElementById("menuBtn2");
+
+let state, history, selected, lastMove, gameOver, thinking, curStatus;
+let difficulty = "easy";
+let started = false;
+
+let aiToken = 0, overToken = 0;
+
+function newGame(diff){
+  if(diff) difficulty = diff;
+
+  aiToken++;
+  overToken++;
+
+  state = initialState();
+  history = [];
+  selected = null;
+  lastMove = null;
+  gameOver = false;
+  thinking = false;
+  started = true;
+
+  hidePromo();
+  overOverlay.classList.add("hidden");
+  homeScreen.classList.add("hidden");
+  updateModePill();
+  render();
+}
+
+function goHome(){
+  aiToken++;
+  overToken++;
+  thinking = false;
+  started = false;
+  hidePromo();
+  overOverlay.classList.add("hidden");
+  homeScreen.classList.remove("hidden");
+}
+
+function updateModePill(){
+  if(difficulty === "human"){
+    modePill.textContent = "2 Players · Pass & play";
+  } else {
+    modePill.textContent = "vs Computer · " + AI_LEVELS[difficulty].label;
+  }
+}
+
+function render(){
+  const prevStatus = curStatus;
+  curStatus = computeStatus(state);
+  gameOver = curStatus.over;
+
+  const targets = new Map();
+  if(selected !== null && !gameOver && !thinking){
+    for(const m of curStatus.moves){
+      if(m.from === selected) targets.set(m.to, m);
+    }
+  }
+
+  const frag = document.createDocumentFragment();
+  for(let i = 0; i < 64; i++){
+    const r = i >> 3, c = i & 7;
+    const sq = document.createElement("div");
+    sq.className = "sq " + (((r + c) % 2) ? "dark" : "light");
+    sq.dataset.i = i;
+
+    if(lastMove && (lastMove.from === i || lastMove.to === i)) sq.classList.add("last");
+    if(selected === i) sq.classList.add("sel");
+
+    const p = state.board[i];
+    if(p){
+      if(p.t === "k" && p.c === state.turn && curStatus.check) sq.classList.add("check");
+      const el = document.createElement("span");
+      el.className = "piece " + p.c + (lastMove && lastMove.to === i ? " pop" : "");
+      el.textContent = GLYPH[p.t];
+      sq.appendChild(el);
+    }
+
+    if(targets.has(i)){
+      const m = targets.get(i);
+      const d = document.createElement("div");
+      d.className = m.cap ? "ring" : "dot";
+      sq.appendChild(d);
+    }
+
+    if(r === 7){
+      const l = document.createElement("span");
+      l.className = "coord file";
+      l.textContent = FILES[c];
+      sq.appendChild(l);
+    }
+    if(c === 0){
+      const l = document.createElement("span");
+      l.className = "coord rank";
+      l.textContent = String(8 - r);
+      sq.appendChild(l);
+    }
+
+    frag.appendChild(sq);
+  }
+
+  boardEl.innerHTML = "";
+  boardEl.appendChild(frag);
+
+  updateStatusText();
+}
+
+function updateStatusText(){
+  turnDot.classList.toggle("black", state.turn === "b");
+  statusEl.className = "status";
+  undoBtn.disabled = (history.length === 0 || thinking);
+
+  if(curStatus.over){
+    if(curStatus.type === "checkmate"){
+      const w = curStatus.winner === "w" ? "White" : "Black";
+      statusEl.textContent = "Checkmate — " + w + " wins!";
+      statusEl.classList.add("win");
+    } else if(curStatus.type === "stalemate"){
+      statusEl.textContent = "Stalemate — draw";
+    } else {
+      statusEl.textContent = "Draw — " + (curStatus.reason || "");
+    }
+    return;
+  }
+
+  if(thinking){
+    statusEl.textContent = "Computer is thinking…";
+    return;
+  }
+
+  let txt = state.turn === "w" ? "White to move" : "Black to move";
+  if(curStatus.check){
+    txt = (state.turn === "w" ? "White" : "Black") + " is in check!";
+    statusEl.classList.add("alert");
+  }
+  statusEl.textContent = txt;
+}
+
+/* ---------- interaction ---------- */
+function onSquare(i){
+  if(!started || gameOver || thinking) return;
+  if(difficulty !== "human" && state.turn === "b") return;
+
+  const moves = curStatus.moves;
+
+  if(selected !== null){
+    const cand = moves.filter(m => m.from === selected && m.to === i);
+    if(cand.length){
+      if(cand.length > 1 && cand[0].promo){
+        showPromo(cand);
+        return;
+      }
+      doMove(cand[0]);
+      return;
+    }
+  }
+
+  const p = state.board[i];
+  if(p && p.c === state.turn){
+    if(selected === i){
+      selected = null;
+      render();
+      return;
+    }
+    selected = i;
+    render();
+    playSound("select");
+  } else if(selected !== null){
+    selected = null;
+    render();
+  }
+}
+
+boardEl.addEventListener("pointerdown", e => {
+  const sq = e.target.closest(".sq");
+  if(!sq) return;
+  e.preventDefault();
+  audioInit();
+  if(actx && actx.state === "suspended") actx.resume();
+  onSquare(Number(sq.dataset.i));
+}, { passive: false });
+
+/* ---------- move execution ---------- */
+function doMove(m){
+  history.push(cloneState(state));
+  const captured = applyMove(state, m);
+  lastMove = m;
+  selected = null;
+  hidePromo();
+
+  render();
+
+  if(gameOver){
+    if(curStatus.type === "checkmate"){
+      const humanWon = (difficulty === "human") || (curStatus.winner === "w");
+      playSound(humanWon ? "win" : "lose");
+    } else {
+      playSound("draw");
+    }
+    const token = ++overToken;
+    setTimeout(() => {
+      if(token === overToken && gameOver && started) showResult();
+    }, 720);
+    return;
+  }
+
+  if(curStatus.check)  playSound("check");
+  else if(m.promo)     playSound("promote");
+  else if(captured)    playSound("capture");
+  else if(m.castle)    playSound("castle");
+  else                 playSound("move");
+
+  if(difficulty !== "human" && state.turn === "b") scheduleAI();
+}
+
+function scheduleAI(){
+  thinking = true;
+  updateStatusText();
+
+  const token = ++aiToken;
+  setTimeout(() => {
+    if(token !== aiToken || !started) return;
+
+    let m = null;
+    try {
+      m = chooseAIMove(state, AI_LEVELS[difficulty]);
+    } catch(err){
+      console.error(err);
+    }
+
+    if(token !== aiToken || !started) return;
+
+    thinking = false;
+    if(m) doMove(m);
+    else render();
+  }, 130);
+}
+
+/* ---------- promotion ---------- */
+function showPromo(cand){
+  const color = state.turn;
+  promoChoices.innerHTML = "";
+  for(const q of ["q","r","b","n"]){
+    const m = cand.find(x => x.promo === q);
+    if(!m) continue;
+    const btn = document.createElement("button");
+    btn.className = "promo-btn";
+    const span = document.createElement("span");
+    span.className = "piece " + color;
+    span.textContent = GLYPH[q];
+    btn.appendChild(span);
+    btn.addEventListener("click", ev => {
+      ev.stopPropagation();
+      hidePromo();
+      doMove(m);
+    });
+    promoChoices.appendChild(btn);
+  }
+  overlay.classList.remove("hidden");
+}
+
+function hidePromo(){
+  overlay.classList.add("hidden");
+}
+
+/* ---------- result ---------- */
+function showResult(){
+  const s = curStatus;
+  let icon = "♔", title = "", sub = "";
+
+  if(s.type === "checkmate"){
+    title = "Checkmate";
+    const w = s.winner === "w" ? "White" : "Black";
+    sub = w + " wins";
+    if(difficulty === "human"){
+      icon = s.winner === "w" ? "♔" : "♚";
+      sub = w + " wins the game";
+    } else {
+      icon = s.winner === "w" ? "🏆" : "😔";
+      sub = s.winner === "w" ? "You beat the computer!" : "The computer wins";
+    }
+  } else if(s.type === "stalemate"){
+    title = "Stalemate";
+    sub = "No legal moves — it's a draw";
+    icon = "🤝";
+  } else {
+    title = "Draw";
+    sub = (s.reason || "The game is drawn");
+    icon = "🤝";
+  }
+
+  resultIcon.textContent = icon;
+  resultTitle.textContent = title;
+  resultSub.textContent = sub;
+  overOverlay.classList.remove("hidden");
+}
+
+/* ---------- buttons ---------- */
+undoBtn.addEventListener("click", () => {
+  audioInit();
+  if(thinking || !history.length) return;
+
+  aiToken++;
+  overToken++;
+  overOverlay.classList.add("hidden");
+
+  state = history.pop();
+
+  // In AI mode, undo back to the human's turn
+  if(difficulty !== "human"){
+    let guard = 0;
+    while(history.length && state.turn !== "w" && guard++ < 4){
+      state = history.pop();
+    }
+  }
+
+  selected = null;
+  lastMove = null;
+  gameOver = false;
+  hidePromo();
+  render();
+  playSound("click");
+});
+
+soundBtn.addEventListener("click", () => {
+  soundOn = !soundOn;
+  soundBtn.textContent = soundOn ? "🔊" : "🔇";
+  soundBtn.classList.toggle("off", !soundOn);
+  if(soundOn){
+    audioInit();
+    if(actx && actx.state === "suspended") actx.resume();
+    playSound("select");
+  }
+});
+
+menuBtn.addEventListener("click", () => {
+  audioInit();
+  playSound("click");
+  goHome();
+});
+
+modePill.addEventListener("click", () => {
+  audioInit();
+  playSound("click");
+  goHome();
+});
+
+diffGrid.addEventListener("click", e => {
+  const btn = e.target.closest(".diff-btn");
+  if(!btn) return;
+  audioInit();
+  if(actx && actx.state === "suspended") actx.resume();
+  playSound("select");
+  newGame(btn.dataset.diff);
+});
+
+rematchBtn.addEventListener("click", () => {
+  audioInit();
+  playSound("click");
+  newGame(difficulty);
+});
+
+menuBtn2.addEventListener("click", () => {
+  audioInit();
+  playSound("click");
+  goHome();
+});
+
+/* =========================================================
+   BOOT
+   ========================================================= */
+state = initialState();
+history = [];
+selected = null;
+lastMove = null;
+gameOver = false;
+thinking = false;
+curStatus = null;
+updateModePill();
+render();
+
+// Hide board interaction until a mode is picked — home screen covers it anyway.
+homeScreen.classList.remove("hidden");
+
+// Keep undo button state accurate on first paint
+undoBtn.disabled = true;
+</script>
+</body>
+</html>
