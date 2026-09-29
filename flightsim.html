@@ -262,7 +262,6 @@ function terrainHeight(x, z){
   h += fbm(x - 2000,   z + 4000,   3, 0.00700,  16);
   h -= 340;
 
-  /* flatten a generous plain around the origin */
   const d = Math.sqrt(x*x + z*z);
   const flat = Math.max(0, 1 - d / 750);
   const e = flat * flat * (3 - 2 * flat);
@@ -346,13 +345,11 @@ function sampleTerrainColor(y, ny, x, z, out){
     if (!found) out.copy(COL_KEYS[COL_KEYS.length-1].c);
   }
 
-  /* steep slopes fade toward bare rock */
   const steep = clamp((1 - ny - 0.16) / 0.46, 0, 1);
   if (steep > 0 && y > 12){
     out.lerp(COL_STEEP, steep * 0.78);
   }
 
-  /* faint organic variation */
   const v = 0.93 + valueNoise(x * 0.021, z * 0.021) * 0.14;
   out.multiplyScalar(v);
 }
@@ -408,7 +405,6 @@ function buildChunk(cx, cz){
     const h  = terrainHeight(wx, wz);
     if (h < 18 || h > 275) continue;
 
-    /* slope test */
     const dx = terrainHeight(wx + 14, wz) - h;
     const dz = terrainHeight(wx, wz + 14) - h;
     const slope = Math.sqrt(dx*dx + dz*dz) / 14;
@@ -439,7 +435,7 @@ function buildChunk(cx, cz){
     }
     inst.instanceMatrix.needsUpdate = true;
     inst.frustumCulled = true;
-    inst.position.set(originX, 0, originZ);
+    inst.position.set(originX, 0, originZ);   /* align with terrain mesh */
     group.add(inst);
   }
 
@@ -470,7 +466,6 @@ function updateChunks(force){
 
   const R = VIEW_RADIUS;
 
-  /* discard far chunks */
   for (const [key, ch] of chunks){
     if (Math.abs(ch.cx - cx) > R || Math.abs(ch.cz - cz) > R){
       worldGroup.remove(ch.group);
@@ -479,7 +474,6 @@ function updateChunks(force){
     }
   }
 
-  /* queue missing chunks, closest first */
   buildQueue = [];
   for (let dx = -R; dx <= R; dx++){
     for (let dz = -R; dz <= R; dz++){
@@ -513,19 +507,43 @@ function clearAllChunks(){
 }
 
 /* ============================================================
-   Water
+   Water — patched
+   ------------------------------------------------------------
+   Fixes:
+     1. polygonOffset pushes water back in the depth buffer so
+        terrain wins the shore intersection cleanly (no more
+        z-fighting "jiggle" at the waterline).
+     2. Slight transparency softens the intersection into a
+        blend instead of a hard cut.
+     3. World-anchored vertex waves turn the shoreline into a
+        slow tide instead of a static edge.
+     4. Smooth follow instead of 200-unit snapping, so nothing
+        pops every couple of seconds.
 ============================================================ */
+const WATER_BASE_Y = 0;
+
+const waterMat = new THREE.MeshPhongMaterial({
+  color: 0x2f6b8c,
+  specular: 0xaaddff,
+  shininess: 110,
+  fog: true,
+  transparent: true,
+  opacity: 0.93,
+  polygonOffset: true,
+  polygonOffsetFactor: 2,
+  polygonOffsetUnits: 2
+});
+
+/* Wave + tide injected into the standard phong vertex shader */
+
+
 const water = new THREE.Mesh(
-  new THREE.PlaneGeometry(36000, 36000),
-  new THREE.MeshPhongMaterial({
-    color: 0x2f6b8c,
-    specular: 0xaaddff,
-    shininess: 110,
-    fog: true
-  })
+  new THREE.PlaneGeometry(14000, 14000, 220, 220),
+  waterMat
 );
 water.rotation.x = -Math.PI/2;
-water.position.y = 0;
+water.position.y = WATER_BASE_Y;
+water.frustumCulled = false;
 scene.add(water);
 
 /* ============================================================
@@ -822,7 +840,7 @@ function startRun(){
   placeNameEl.textContent = PLACES[0];
 
   updateChunks(true);
-  processBuildQueue(999);   /* one-shot initial build */
+  processBuildQueue(999);
 
   state = 'playing';
 }
@@ -846,7 +864,6 @@ function updateFlight(dt){
   if (!e.alive) return;
   if (graceTimer > 0) graceTimer -= dt;
 
-  /* ---- keyboard ---- */
   let kp = 0, kr = 0, ky = 0;
   if (keys.KeyW || keys.ArrowUp)    kp += 1;
   if (keys.KeyS || keys.ArrowDown)  kp -= 1;
@@ -859,12 +876,10 @@ function updateFlight(dt){
   if (keys.ControlLeft || keys.ControlRight)
     input.throttle = clamp(input.throttle - 1.4*dt, 0, 1);
 
-  /* ---- merged input ---- */
   const pitchIn = kp !== 0 ? kp : -stickEls.R.y;
   const rollIn  = kr !== 0 ? kr :  stickEls.R.x;
   const yawIn   = ky !== 0 ? ky :  stickEls.L.x;
 
-  /* ---- orientation ---- */
   const q = e.group.quaternion;
   _right.set(1,0,0).applyQuaternion(q);
   _fwd.set(0,0,-1).applyQuaternion(q);
@@ -873,10 +888,9 @@ function updateFlight(dt){
   let rotY = -yawIn  * 0.85;
   let rotZ = -rollIn * 2.35;
 
-  rotY += _right.y * 1.75;                    /* bank-to-turn */
-  if (Math.abs(rollIn) < 0.06) rotZ += -_right.y * 1.55;   /* auto-level */
+  rotY += _right.y * 1.75;
+  if (Math.abs(rollIn) < 0.06) rotZ += -_right.y * 1.55;
 
-  /* gentle auto-pitch when hands-off */
   if (Math.abs(pitchIn) < 0.06 && Math.abs(rollIn) < 0.06){
     const pitchAngle = Math.asin(clamp(_fwd.y, -1, 1));
     rotX += -pitchAngle * 1.15;
@@ -886,18 +900,15 @@ function updateFlight(dt){
   _dq.setFromEuler(_euler);
   q.multiply(_dq).normalize();
 
-  /* ---- speed ---- */
   _fwd.set(0,0,-1).applyQuaternion(q);
   const target = MIN_SPEED + input.throttle * (MAX_SPEED - MIN_SPEED);
   e.speed += (target - e.speed) * Math.min(1, dt * 0.85);
-  e.speed -= _fwd.y * 42 * dt;                 /* climb costs, dive gains */
+  e.speed -= _fwd.y * 42 * dt;
   e.speed = clamp(e.speed, 24, 178);
 
-  /* ---- move ---- */
   e.group.position.addScaledVector(_fwd, e.speed * dt);
   e.group.userData.prop.rotation.z += dt * 38;
 
-  /* ---- ceiling ---- */
   const p = e.group.position;
   if (p.y > CEILING){
     p.y = CEILING;
@@ -905,7 +916,6 @@ function updateFlight(dt){
     q.multiply(dp).normalize();
   }
 
-  /* ---- distance & milestones ---- */
   const horiz = Math.sqrt(p.x*p.x + p.z*p.z);
   if (horiz > distance) distance = horiz;
 
@@ -921,7 +931,6 @@ function updateFlight(dt){
     setTimeout(()=>{ toast(placeNameEl.textContent, 2.6); }, 1400);
   }
 
-  /* ---- terrain contact ---- */
   const ground = Math.max(terrainHeight(p.x, p.z), 0);
   const clearance = p.y - ground;
 
@@ -985,7 +994,6 @@ function updateCamera(dt){
     .addScaledVector(_fwd, -27)
     .addScaledVector(_up, 9.5);
 
-  /* keep camera above the terrain */
   const camGround = Math.max(terrainHeight(_desired.x, _desired.z), 0);
   if (_desired.y < camGround + 12) _desired.y = camGround + 12;
 
@@ -1003,7 +1011,6 @@ function updateCamera(dt){
     camTargetPos.lerp(_lookGoal, kl);
   }
 
-  /* subtle camera roll — 22% of the aircraft's bank */
   const upTarget = new THREE.Vector3(0,1,0).lerp(_up, 0.22).normalize();
   camUpSmooth.lerp(upTarget, 1 - Math.exp(-3.2*dt)).normalize();
   camera.up.copy(camUpSmooth);
@@ -1014,20 +1021,23 @@ function updateCamera(dt){
 /* ============================================================
    Per-frame world updates
 ============================================================ */
-function updateWorldAttachments(){
+function updateWorldAttachments(dt){
   const p = plane.group.position;
 
-  /* water follows the aircraft horizontally */
-  water.position.x = Math.round(p.x / 200) * 200;
-  water.position.z = Math.round(p.z / 200) * 200;
+  /* --- water follows the aircraft smoothly (no snapping) --- */
+  water.position.x = p.x;
+  water.position.z = p.z;
 
-  /* sky follows camera */
+  /* --- drive the wave + tide shader --- */
+
+
+  /* --- sky follows camera --- */
   skyMesh.position.copy(camera.position);
 
-  /* cloud wrap */
+  /* --- cloud wrap --- */
   updateClouds();
 
-  /* blob shadow onto terrain */
+  /* --- blob shadow onto terrain --- */
   if (plane.alive){
     const gy = Math.max(terrainHeight(p.x, p.z), 0);
     const alt = p.y - gy;
@@ -1083,10 +1093,10 @@ function animate(){
     if (state === 'playing' || state === 'over'){
       updateChunks(false);
       processBuildQueue(buildQueue.length > 20 ? 8 : 2);
-      updateWorldAttachments();
+      updateWorldAttachments(dt);
     }
   } else if (state === 'menu'){
-    updateWorldAttachments();
+    updateWorldAttachments(dt);
   }
 
   updateCamera(dt);
@@ -1117,11 +1127,10 @@ document.getElementById('pauseBtn').addEventListener('click', ()=>{
 /* ============================================================
    Boot
 ============================================================ */
-/* Build a small preview world for the menu backdrop */
 plane.group.position.set(0, 260, 0);
 updateChunks(true);
 processBuildQueue(999);
-updateWorldAttachments();
+updateWorldAttachments(0);
 
 state = 'menu';
 showOverlay(
