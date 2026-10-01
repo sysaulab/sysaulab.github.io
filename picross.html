@@ -1,0 +1,530 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Picross</title>
+<style>
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0; min-height: 100vh;
+    background: radial-gradient(circle at 50% -10%, #1c2340 0%, #0a0c14 65%);
+    color: #c8d2f0;
+    font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    display: flex; align-items: center; justify-content: center;
+    padding: 20px;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .wrap { display: flex; flex-direction: column; gap: 14px; align-items: center; }
+
+  .head {
+    width: 100%; display: flex; align-items: baseline; justify-content: space-between;
+    padding: 0 4px;
+  }
+  .title { font-size: 15px; letter-spacing: .35em; color: #5f6f9e; font-weight: 700; }
+  .timer { font-size: 14px; color: #7f90c0; letter-spacing: .1em; }
+
+  .board-wrap { position: relative; }
+
+  #board {
+    display: grid;
+    background: #0e111c;
+    border-radius: 12px;
+    overflow: hidden;
+    box-shadow: 0 24px 70px rgba(0,0,0,.7), 0 0 0 1px #2b3252,
+                inset 0 0 0 1px rgba(255,255,255,.02);
+    touch-action: none;
+    user-select: none;
+    -webkit-user-select: none;
+  }
+
+  .corner { background: #11141f; border-right: 1px solid #1e2438; border-bottom: 1px solid #1e2438; }
+
+  .clue {
+    display: flex;
+    background: #11141f;
+    color: #92a3d4;
+    font-size: 12px;
+    font-weight: 600;
+    border-right: 1px solid #1e2438;
+    border-bottom: 1px solid #1e2438;
+    transition: color .2s;
+  }
+  .clue.row { align-items: center; justify-content: flex-end; gap: 5px; padding-right: 7px; }
+  .clue.col { flex-direction: column; align-items: center; justify-content: flex-end; gap: 2px; padding-bottom: 7px; }
+  .clue.done { color: #34406b; }
+
+  .cell {
+    position: relative;
+    background: #171c2c;
+    border-right: 1px solid #1f2537;
+    border-bottom: 1px solid #1f2537;
+    cursor: pointer;
+    transition: background .07s;
+  }
+  .cell:hover { background: #212942; }
+  .cell.sep-l { border-left: 2px solid #39426b; }
+  .cell.sep-t { border-top: 2px solid #39426b; }
+
+  .cell.on {
+    background: linear-gradient(135deg, #82b2ff, #4a7dff);
+    box-shadow: inset 0 0 0 1px rgba(255,255,255,.15);
+  }
+  .cell.on:hover { background: linear-gradient(135deg, #96c0ff, #5c8aff); }
+
+  .cell.mark::after {
+    content: '×';
+    position: absolute; inset: 0;
+    display: flex; align-items: center; justify-content: center;
+    color: #47527a; font-size: 15px; line-height: 1;
+  }
+
+  .bar { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; }
+  button {
+    font: inherit; font-size: 12px; letter-spacing: .08em;
+    background: #1a2036; color: #9aabd8;
+    border: 1px solid #2c3454; border-radius: 7px;
+    padding: 7px 13px; cursor: pointer;
+    transition: all .12s;
+  }
+  button:hover { background: #232c4a; color: #cfdcff; border-color: #3d4877; }
+  button:active { transform: translateY(1px); }
+  button.active { background: #2c3d6e; color: #dce7ff; border-color: #4a5da0; }
+
+  .hint { font-size: 11px; color: #4b5678; letter-spacing: .04em; text-align: center; }
+
+  #banner {
+    position: absolute; inset: 0; border-radius: 12px;
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px;
+    background: rgba(9,11,19,.86);
+    opacity: 0; pointer-events: none; transition: opacity .35s;
+  }
+  #banner.show { opacity: 1; }
+  #banner .big { font-size: 20px; letter-spacing: .3em; color: #8fd0ff; text-shadow: 0 0 24px rgba(90,160,255,.6); }
+  #banner .sub { font-size: 12px; color: #6b7aa8; letter-spacing: .1em; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="head">
+    <div class="title">PICROSS</div>
+    <div class="timer" id="timer">0:00</div>
+  </div>
+
+  <div class="board-wrap">
+    <div id="board"></div>
+    <div id="banner"><div class="big">SOLVED</div><div class="sub" id="bannerSub"></div></div>
+  </div>
+
+  <div class="bar">
+    <button data-size="5">5×5</button>
+    <button data-size="8">8×8</button>
+    <button data-size="10">10×10</button>
+    <button id="clearBtn">Clear</button>
+    <button id="newBtn">New</button>
+  </div>
+
+  <div class="hint">left click / drag = fill &nbsp;·&nbsp; right click = mark &nbsp;·&nbsp; numbers dim when a line is done</div>
+</div>
+
+<script>
+/* ============================================================
+   LINE SOLVER
+   cells: 0 = unknown, 1 = filled, 2 = empty
+   ============================================================ */
+
+function deduceLine(cells, blocks) {
+  const len = cells.length;
+  const counts = new Int32Array(len);
+  const placement = new Uint8Array(len);
+  let total = 0;
+  let bailed = false;
+
+  function rec(pos, j) {
+    if (bailed) return;
+    if (j === blocks.length) {
+      for (let i = pos; i < len; i++) if (cells[i] === 1) return;
+      total++;
+      if (total > 120000) { bailed = true; return; }
+      for (let i = 0; i < len; i++) if (placement[i]) counts[i]++;
+      return;
+    }
+    const b = blocks[j];
+    for (let start = pos; start + b <= len; start++) {
+      // gap cells pos..start-1 must not be filled
+      if (start > pos && cells[start - 1] === 1) break;
+      // block cells must not be empty
+      let ok = true;
+      for (let i = start; i < start + b; i++) {
+        if (cells[i] === 2) { ok = false; break; }
+      }
+      if (!ok) continue;
+      // separator after block must not be filled
+      if (start + b < len && cells[start + b] === 1) continue;
+
+      for (let i = start; i < start + b; i++) placement[i] = 1;
+      rec(start + b + 1, j + 1);
+      for (let i = start; i < start + b; i++) placement[i] = 0;
+
+      if (bailed) return;
+    }
+  }
+
+  rec(0, 0);
+
+  if (bailed) return { ok: true, changed: false };
+  if (total === 0) return { ok: false, changed: false };
+
+  let changed = false;
+  for (let i = 0; i < len; i++) {
+    if (cells[i] !== 0) continue;
+    if (counts[i] === total) { cells[i] = 1; changed = true; }
+    else if (counts[i] === 0) { cells[i] = 2; changed = true; }
+  }
+  return { ok: true, changed };
+}
+
+function lineSolveFull(grid, rowClues, colClues) {
+  const n = grid.length, m = grid[0].length;
+  let progress = true, guard = 0;
+
+  while (progress && guard++ < 200) {
+    progress = false;
+
+    for (let r = 0; r < n; r++) {
+      const res = deduceLine(grid[r], rowClues[r]);
+      if (!res.ok) return { complete: false, unknown: Infinity };
+      if (res.changed) progress = true;
+    }
+
+    for (let c = 0; c < m; c++) {
+      const col = new Uint8Array(n);
+      for (let r = 0; r < n; r++) col[r] = grid[r][c];
+      const res = deduceLine(col, colClues[c]);
+      if (!res.ok) return { complete: false, unknown: Infinity };
+      if (res.changed) {
+        progress = true;
+        for (let r = 0; r < n; r++) grid[r][c] = col[r];
+      }
+    }
+  }
+
+  let unknown = 0;
+  for (let r = 0; r < n; r++)
+    for (let c = 0; c < m; c++)
+      if (grid[r][c] === 0) unknown++;
+
+  return { complete: unknown === 0, unknown };
+}
+
+/* ============================================================
+   HELPERS
+   ============================================================ */
+
+function cluesOf(arr) {
+  const out = [];
+  let run = 0;
+  for (let i = 0; i < arr.length; i++) {
+    if (arr[i] === 1) run++;
+    else if (run) { out.push(run); run = 0; }
+  }
+  if (run) out.push(run);
+  return out;
+}
+
+const sameArr = (a, b) =>
+  a.length === b.length && a.every((v, i) => v === b[i]);
+
+/* ============================================================
+   PUZZLE GENERATION  (rejection sampling for line-solvability)
+   ============================================================ */
+
+function makePuzzle(n) {
+  const deadline = performance.now() + 1500;
+  let fallback = null;
+  let fallbackUnknown = Infinity;
+
+  for (let attempt = 0; attempt < 40000; attempt++) {
+    if ((attempt & 15) === 0 && performance.now() > deadline) break;
+
+    const sol = [];
+    for (let r = 0; r < n; r++) {
+      const row = new Uint8Array(n);
+      for (let c = 0; c < n; c++) row[c] = Math.random() < 0.5 ? 1 : 0;
+      sol.push(row);
+    }
+
+    let filled = 0;
+    for (const row of sol) for (let i = 0; i < n; i++) filled += row[i];
+    const ratio = filled / (n * n);
+    if (ratio < 0.3 || ratio > 0.7) continue;
+
+    const rc = sol.map(row => cluesOf(row));
+    const cc = [];
+    for (let c = 0; c < n; c++) {
+      const col = new Uint8Array(n);
+      for (let r = 0; r < n; r++) col[r] = sol[r][c];
+      cc.push(cluesOf(col));
+    }
+
+    const grid = [];
+    for (let r = 0; r < n; r++) grid.push(new Uint8Array(n));
+
+    const res = lineSolveFull(grid, rc, cc);
+    if (res.complete) return { sol, rc, cc };
+
+    if (res.unknown < fallbackUnknown) {
+      fallbackUnknown = res.unknown;
+      fallback = { sol, rc, cc };
+    }
+  }
+
+  return fallback;
+}
+
+/* ============================================================
+   GAME STATE
+   ============================================================ */
+
+const boardEl  = document.getElementById('board');
+const timerEl  = document.getElementById('timer');
+const banner   = document.getElementById('banner');
+const bannerSub= document.getElementById('bannerSub');
+
+let N = 8;
+let solution, rowClues, colClues;
+let state;                 // 0 empty | 1 filled | 2 marked
+let cellEls = [];
+let rowClueEls = [], colClueEls = [];
+
+let dragging = false, paintVal = null;
+let solved = false;
+let timerId = null, startTime = 0, running = false;
+
+/* ============================================================
+   BUILD
+   ============================================================ */
+
+function buildBoard() {
+  const cell  = Math.min(46, Math.floor(340 / N));
+  const clue  = N <= 5 ? 62 : 76;
+
+  boardEl.style.gridTemplateColumns = `${clue}px repeat(${N}, ${cell}px)`;
+  boardEl.style.gridTemplateRows    = `${clue}px repeat(${N}, ${cell}px)`;
+  boardEl.innerHTML = '';
+
+  cellEls = [];
+  rowClueEls = [];
+  colClueEls = [];
+
+  // corner
+  const corner = document.createElement('div');
+  corner.className = 'corner';
+  boardEl.appendChild(corner);
+
+  // column clues
+  for (let c = 0; c < N; c++) {
+    const d = document.createElement('div');
+    d.className = 'clue col' + (c % 5 === 0 && c > 0 ? ' sep-l' : '');
+    const vals = colClues[c].length ? colClues[c] : [0];
+    for (const v of vals) {
+      const s = document.createElement('span');
+      s.textContent = v;
+      d.appendChild(s);
+    }
+    boardEl.appendChild(d);
+    colClueEls.push(d);
+  }
+
+  // rows
+  for (let r = 0; r < N; r++) {
+    const rc = document.createElement('div');
+    rc.className = 'clue row' + (r % 5 === 0 && r > 0 ? ' sep-t' : '');
+    const vals = rowClues[r].length ? rowClues[r] : [0];
+    for (const v of vals) {
+      const s = document.createElement('span');
+      s.textContent = v;
+      rc.appendChild(s);
+    }
+    boardEl.appendChild(rc);
+    rowClueEls.push(rc);
+
+    const rowEls = [];
+    for (let c = 0; c < N; c++) {
+      const el = document.createElement('div');
+      let cls = 'cell';
+      if (c % 5 === 0 && c > 0) cls += ' sep-l';
+      if (r % 5 === 0 && r > 0) cls += ' sep-t';
+      el.className = cls;
+      el.dataset.r = r;
+      el.dataset.c = c;
+      boardEl.appendChild(el);
+      rowEls.push(el);
+    }
+    cellEls.push(rowEls);
+  }
+}
+
+function paintCell(r, c) {
+  const el = cellEls[r][c];
+  el.classList.toggle('on',   state[r][c] === 1);
+  el.classList.toggle('mark', state[r][c] === 2);
+}
+
+function refreshAllCells() {
+  for (let r = 0; r < N; r++)
+    for (let c = 0; c < N; c++)
+      paintCell(r, c);
+}
+
+function refreshClueStates() {
+  for (let r = 0; r < N; r++) {
+    const line = [];
+    for (let c = 0; c < N; c++) line.push(state[r][c] === 1 ? 1 : 0);
+    rowClueEls[r].classList.toggle('done', sameArr(cluesOf(line), rowClues[r]));
+  }
+  for (let c = 0; c < N; c++) {
+    const line = [];
+    for (let r = 0; r < N; r++) line.push(state[r][c] === 1 ? 1 : 0);
+    colClueEls[c].classList.toggle('done', sameArr(cluesOf(line), colClues[c]));
+  }
+}
+
+/* ============================================================
+   NEW GAME
+   ============================================================ */
+
+function newGame(n) {
+  N = n;
+  const p = makePuzzle(n);
+  solution  = p.sol;
+  rowClues  = p.rc;
+  colClues  = p.cc;
+
+  state = [];
+  for (let r = 0; r < N; r++) state.push(new Uint8Array(N));
+
+  solved = false;
+  running = false;
+  clearInterval(timerId);
+  timerId = null;
+  timerEl.textContent = '0:00';
+  banner.classList.remove('show');
+
+  buildBoard();
+  refreshClueStates();
+
+  document.querySelectorAll('[data-size]').forEach(b => {
+    b.classList.toggle('active', +b.dataset.size === n);
+  });
+}
+
+function clearBoard() {
+  if (solved) return;
+  for (let r = 0; r < N; r++) state[r].fill(0);
+  refreshAllCells();
+  refreshClueStates();
+}
+
+/* ============================================================
+   TIMER
+   ============================================================ */
+
+function startTimer() {
+  if (running || solved) return;
+  running = true;
+  startTime = Date.now();
+  timerId = setInterval(() => {
+    const s = Math.floor((Date.now() - startTime) / 1000);
+    timerEl.textContent = Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0');
+  }, 200);
+}
+
+function stopTimer() {
+  running = false;
+  clearInterval(timerId);
+  timerId = null;
+}
+
+/* ============================================================
+   INTERACTION
+   ============================================================ */
+
+boardEl.addEventListener('contextmenu', e => e.preventDefault());
+
+boardEl.addEventListener('pointerdown', e => {
+  const t = e.target.closest('.cell');
+  if (!t || solved) return;
+  e.preventDefault();
+
+  const r = +t.dataset.r, c = +t.dataset.c;
+  const cur = state[r][c];
+
+  paintVal = (e.button === 2 || e.pointerType === 'touch' && e.buttons === 2)
+    ? (cur === 2 ? 0 : 2)
+    : (cur === 1 ? 0 : 1);
+
+  dragging = true;
+  startTimer();
+  applyPaint(r, c);
+});
+
+window.addEventListener('pointermove', e => {
+  if (!dragging || solved) return;
+  const el = document.elementFromPoint(e.clientX, e.clientY);
+  if (!el || !el.classList.contains('cell')) return;
+  applyPaint(+el.dataset.r, +el.dataset.c);
+});
+
+window.addEventListener('pointerup',     () => { dragging = false; paintVal = null; });
+window.addEventListener('pointercancel', () => { dragging = false; paintVal = null; });
+
+function applyPaint(r, c) {
+  const cur = state[r][c];
+  if (cur === paintVal) return;
+  if (paintVal === 1 && cur === 2) return;   // don't overwrite marks while filling
+  state[r][c] = paintVal;
+  paintCell(r, c);
+  refreshClueStates();
+  checkWin();
+}
+
+/* ============================================================
+   WIN
+   ============================================================ */
+
+function checkWin() {
+  for (let r = 0; r < N; r++)
+    for (let c = 0; c < N; c++)
+      if ((state[r][c] === 1 ? 1 : 0) !== solution[r][c]) return;
+
+  solved = true;
+  stopTimer();
+
+  // reveal any stray marks as filled (they're all correct anyway)
+  for (let r = 0; r < N; r++)
+    for (let c = 0; c < N; c++)
+      if (state[r][c] === 2) state[r][c] = 0;
+
+  refreshAllCells();
+  refreshClueStates();
+
+  bannerSub.textContent = 'in ' + timerEl.textContent;
+  banner.classList.add('show');
+}
+
+/* ============================================================
+   WIRING
+   ============================================================ */
+
+document.querySelectorAll('[data-size]').forEach(btn => {
+  btn.addEventListener('click', () => newGame(+btn.dataset.size));
+});
+
+document.getElementById('newBtn').addEventListener('click', () => newGame(N));
+document.getElementById('clearBtn').addEventListener('click', clearBoard);
+
+newGame(8);
+</script>
+</body>
+</html>
