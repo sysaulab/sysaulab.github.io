@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en" data-theme="midnight">
+<html lang="en" data-theme="midnight" data-motion="subtle">
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
@@ -12,16 +12,19 @@
 <script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/highlight.min.js"></script>
 
 <script>
+  /* Apply saved theme + motion before first paint to avoid flashes. */
   (function () {
     try {
       var t = localStorage.getItem('poorerpoint-theme');
       if (t) document.documentElement.setAttribute('data-theme', t);
+      var m = localStorage.getItem('poorerpoint-motion') || 'subtle';
+      document.documentElement.setAttribute('data-motion', m);
     } catch (e) {}
   })();
 </script>
 <style>
   /* =========================================================
-     THEMES
+     THEMES  (unchanged)
      ========================================================= */
   :root,
   [data-theme="midnight"]{
@@ -251,10 +254,13 @@
   }
   .small{ padding:7px 12px; font-size:.82rem; }
 
-  /* ---------------- Theme picker ---------------- */
+  /* ---------------- Prefs (theme + motion) ---------------- */
   .theme-picker{
     display:flex; align-items:center; gap:12px; flex-wrap:wrap;
     margin-top:20px; padding-top:16px; border-top:1px solid var(--border);
+  }
+  .theme-picker.flat{
+    margin-top:12px; padding-top:0; border-top:none;
   }
   .theme-picker-label{
     font-size:.7rem; font-weight:750; letter-spacing:.11em; text-transform:uppercase;
@@ -268,6 +274,9 @@
     border-radius:999px; color:var(--fg-dim);
     font-size:.78rem; font-weight:600; line-height:1;
     transition:background .15s, border-color .15s, color .15s, box-shadow .15s, transform .08s;
+  }
+  #motionOptions .theme-btn{
+    padding:4px 11px;
   }
   .theme-btn:hover{ background:var(--ghost-hover); color:var(--fg); }
   .theme-btn.active{
@@ -292,7 +301,7 @@
     flex:0 0 auto; padding:20px 38px 16px;
     border-bottom:1px solid var(--border);
     background:linear-gradient(180deg, var(--crumb-tint), transparent);
-    max-height:34vh; overflow-y:auto;
+    max-height:34vh; overflow-y:auto; overflow-x:hidden;
   }
   .crumb{
     padding-left:calc(var(--indent) * 1.15rem);
@@ -310,11 +319,6 @@
     padding:34px 38px 80px; outline:none;
   }
   .content-inner{ max-width:900px; margin:0 auto; }
-
-  @keyframes slideNext{ from{opacity:0; transform:translateX(26px);} to{opacity:1; transform:none;} }
-  @keyframes slidePrev{ from{opacity:0; transform:translateX(-26px);} to{opacity:1; transform:none;} }
-  .anim-next{ animation:slideNext .3s cubic-bezier(.22,.61,.36,1); }
-  .anim-prev{ animation:slidePrev .3s cubic-bezier(.22,.61,.36,1); }
 
   .toolbar{
     flex:0 0 auto; display:flex; align-items:center; gap:10px;
@@ -351,43 +355,77 @@
     .content{ padding:24px 20px 60px; }
   }
 
+  /* =========================================================
+     MOTION  (CSS revival of the Rust stagger)
+     ========================================================= */
+
+  /* Intensity knobs. Off is handled separately below. */
+  :root[data-motion="subtle"]{
+    --crumb-dur:220ms;
+    --crumb-slide:20px;
+    --block-dur:200ms;
+    --block-rise:6px;
+  }
+  :root[data-motion="lively"]{
+    --crumb-dur:340ms;
+    --crumb-slide:44px;
+    --block-dur:280ms;
+    --block-rise:14px;
+  }
+
+  @media (prefers-reduced-motion: no-preference) {
+    .crumb.reveal{
+      animation: ppCrumbIn var(--crumb-dur, 220ms)
+                 cubic-bezier(.22,.61,.36,1) both;
+      animation-delay: calc(var(--delay, 0) * 1ms);
+      will-change: opacity, transform;
+    }
+    .content-inner.stagger > *{
+      animation: ppBlockIn var(--block-dur, 200ms)
+                 cubic-bezier(.22,.61,.36,1) both;
+      animation-delay: calc(var(--delay, 0) * 1ms);
+      will-change: opacity, transform;
+    }
+
+    @keyframes ppCrumbIn{
+      from { opacity:0; transform: translateX(var(--crumb-slide, 20px)); }
+      to   { opacity:1; transform: none; }
+    }
+    @keyframes ppBlockIn{
+      from { opacity:0; transform: translateY(var(--block-rise, 6px)); }
+      to   { opacity:1; transform: none; }
+    }
+  }
+
+  /* Motion "off": no animation at all, immediate appearance. */
+  :root[data-motion="off"] .crumb.reveal,
+  :root[data-motion="off"] .content-inner.stagger > *{
+    animation: none;
+    opacity: 1;
+    transform: none;
+  }
+
   /* ---------------- Touch support ---------------- */
-  /* Allow native vertical panning, let us handle horizontal gestures. */
   .content,
-  .crumbs{
-    touch-action: pan-y;
-  }
-  /* Code blocks keep horizontal scroll for long lines. */
-  .content-inner pre{
-    touch-action: pan-x pan-y;
-  }
-  /* Prevent rubber-band on short slides. */
+  .crumbs{ touch-action: pan-y; }
+  .content-inner pre{ touch-action: pan-x pan-y; }
   .content{ overscroll-behavior: contain; }
 
-  /* One-time gesture hint toast */
   .touch-toast{
-    position:fixed;
-    left:50%; bottom:78px;
+    position:fixed; left:50%; bottom:78px;
     transform:translate(-50%, 20px);
-    background:var(--panel);
-    color:var(--fg);
+    background:var(--panel); color:var(--fg);
     border:1px solid var(--border);
-    padding:10px 18px;
-    border-radius:999px;
+    padding:10px 18px; border-radius:999px;
     font-size:.85rem; font-weight:600;
     box-shadow:0 14px 44px rgba(0,0,0,.32);
     opacity:0; pointer-events:none;
     transition:opacity .3s ease, transform .3s ease;
-    z-index:200;
-    max-width:calc(100vw - 32px);
-    text-align:center;
-    white-space:nowrap;
+    z-index:200; max-width:calc(100vw - 32px);
+    text-align:center; white-space:nowrap;
     overflow:hidden; text-overflow:ellipsis;
   }
-  .touch-toast.visible{
-    opacity:1;
-    transform:translate(-50%, 0);
-  }
+  .touch-toast.visible{ opacity:1; transform:translate(-50%, 0); }
   @media (max-width:520px){
     .touch-toast{ font-size:.78rem; padding:9px 14px; bottom:70px; }
   }
@@ -474,7 +512,7 @@
   ::-webkit-scrollbar-thumb:hover{ background:var(--scroll-thumb-hover); }
 
   /* =========================================================
-     THEME EDITOR
+     THEME EDITOR  (unchanged)
      ========================================================= */
   #themeEditor{
     position:fixed; inset:0; z-index:100;
@@ -524,22 +562,15 @@
     padding:16px 20px 24px;
   }
 
-  .te-group{
-    margin-bottom:20px;
-  }
+  .te-group{ margin-bottom:20px; }
   .te-group-title{
     font-size:.7rem; font-weight:750; letter-spacing:.1em; text-transform:uppercase;
     color:var(--fg-dimmer); margin:0 0 10px;
     display:flex; align-items:center; gap:8px;
   }
-  .te-group-title::after{
-    content:''; flex:1; height:1px; background:var(--border);
-  }
+  .te-group-title::after{ content:''; flex:1; height:1px; background:var(--border); }
 
-  .te-row{
-    display:flex; align-items:center; gap:10px;
-    margin-bottom:8px;
-  }
+  .te-row{ display:flex; align-items:center; gap:10px; margin-bottom:8px; }
   .te-row label{
     flex:0 0 150px;
     font-size:.78rem; font-weight:600; color:var(--fg-dim);
@@ -547,16 +578,12 @@
     overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
   }
   .te-row input[type="text"]{
-    flex:1 1 auto;
-    min-width:0;
-    background:var(--panel-2);
-    color:var(--fg);
-    border:1px solid var(--border);
-    border-radius:8px;
+    flex:1 1 auto; min-width:0;
+    background:var(--panel-2); color:var(--fg);
+    border:1px solid var(--border); border-radius:8px;
     padding:6px 10px;
     font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-    font-size:.78rem;
-    outline:none;
+    font-size:.78rem; outline:none;
     transition:border-color .15s, box-shadow .15s;
   }
   .te-row input[type="text"]:focus{
@@ -585,9 +612,7 @@
     flex-wrap:wrap;
   }
   .te-footer .te-spacer{ flex:1; }
-  .te-footer button{
-    padding:8px 14px; font-size:.82rem;
-  }
+  .te-footer button{ padding:8px 14px; font-size:.82rem; }
   .te-footer .te-reset{
     background:transparent; border:1px solid var(--border); color:var(--fg-dim);
   }
@@ -623,6 +648,11 @@
       <div class="theme-options" id="themeOptions"></div>
       <button id="themeEditorBtn" class="ghost small" style="margin-left:4px;">🎨 Edit theme</button>
     </div>
+
+    <div class="theme-picker flat">
+      <span class="theme-picker-label">Motion</span>
+      <div class="theme-options" id="motionOptions"></div>
+    </div>
   </div>
 </section>
 
@@ -639,7 +669,7 @@
     <span id="counter" class="counter" aria-live="polite">1 / 1</span>
     <button id="nextBtn" class="ghost small">Next ›</button>
     <span id="scrollHint" class="scroll-hint hidden"></span>
-    <span class="hint">← → slides · Space / ↑ ↓ scroll · type number + Enter to jump · Esc to exit</span>
+    <span class="hint">← → slides · Space / ↑ ↓ scroll · 42↵ jump · R replay · Esc exit</span>
   </footer>
 </section>
 
@@ -744,6 +774,12 @@
   const scrollHint  = $('scrollHint');
   const hljsTheme   = $('hljsTheme');
 
+  /* ---- motion timing (in ms), tuned from the Rust version's constants ---- */
+  const TITLE_STAGGER_MS      = 60;   // between newly-revealed crumbs
+  const TITLE_SETTLE_MS       = 140;  // after last new crumb, before content
+  const BLOCK_STAGGER_MS      = 60;   // between top-level content blocks
+  const MAX_STAGGER_WINDOW_MS = 700;  // cap total stagger on very long slides
+
   let slides = [];
   let idx = 0;
 
@@ -761,11 +797,9 @@
       counterEl.classList.remove('typing');
     }
   }
-
   function clearNumBuf() {
     if (numBuf) { numBuf = ''; updateCounter(); }
   }
-
   function flashInvalid() {
     counterEl.classList.remove('invalid');
     void counterEl.offsetWidth;
@@ -775,15 +809,22 @@
       counterEl.classList.remove('invalid');
     }, 650);
   }
-
   function commitJump() {
     if (!numBuf) return;
     const n = parseInt(numBuf, 10);
     numBuf = '';
     counterEl.classList.remove('typing');
-
     if (n >= 1 && n <= slides.length) jump(n - 1);
     else { updateCounter(); flashInvalid(); }
+  }
+
+  function motionEnabled() {
+    if (window.matchMedia &&
+        window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      return false;
+    }
+    const pref = document.documentElement.getAttribute('data-motion') || 'subtle';
+    return pref !== 'off';
   }
 
   function start() {
@@ -791,7 +832,6 @@
     if (!markdown.trim()) { mdInput.focus(); return; }
 
     slides = splitSlides(markdown);
-
     if (!slides.length) {
       alert('No slides found.\n\nAdd some content under your headings.');
       return;
@@ -805,7 +845,6 @@
     deckScreen.classList.remove('hidden');
     render(0);
     contentEl.focus();
-
     maybeShowTouchHint();
   }
 
@@ -816,21 +855,64 @@
     mdInput.focus();
   }
 
-  function render(dir) {
+  function render() {
     const s = slides[idx];
 
+    /* --- heading diff: which headers are new since the previous slide? --- */
+    const prev = idx > 0 ? slides[idx - 1].headers : [];
+    let common = 0;
+    while (common < prev.length && common < s.headers.length &&
+           prev[common].level === s.headers[common].level &&
+           prev[common].text  === s.headers[common].text) {
+      common++;
+    }
+
+    const motionOn = motionEnabled();
+
+    /* --- crumbs --- */
     if (s.headers.length) {
       crumbsEl.classList.remove('hidden');
-      crumbsEl.innerHTML = s.headers.map(function (h) {
-        return '<div class="crumb crumb-' + h.level + '" style="--indent:' + (h.level - 1) + '">' +
-               md.utils.escapeHtml(h.text) + '</div>';
+      crumbsEl.innerHTML = s.headers.map(function (h, i) {
+        const isNew  = motionOn && i >= common;
+        const delay  = isNew ? (i - common) * TITLE_STAGGER_MS : 0;
+        return '<div class="crumb crumb-' + h.level +
+               (isNew ? ' reveal' : '') +
+               '" style="--indent:' + (h.level - 1) +
+               (isNew ? ';--delay:' + delay : '') +
+               '">' +
+               md.utils.escapeHtml(h.text) +
+               '</div>';
       }).join('');
     } else {
       crumbsEl.innerHTML = '';
       crumbsEl.classList.add('hidden');
     }
 
+    /* --- content --- */
     innerEl.innerHTML = md.render(s.markdown);
+    innerEl.classList.remove('stagger');
+
+    if (motionOn) {
+      const newTitles = s.headers.length - common;
+      const contentStart = newTitles > 0
+        ? newTitles * TITLE_STAGGER_MS + TITLE_SETTLE_MS
+        : 0;
+
+      const children = Array.from(innerEl.children);
+      const n = children.length;
+      const stagger = n > 0
+        ? Math.min(BLOCK_STAGGER_MS, Math.floor(MAX_STAGGER_WINDOW_MS / n))
+        : 0;
+
+      children.forEach(function (child, i) {
+        child.style.setProperty('--delay', String(contentStart + i * stagger));
+      });
+
+      // force a reflow so the animation restarts cleanly
+      void innerEl.offsetWidth;
+      innerEl.classList.add('stagger');
+    }
+
     contentEl.scrollTop = 0;
     updateScrollHint();
 
@@ -838,12 +920,11 @@
     progressEl.style.width = (((idx + 1) / slides.length) * 100) + '%';
     prevBtn.disabled = idx === 0;
     nextBtn.disabled = idx === slides.length - 1;
+  }
 
-    if (dir) {
-      innerEl.classList.remove('anim-next', 'anim-prev');
-      void innerEl.offsetWidth;
-      innerEl.classList.add(dir > 0 ? 'anim-next' : 'anim-prev');
-    }
+  function replay() {
+    if (!motionEnabled()) return;
+    render();
   }
 
   function go(delta) {
@@ -851,16 +932,15 @@
     if (next < 0 || next >= slides.length) return;
     clearNumBuf();
     idx = next;
-    render(delta);
+    render();
   }
 
   function jump(to) {
     if (to < 0 || to >= slides.length) return;
     clearNumBuf();
     if (to === idx) { updateCounter(); return; }
-    const dir = to > idx ? 1 : -1;
     idx = to;
-    render(dir);
+    render();
   }
 
   /* ---------------- scrolling inside a slide ---------------- */
@@ -868,26 +948,22 @@
   function maxScroll() {
     return Math.max(0, contentEl.scrollHeight - contentEl.clientHeight);
   }
-
   function canScroll(dir) {
     const m = maxScroll();
     if (m <= 2) return false;
     return dir > 0 ? contentEl.scrollTop < m - 2 : contentEl.scrollTop > 2;
   }
-
   function scrollStep(dir) {
     const m = maxScroll();
     const amount = Math.max(60, contentEl.clientHeight * 0.85);
     const top = Math.max(0, Math.min(m, contentEl.scrollTop + dir * amount));
     contentEl.scrollTo({ top: top, behavior: 'smooth' });
   }
-
   function step(dir) {
     clearNumBuf();
     if (canScroll(dir)) scrollStep(dir);
     else go(dir);
   }
-
   function updateScrollHint() {
     const m = maxScroll();
     if (m <= 2) { scrollHint.classList.add('hidden'); return; }
@@ -902,33 +978,19 @@
 
   /* =========================================================
      4. TOUCH SUPPORT
-     - Swipe left / right on the deck → next / prev slide
-     - Tap left 25% → prev, right 25% → next, middle → step forward
-     - Taps on links/buttons/inputs are passed through untouched
      ========================================================= */
 
-  const SWIPE_MIN_DIST = 50;    // px
-  const SWIPE_MAX_TIME = 700;   // ms
-  const SWIPE_RATIO    = 1.4;   // horizontal must dominate vertical
-  const TAP_MAX_DIST   = 12;    // px
-  const TAP_MAX_TIME   = 400;   // ms
+  const SWIPE_MIN_DIST = 50;
+  const SWIPE_MAX_TIME = 700;
+  const SWIPE_RATIO    = 1.4;
+  const TAP_MAX_DIST   = 12;
+  const TAP_MAX_TIME   = 400;
 
-  const touchState = {
-    active: false,
-    startX: 0,
-    startY: 0,
-    startTime: 0,
-    moved: false
-  };
+  const touchState = { active:false, startX:0, startY:0, startTime:0, moved:false };
 
   function isInteractive(el) {
-    if (!el) return false;
-    if (el.closest) {
-      return !!(el.closest('a, button, input, textarea, select, label'));
-    }
-    return false;
+    return !!(el && el.closest && el.closest('a, button, input, textarea, select, label'));
   }
-
   function handleTap(x) {
     const w = window.innerWidth || 1;
     const rel = x / w;
@@ -953,9 +1015,7 @@
     if (!t) return;
     const dx = t.clientX - touchState.startX;
     const dy = t.clientY - touchState.startY;
-    if (Math.abs(dx) > TAP_MAX_DIST || Math.abs(dy) > TAP_MAX_DIST) {
-      touchState.moved = true;
-    }
+    if (Math.abs(dx) > TAP_MAX_DIST || Math.abs(dy) > TAP_MAX_DIST) touchState.moved = true;
   }, { passive: true });
 
   deckScreen.addEventListener('touchend', function (e) {
@@ -968,36 +1028,27 @@
     const dy = t.clientY - touchState.startY;
     const dt = Date.now() - touchState.startTime;
 
-    /* ---- Horizontal swipe ---- */
     if (Math.abs(dx) >= SWIPE_MIN_DIST &&
         Math.abs(dx) > Math.abs(dy) * SWIPE_RATIO &&
         dt < SWIPE_MAX_TIME) {
-      // clear any accidental text selection from the drag
       const sel = window.getSelection && window.getSelection();
       if (sel && sel.removeAllRanges) sel.removeAllRanges();
-
-      if (dx < 0) go(1);          // swipe left → next
-      else        go(-1);         // swipe right → prev
+      if (dx < 0) go(1); else go(-1);
       return;
     }
-
-    /* ---- Tap ---- */
     if (!touchState.moved && dt < TAP_MAX_TIME) {
-      if (isInteractive(e.target)) return;   // let links/buttons do their thing
+      if (isInteractive(e.target)) return;
       handleTap(t.clientX);
     }
   }, { passive: true });
 
-  /* Cancel gesture if the browser fires touchcancel */
   deckScreen.addEventListener('touchcancel', function () {
     touchState.active = false;
   }, { passive: true });
 
-  /* One-time gesture hint for touch users */
   function maybeShowTouchHint() {
     const KEY = 'poorerpoint-touch-hint-v1';
     try { if (localStorage.getItem(KEY)) return; } catch (e) {}
-
     const isTouch = ('ontouchstart' in window) ||
                     (navigator.maxTouchPoints && navigator.maxTouchPoints > 0);
     if (!isTouch) return;
@@ -1006,14 +1057,11 @@
     toast.className = 'touch-toast';
     toast.textContent = 'Swipe ← → to change slides · Tap to advance';
     document.body.appendChild(toast);
-
     requestAnimationFrame(function () { toast.classList.add('visible'); });
-
     setTimeout(function () {
       toast.classList.remove('visible');
       setTimeout(function () { toast.remove(); }, 400);
     }, 3800);
-
     try { localStorage.setItem(KEY, '1'); } catch (e) {}
   }
 
@@ -1030,8 +1078,15 @@
     { id: 'paper',     name: 'Paper',      dot: ['#f7f7f5', '#0969da', '#8250df'], hljs: 'github' }
   ];
 
-  const THEME_KEY = 'poorerpoint-theme';
+  const MOTION_OPTIONS = [
+    { id: 'off',    name: 'Off' },
+    { id: 'subtle', name: 'Subtle' },
+    { id: 'lively', name: 'Lively' }
+  ];
+
+  const THEME_KEY  = 'poorerpoint-theme';
   const CUSTOM_KEY = 'poorerpoint-custom-theme';
+  const MOTION_KEY = 'poorerpoint-motion';
 
   const THEME_VARS = [
     { key: '--bg',            group: 'Backgrounds', type: 'color' },
@@ -1041,7 +1096,6 @@
     { key: '--card-b',        group: 'Backgrounds', type: 'color' },
     { key: '--code-bg',       group: 'Backgrounds', type: 'color' },
     { key: '--hint-bg',       group: 'Backgrounds', type: 'color' },
-
     { key: '--fg',            group: 'Text', type: 'color' },
     { key: '--fg-dim',        group: 'Text', type: 'color' },
     { key: '--fg-dimmer',     group: 'Text', type: 'color' },
@@ -1049,25 +1103,20 @@
     { key: '--content-h',     group: 'Text', type: 'color' },
     { key: '--content-strong',group: 'Text', type: 'color' },
     { key: '--content-em',    group: 'Text', type: 'color' },
-
     { key: '--accent',        group: 'Accents', type: 'color' },
     { key: '--accent-2',      group: 'Accents', type: 'color' },
     { key: '--danger',        group: 'Accents', type: 'color' },
-
     { key: '--border',        group: 'Borders', type: 'color' },
     { key: '--hr-color',      group: 'Borders', type: 'color' },
     { key: '--scroll-thumb',  group: 'Borders', type: 'color' },
-
     { key: '--primary-a',     group: 'Buttons', type: 'color' },
     { key: '--primary-b',     group: 'Buttons', type: 'color' },
     { key: '--primary-fg',    group: 'Buttons', type: 'color' },
     { key: '--ghost-bg',      group: 'Buttons', type: 'color' },
     { key: '--ghost-hover',   group: 'Buttons', type: 'color' },
-
     { key: '--inline-code-bg',    group: 'Code', type: 'color' },
     { key: '--inline-code-fg',    group: 'Code', type: 'color' },
     { key: '--pre-code-fg',       group: 'Code', type: 'color' },
-
     { key: '--glow-a',        group: 'Effects', type: 'text' },
     { key: '--glow-b',        group: 'Effects', type: 'text' },
     { key: '--card-shadow',   group: 'Effects', type: 'text' },
@@ -1089,7 +1138,6 @@
   }
 
   let customVars = {};
-
   function loadCustomFromStorage() {
     try {
       const raw = localStorage.getItem(CUSTOM_KEY);
@@ -1098,10 +1146,6 @@
   }
   function saveCustomToStorage() {
     try { localStorage.setItem(CUSTOM_KEY, JSON.stringify(customVars)); } catch (e) {}
-  }
-  function clearCustomStorage() {
-    try { localStorage.removeItem(CUSTOM_KEY); } catch (e) {}
-    customVars = {};
   }
 
   function applyTheme(id) {
@@ -1122,7 +1166,6 @@
         'https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/styles/' +
         hljsName + '.min.css';
     }
-
     updateThemePickerActive(id);
     updateEditorHeader(id);
   }
@@ -1133,7 +1176,6 @@
     for (const th of THEMES) if (th.id === t) return t;
     return 'midnight';
   }
-
   function currentThemeBase() {
     const t = currentTheme();
     if (t !== 'custom') return t;
@@ -1143,15 +1185,11 @@
     } catch (e) {}
     return 'midnight';
   }
-
   function updateThemePickerActive(id) {
     const opts = $('themeOptions');
     if (!opts) return;
-    for (const btn of opts.children) {
-      btn.classList.toggle('active', btn.dataset.theme === id);
-    }
+    for (const btn of opts.children) btn.classList.toggle('active', btn.dataset.theme === id);
   }
-
   function updateEditorHeader(id) {
     const nameEl = $('teThemeName');
     if (!nameEl) return;
@@ -1166,7 +1204,6 @@
     const wrap = $('themeOptions');
     if (!wrap) return;
     wrap.innerHTML = '';
-
     THEMES.forEach(function (t) {
       const btn = document.createElement('button');
       btn.type = 'button';
@@ -1183,8 +1220,7 @@
       const label = document.createElement('span');
       label.textContent = t.name;
 
-      btn.appendChild(dot);
-      btn.appendChild(label);
+      btn.appendChild(dot); btn.appendChild(label);
       btn.addEventListener('click', function () {
         try { localStorage.setItem('poorerpoint-last-builtin', t.id); } catch (e) {}
         applyTheme(t.id);
@@ -1210,32 +1246,56 @@
     });
   }
 
+  /* ---- motion picker ---- */
+  function buildMotionPicker() {
+    const wrap = $('motionOptions');
+    if (!wrap) return;
+    wrap.innerHTML = '';
+    const current = document.documentElement.getAttribute('data-motion') || 'subtle';
+    MOTION_OPTIONS.forEach(function (m) {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'theme-btn';
+      btn.dataset.motion = m.id;
+      btn.textContent = m.name;
+      btn.classList.toggle('active', m.id === current);
+      btn.addEventListener('click', function () { applyMotion(m.id); });
+      wrap.appendChild(btn);
+    });
+  }
+  function applyMotion(id) {
+    document.documentElement.setAttribute('data-motion', id);
+    try { localStorage.setItem(MOTION_KEY, id); } catch (e) {}
+    const wrap = $('motionOptions');
+    if (wrap) {
+      for (const btn of wrap.children) {
+        btn.classList.toggle('active', btn.dataset.motion === id);
+      }
+    }
+  }
+
   /* =========================================================
      6. THEME EDITOR
      ========================================================= */
 
-  const themeEditor   = $('themeEditor');
-  const teBody        = $('teBody');
-  const teCloseBtn    = $('teCloseBtn');
-  const teResetBtn    = $('teResetBtn');
-  const teRandomBtn   = $('teRandomBtn');
-  const teExportBtn   = $('teExportBtn');
-  const teImportBtn   = $('teImportBtn');
-  const teSaveBtn     = $('teSaveBtn');
+  const themeEditor = $('themeEditor');
+  const teBody      = $('teBody');
+  const teCloseBtn  = $('teCloseBtn');
+  const teResetBtn  = $('teResetBtn');
+  const teRandomBtn = $('teRandomBtn');
+  const teExportBtn = $('teExportBtn');
+  const teImportBtn = $('teImportBtn');
+  const teSaveBtn   = $('teSaveBtn');
 
   let builtinSnapshot = {};
-
   function snapshotBuiltinVars() {
     builtinSnapshot = {};
-    THEME_VARS.forEach(function (v) {
-      builtinSnapshot[v.key] = getVar(v.key);
-    });
+    THEME_VARS.forEach(function (v) { builtinSnapshot[v.key] = getVar(v.key); });
   }
 
   function buildThemeEditor() {
     if (!teBody) return;
     teBody.innerHTML = '';
-
     const groups = {};
     THEME_VARS.forEach(function (v) {
       if (!groups[v.group]) groups[v.group] = [];
@@ -1280,7 +1340,6 @@
             setVar(v.key, picker.value);
             customVars[v.key] = picker.value;
           });
-
           text.addEventListener('input', function () {
             const val = text.value.trim();
             if (/^#([0-9a-f]{3}|[0-9a-f]{6})$/i.test(val)) picker.value = val;
@@ -1297,27 +1356,22 @@
           text.value = getVar(v.key);
           text.dataset.var = v.key;
           text.spellcheck = false;
-
           text.addEventListener('input', function () {
             setVar(v.key, text.value);
             customVars[v.key] = text.value;
           });
-
           row.appendChild(text);
         }
-
         groupEl.appendChild(row);
       });
-
       teBody.appendChild(groupEl);
     });
   }
 
   function normalizeColor(c) {
     c = String(c).trim();
-    if (/^#([0-9a-f])([0-9a-f])([0-9a-f])$/i.test(c)) {
+    if (/^#([0-9a-f])([0-9a-f])([0-9a-f])$/i.test(c))
       return '#' + c[1] + c[1] + c[2] + c[2] + c[3] + c[3];
-    }
     if (/^#([0-9a-f]{6})$/i.test(c)) return c;
     const m = /^rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/.exec(c);
     if (m) {
@@ -1336,15 +1390,12 @@
     clearInlineVars();
     void document.body.offsetWidth;
     snapshotBuiltinVars();
-
     loadCustomFromStorage();
     if (Object.keys(customVars).length) applyCustomVars(customVars);
-
     buildThemeEditor();
     themeEditor.classList.remove('hidden');
     teBody.scrollTop = 0;
   }
-
   function closeThemeEditor() {
     themeEditor.classList.add('hidden');
     const active = currentTheme();
@@ -1357,7 +1408,6 @@
       applyTheme(active);
     }
   }
-
   function resetToBuiltin() {
     const base = currentThemeBase();
     clearInlineVars();
@@ -1369,21 +1419,17 @@
     updateThemePickerActive(base);
     updateEditorHeader(base);
   }
-
   function randomizeTheme() {
     const h = Math.floor(Math.random() * 360);
     const h2 = (h + 40 + Math.floor(Math.random() * 80)) % 360;
     const isDark = Math.random() > 0.45;
-
     const hsl = function (hue, sat, light) {
       return 'hsl(' + hue + ', ' + sat + '%, ' + light + '%)';
     };
-
     const baseBg = isDark ? hsl(h, 20, 8) : hsl(h, 25, 96);
     const baseFg = isDark ? hsl(h, 15, 92) : hsl(h, 20, 12);
 
     customVars = {};
-
     customVars['--bg']           = baseBg;
     customVars['--panel']        = isDark ? hsl(h, 18, 14) : hsl(h, 20, 98);
     customVars['--panel-2']      = isDark ? hsl(h, 20, 10) : hsl(h, 18, 99);
@@ -1391,7 +1437,6 @@
     customVars['--card-b']       = isDark ? hsl(h, 20, 12) : hsl(h, 15, 99);
     customVars['--code-bg']      = isDark ? hsl(h, 22, 9)  : hsl(h, 15, 97);
     customVars['--hint-bg']      = isDark ? hsl(h, 18, 15) : hsl(h, 15, 96);
-
     customVars['--fg']           = baseFg;
     customVars['--fg-dim']       = isDark ? hsl(h, 10, 68) : hsl(h, 10, 42);
     customVars['--fg-dimmer']    = isDark ? hsl(h, 8, 48)  : hsl(h, 8, 58);
@@ -1399,25 +1444,20 @@
     customVars['--content-h']    = isDark ? '#ffffff'        : hsl(h, 20, 8);
     customVars['--content-strong']= isDark ? '#ffffff'        : '#000000';
     customVars['--content-em']   = isDark ? hsl(h2, 60, 80)  : hsl(h2, 50, 30);
-
     customVars['--accent']       = hsl(h, 70, isDark ? 70 : 45);
     customVars['--accent-2']     = hsl(h2, 65, isDark ? 68 : 48);
     customVars['--danger']       = 'hsl(0, 75%, 60%)';
-
     customVars['--border']       = isDark ? hsl(h, 15, 24) : hsl(h, 15, 88);
     customVars['--hr-color']     = isDark ? hsl(h, 15, 28) : hsl(h, 15, 85);
     customVars['--scroll-thumb'] = isDark ? hsl(h, 15, 28) : hsl(h, 12, 80);
-
     customVars['--primary-a']    = hsl(h, 70, isDark ? 68 : 55);
     customVars['--primary-b']    = hsl(h, 70, isDark ? 58 : 45);
     customVars['--primary-fg']   = isDark ? hsl(h, 40, 10) : '#ffffff';
     customVars['--ghost-bg']     = isDark ? hsl(h, 18, 18) : hsl(h, 15, 94);
     customVars['--ghost-hover']  = isDark ? hsl(h, 18, 24) : hsl(h, 15, 90);
-
     customVars['--inline-code-bg']    = isDark ? hsl(h, 20, 16) : hsl(h, 15, 94);
     customVars['--inline-code-fg']    = hsl(h2, 60, isDark ? 72 : 45);
     customVars['--pre-code-fg']       = isDark ? hsl(h, 10, 85) : hsl(h, 15, 20);
-
     customVars['--glow-a']       = 'hsla(' + h + ', 70%, 65%, .12)';
     customVars['--glow-b']       = 'hsla(' + h2 + ', 65%, 65%, .10)';
     customVars['--card-shadow']  = isDark ? 'rgba(0,0,0,.55)' : 'rgba(0,0,0,.10)';
@@ -1431,20 +1471,15 @@
     updateThemePickerActive('custom');
     updateEditorHeader('custom');
   }
-
   function exportTheme() {
     const data = { name: 'Custom Theme', vars: customVars };
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
-    a.href = url;
-    a.download = 'poorerpoint-theme.json';
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
+    a.href = url; a.download = 'poorerpoint-theme.json';
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
     URL.revokeObjectURL(url);
   }
-
   function importTheme() {
     const input = document.createElement('input');
     input.type = 'file';
@@ -1470,7 +1505,6 @@
     });
     input.click();
   }
-
   function saveCustomTheme() {
     saveCustomToStorage();
     applyCustomVars(customVars);
@@ -1493,12 +1527,10 @@
   nextBtn.addEventListener('click', function () { go(1); });
 
   $('clearBtn').addEventListener('click', function () {
-    mdInput.value = '';
-    mdInput.focus();
+    mdInput.value = ''; mdInput.focus();
   });
   $('sampleBtn').addEventListener('click', function () {
-    mdInput.value = SAMPLE;
-    mdInput.focus();
+    mdInput.value = SAMPLE; mdInput.focus();
   });
 
   $('themeEditorBtn').addEventListener('click', openThemeEditor);
@@ -1518,7 +1550,6 @@
       if (e.key === 'Escape') { e.preventDefault(); closeThemeEditor(); }
       return;
     }
-
     if (deckScreen.classList.contains('hidden')) {
       if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); start(); }
       return;
@@ -1565,6 +1596,10 @@
       case 'Home': e.preventDefault(); jump(0); break;
       case 'End':  e.preventDefault(); jump(slides.length - 1); break;
 
+      case 'r':
+      case 'R':
+        e.preventDefault(); replay(); break;
+
       case 'Escape':
         e.preventDefault();
         if (numBuf) clearNumBuf();
@@ -1598,7 +1633,8 @@
     '- All content under a heading becomes one slide',
     '- Use ← → to change slides and ↑ ↓ or Space to scroll a long slide',
     '- Type a slide number and press Enter to jump straight to it',
-    '- On touch devices: swipe ← → and tap to advance',
+    '- Press **R** to replay a slide’s reveal',
+    '- Motion can be Off, Subtle, or Lively — see the picker on the start screen',
     '',
     '### Lists',
     '',
@@ -1645,6 +1681,7 @@
   /* ---- init ---- */
   loadCustomFromStorage();
   buildThemePicker();
+  buildMotionPicker();
   mdInput.value = SAMPLE;
   mdInput.focus();
 })();
