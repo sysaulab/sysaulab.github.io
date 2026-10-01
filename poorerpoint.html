@@ -1,0 +1,833 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Poorer Point</title>
+<style>
+  :root{
+    --bg:#0b0d13;
+    --panel:#131824;
+    --panel-2:#0f131d;
+    --border:#1f2637;
+    --fg:#e8ecf7;
+    --fg-dim:#9aa5bf;
+    --fg-dimmer:#6b7691;
+    --accent:#7c9cff;
+    --accent-2:#a78bfa;
+    --code-bg:#0d1220;
+  }
+
+  *{ box-sizing:border-box; }
+  html,body{ height:100%; margin:0; }
+  body{
+    background:var(--bg);
+    color:var(--fg);
+    font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    -webkit-font-smoothing:antialiased;
+    overflow:hidden;
+  }
+  .screen{ position:fixed; inset:0; display:flex; }
+  .hidden{ display:none !important; }
+
+  /* ---------------- Start screen ---------------- */
+  #startScreen{
+    align-items:center; justify-content:center;
+    padding:28px; overflow:auto;
+    background:
+      radial-gradient(900px 500px at 15% -10%, rgba(124,156,255,.14), transparent 60%),
+      radial-gradient(800px 500px at 95% 110%, rgba(167,139,250,.12), transparent 60%),
+      var(--bg);
+  }
+  .card{
+    width:min(780px,100%);
+    background:linear-gradient(180deg, #161c2a, #121722);
+    border:1px solid var(--border);
+    border-radius:18px;
+    padding:30px 30px 24px;
+    box-shadow:0 30px 80px rgba(0,0,0,.55), inset 0 1px 0 rgba(255,255,255,.04);
+  }
+  .card h1{
+    margin:0 0 6px; font-size:1.6rem; letter-spacing:-.02em;
+    background:linear-gradient(90deg,#c9d6ff,#a78bfa);
+    -webkit-background-clip:text; background-clip:text; color:transparent;
+  }
+  .card p.sub{ margin:0 0 18px; color:var(--fg-dim); font-size:.94rem; line-height:1.5; }
+  textarea{
+    width:100%; height:320px; resize:vertical;
+    background:var(--panel-2);
+    color:var(--fg);
+    border:1px solid var(--border);
+    border-radius:12px;
+    padding:14px 16px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+    font-size:13.5px; line-height:1.6;
+    outline:none;
+    transition:border-color .15s, box-shadow .15s;
+  }
+  textarea:focus{ border-color:#38507f; box-shadow:0 0 0 3px rgba(124,156,255,.14); }
+  textarea::placeholder{ color:#4b556b; }
+  .row{ display:flex; align-items:center; gap:10px; margin-top:16px; }
+  .spacer{ flex:1; }
+  button{
+    font:inherit; cursor:pointer; border-radius:10px; border:1px solid transparent;
+    padding:10px 16px; font-size:.9rem; font-weight:600;
+    transition:transform .08s, background .15s, border-color .15s, color .15s;
+  }
+  button:active{ transform:translateY(1px); }
+  button:disabled{ opacity:.35; cursor:default; }
+  .primary{
+    background:linear-gradient(180deg,#7c9cff,#5f7ff0);
+    color:#08122b; border-color:#8fabff;
+    box-shadow:0 8px 24px rgba(90,130,255,.28);
+  }
+  .primary:hover:not(:disabled){ background:linear-gradient(180deg,#8dabff,#6d8bf5); }
+  .ghost{
+    background:#1a2131; color:var(--fg-dim); border-color:var(--border);
+  }
+  .ghost:hover:not(:disabled){ background:#212a3d; color:var(--fg); border-color:#2e3a54; }
+  .small{ padding:7px 12px; font-size:.82rem; }
+
+  /* ---------------- Deck ---------------- */
+  #deckScreen{ flex-direction:column; background:var(--bg); }
+
+  .progress{ height:3px; background:#161c28; flex:0 0 auto; }
+  #progressBar{
+    height:100%; width:0;
+    background:linear-gradient(90deg,#6d8bff,#a78bfa);
+    transition:width .3s cubic-bezier(.22,.61,.36,1);
+  }
+
+  .crumbs{
+    flex:0 0 auto;
+    padding:20px 38px 16px;
+    border-bottom:1px solid var(--border);
+    background:linear-gradient(180deg, rgba(124,156,255,.045), transparent);
+    max-height:34vh; overflow-y:auto;
+  }
+  .crumb{
+    padding-left:calc(var(--indent) * 1.15rem);
+    line-height:1.4;
+    position:relative;
+  }
+  .crumb + .crumb{ margin-top:2px; }
+  .crumb-1{ font-size:1.75rem; font-weight:750; letter-spacing:-.025em; color:#f4f7ff; }
+  .crumb-2{ font-size:1.22rem; font-weight:650; color:#aab8db; }
+  .crumb-3{ font-size:1.03rem; font-weight:600; color:#8b98bb; }
+  .crumb-4,.crumb-5,.crumb-6{ font-size:.92rem; font-weight:600; color:#7a86a4; }
+  .crumb code{ font-size:.85em; }
+
+  .content{
+    flex:1 1 auto;
+    overflow-y:auto;
+    padding:34px 38px 80px;
+    scroll-behavior:smooth;
+  }
+  .content-inner{ max-width:900px; margin:0 auto; }
+
+  @keyframes slideNext{ from{opacity:0; transform:translateX(26px);} to{opacity:1; transform:none;} }
+  @keyframes slidePrev{ from{opacity:0; transform:translateX(-26px);} to{opacity:1; transform:none;} }
+  .anim-next{ animation:slideNext .3s cubic-bezier(.22,.61,.36,1); }
+  .anim-prev{ animation:slidePrev .3s cubic-bezier(.22,.61,.36,1); }
+
+  .toolbar{
+    flex:0 0 auto;
+    display:flex; align-items:center; gap:10px;
+    padding:12px 22px;
+    border-top:1px solid var(--border);
+    background:var(--panel);
+  }
+  .counter{
+    font-variant-numeric:tabular-nums;
+    color:var(--fg-dim); font-size:.85rem; font-weight:600;
+    min-width:74px; text-align:center;
+  }
+  .hint{ margin-left:auto; color:var(--fg-dimmer); font-size:.78rem; }
+  @media (max-width:640px){ .hint{ display:none; } .crumbs{ padding:16px 20px 12px; } .content{ padding:24px 20px 60px; } }
+
+  /* ---------------- Rendered markdown ---------------- */
+  .content-inner{ font-size:1.05rem; line-height:1.75; color:#dbe2f2; }
+  .content-inner > *:first-child{ margin-top:0; }
+  .content-inner > *:last-child{ margin-bottom:0; }
+
+  .content-inner p{ margin:0 0 1.1em; }
+  .content-inner h1,.content-inner h2,.content-inner h3,
+  .content-inner h4,.content-inner h5,.content-inner h6{
+    margin:1.6em 0 .6em; line-height:1.3; letter-spacing:-.015em; color:#f2f5ff;
+  }
+  .content-inner h1{ font-size:1.8em; }
+  .content-inner h2{ font-size:1.45em; }
+  .content-inner h3{ font-size:1.2em; }
+  .content-inner h4,.content-inner h5,.content-inner h6{ font-size:1.05em; color:#c3cce4; }
+
+  .content-inner a{ color:var(--accent); text-decoration:none; border-bottom:1px solid rgba(124,156,255,.35); }
+  .content-inner a:hover{ border-bottom-color:var(--accent); }
+
+  .content-inner strong{ color:#fff; font-weight:700; }
+  .content-inner em{ color:#e6ebff; }
+  .content-inner del{ color:var(--fg-dimmer); }
+
+  .content-inner ul,.content-inner ol{ margin:0 0 1.1em; padding-left:1.5em; }
+  .content-inner li{ margin:.35em 0; }
+  .content-inner li > ul,.content-inner li > ol{ margin:.35em 0 .2em; }
+  .content-inner li::marker{ color:var(--accent); }
+
+  .content-inner code{
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+    font-size:.88em;
+    background:#1a2132;
+    border:1px solid #232c42;
+    border-radius:6px;
+    padding:.12em .38em;
+    color:#bcd0ff;
+  }
+  .content-inner pre{
+    margin:0 0 1.2em;
+    background:var(--code-bg);
+    border:1px solid var(--border);
+    border-radius:12px;
+    padding:16px 18px;
+    overflow-x:auto;
+    line-height:1.6;
+  }
+  .content-inner pre code{
+    background:none; border:none; padding:0; color:#c8d6f5; font-size:.9rem;
+  }
+
+  .content-inner blockquote{
+    margin:0 0 1.2em;
+    padding:.3em 0 .3em 1.1em;
+    border-left:3px solid var(--accent);
+    color:#b9c4de;
+    background:linear-gradient(90deg, rgba(124,156,255,.07), transparent 70%);
+  }
+  .content-inner blockquote p:last-child{ margin-bottom:0; }
+
+  .content-inner hr{
+    border:none; height:1px; margin:1.8em 0;
+    background:linear-gradient(90deg, transparent, #2c3category, transparent);
+    background:linear-gradient(90deg, transparent, #2c364f, transparent);
+  }
+
+  .content-inner table{
+    border-collapse:collapse; width:100%; margin:0 0 1.2em; font-size:.95em;
+  }
+  .content-inner th,.content-inner td{
+    border:1px solid var(--border); padding:.55em .8em; text-align:left;
+  }
+  .content-inner th{ background:#182034; color:#eef2ff; font-weight:650; }
+  .content-inner tbody tr:nth-child(even){ background:rgba(255,255,255,.018); }
+
+  .content-inner img{ max-width:100%; border-radius:10px; display:block; margin:.4em 0; }
+
+  /* scrollbars */
+  ::-webkit-scrollbar{ width:11px; height:11px; }
+  ::-webkit-scrollbar-track{ background:transparent; }
+  ::-webkit-scrollbar-thumb{ background:#242c40; border-radius:8px; border:3px solid var(--bg); }
+  ::-webkit-scrollbar-thumb:hover{ background:#313c56; }
+</style>
+</head>
+<body>
+
+<!-- ================= START ================= -->
+<section id="startScreen" class="screen">
+  <div class="card">
+    <h1>Markdown Slides</h1>
+    <p class="sub">
+      Paste markdown below. Headings become the slide header (indented by level) and
+      <strong>every content block becomes one slide</strong>.
+    </p>
+    <textarea id="mdInput" spellcheck="false" placeholder="# Title&#10;&#10;## Section&#10;&#10;Your content…"></textarea>
+    <div class="row">
+      <button id="sampleBtn" class="ghost">Load sample</button>
+      <button id="clearBtn" class="ghost">Clear</button>
+      <span class="spacer"></span>
+      <button id="startBtn" class="primary">Start presentation →</button>
+    </div>
+  </div>
+</section>
+
+<!-- ================= DECK ================= -->
+<section id="deckScreen" class="screen hidden">
+  <div class="progress"><div id="progressBar"></div></div>
+  <header id="crumbs" class="crumbs"></header>
+  <main id="content" class="content">
+    <div id="contentInner" class="content-inner"></div>
+  </main>
+  <footer class="toolbar">
+    <button id="exitBtn" class="ghost small">← Edit</button>
+    <button id="prevBtn" class="ghost small">‹ Prev</button>
+    <span id="counter" class="counter">1 / 1</span>
+    <button id="nextBtn" class="ghost small">Next ›</button>
+    <span class="hint">← → / Space to navigate · Home / End · Esc to exit</span>
+  </footer>
+</section>
+
+<script>
+(function () {
+  'use strict';
+
+  /* =========================================================
+     1. INLINE MARKDOWN
+     ========================================================= */
+
+  function escapeHtml(s) {
+    return String(s)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  }
+
+  function renderInline(text) {
+    const codes = [];
+
+    // Pull code spans out first so nothing else touches them.
+    let s = String(text).replace(/(`+)([\s\S]*?)\1/g, function (m, ticks, code) {
+      codes.push(code.replace(/^ (.*) $/, '$1'));
+      return '\u0000' + (codes.length - 1) + '\u0000';
+    });
+
+    s = escapeHtml(s);
+
+    // Images
+    s = s.replace(/!\[([^\]]*)\]\(([^)\s]+)(?:\s+&quot;[^&]*&quot;)?\)/g,
+      function (m, alt, src) { return '<img src="' + src + '" alt="' + alt + '">'; });
+
+    // Links
+    s = s.replace(/\[([^\]]*)\]\(([^)\s]+)(?:\s+&quot;[^&]*&quot;)?\)/g,
+      function (m, txt, href) {
+        return '<a href="' + href + '" target="_blank" rel="noopener noreferrer">' + txt + '</a>';
+      });
+
+    // Autolinks
+    s = s.replace(/&lt;((?:https?:\/\/|mailto:)[^\s&]+)&gt;/g, function (m, url) {
+      return '<a href="' + url + '" target="_blank" rel="noopener noreferrer">' + url + '</a>';
+    });
+
+    // Emphasis
+    s = s.replace(/\*\*\*([\s\S]+?)\*\*\*/g, '<strong><em>$1</em></strong>');
+    s = s.replace(/\*\*([\s\S]+?)\*\*/g, '<strong>$1</strong>');
+    s = s.replace(/__([\s\S]+?)__/g, '<strong>$1</strong>');
+    s = s.replace(/(^|[^*\\])\*([^*\n]+?)\*/g, '$1<em>$2</em>');
+    s = s.replace(/(^|[\s(])_([^_\n]+?)_(?=[\s).,;:!?]|$)/g, '$1<em>$2</em>');
+    s = s.replace(/~~([\s\S]+?)~~/g, '<del>$1</del>');
+
+    // Restore code spans
+    s = s.replace(/\u0000(\d+)\u0000/g, function (m, i) {
+      return '<code>' + escapeHtml(codes[+i]) + '</code>';
+    });
+
+    return s;
+  }
+
+  /* =========================================================
+     2. BLOCK MARKDOWN PARSER
+     ========================================================= */
+
+  const ITEM_RE = /^([ \t]*)([-+*]|\d{1,9}[.)])([ \t]+)(.*)$/;
+
+  function isBlank(l) { return /^[ \t]*$/.test(l); }
+  function isHr(l) { return /^ {0,3}([-*_])[ \t]*(\1[ \t]*){2,}$/.test(l); }
+  function isFence(l) { return /^ {0,3}(`{3,}|~{3,})/.test(l); }
+  function isHeading(l) { return /^ {0,3}#{1,6}([ \t]|$)/.test(l); }
+  function isQuote(l) { return /^ {0,3}>/.test(l); }
+  function isSetextUnder(l) { return /^ {0,3}(=+|-+)[ \t]*$/.test(l); }
+  function isDelimRow(l) {
+    return l.indexOf('-') !== -1 &&
+      /^[ \t]*\|?[ \t]*:?-+:?[ \t]*(\|[ \t]*:?-+:?[ \t]*)*\|?[ \t]*$/.test(l);
+  }
+
+  function indentOf(l) { return /^[ \t]*/.exec(l)[0].length; }
+
+  function stripIndent(line, n) {
+    let k = 0;
+    while (k < n && k < line.length && (line[k] === ' ' || line[k] === '\t')) k++;
+    return line.slice(k);
+  }
+
+  function dedent(lines) {
+    let min = Infinity;
+    for (const l of lines) {
+      if (isBlank(l)) continue;
+      min = Math.min(min, indentOf(l));
+    }
+    if (!isFinite(min) || min === 0) return lines;
+    return lines.map(function (l) { return isBlank(l) ? '' : stripIndent(l, min); });
+  }
+
+  function splitRow(l) {
+    let s = l.trim();
+    if (s.charAt(0) === '|') s = s.slice(1);
+    if (s.charAt(s.length - 1) === '|') s = s.slice(0, -1);
+    return s.split('|').map(function (c) { return c.trim(); });
+  }
+
+  /* Does a new block start at line i? (used to terminate paragraphs) */
+  function startsBlock(lines, i) {
+    const l = lines[i];
+    if (isHeading(l)) return true;
+    if (isFence(l)) return true;
+    if (isQuote(l)) return true;
+    if (isHr(l)) return true;
+    if (ITEM_RE.test(l)) return true;
+    return false;
+  }
+
+  function buildList(buf, ordered, start) {
+    const first = ITEM_RE.exec(buf[0]);
+    const base = first[1].length;
+    const items = [];
+    let cur = null;
+
+    for (const l of buf) {
+      if (isBlank(l)) { if (cur) cur.push(''); continue; }
+      const m = ITEM_RE.exec(l);
+      const ind = indentOf(l);
+      if (m && ind === base) {
+        cur = [m[4]];
+        items.push(cur);
+      } else if (cur) {
+        cur.push(stripIndent(l, base + 2));
+      }
+    }
+
+    return {
+      type: 'list',
+      ordered: ordered,
+      start: start,
+      items: items.map(function (it) { return parseBlocks(it.join('\n')); })
+    };
+  }
+
+  function parseBlocks(src) {
+    const lines = String(src).replace(/\r\n?/g, '\n').split('\n');
+    const n = lines.length;
+    const blocks = [];
+    let i = 0;
+
+    while (i < n) {
+      const line = lines[i];
+
+      if (isBlank(line)) { i++; continue; }
+
+      /* ---- fenced code ---- */
+      let m = /^ {0,3}(`{3,}|~{3,})(.*)$/.exec(line);
+      if (m) {
+        const marker = m[1].charAt(0);
+        const len = m[1].length;
+        const info = m[2].trim();
+        const buf = [];
+        i++;
+        while (i < n) {
+          const c = /^ {0,3}(`{3,}|~{3,})[ \t]*$/.exec(lines[i]);
+          if (c && c[1].charAt(0) === marker && c[1].length >= len) { i++; break; }
+          buf.push(lines[i]);
+          i++;
+        }
+        blocks.push({
+          type: 'code',
+          lang: info.split(/\s+/)[0] || '',
+          text: dedent(buf).join('\n')
+        });
+        continue;
+      }
+
+      /* ---- ATX heading ---- */
+      m = /^ {0,3}(#{1,6})(?:[ \t]+([\s\S]*?))?[ \t]*#*[ \t]*$/.exec(line);
+      if (m) {
+        blocks.push({ type: 'heading', level: m[1].length, text: (m[2] || '').trim() });
+        i++;
+        continue;
+      }
+
+      /* ---- setext heading ---- */
+      if (i + 1 < n && !isBlank(lines[i + 1]) && isSetextUnder(lines[i + 1]) &&
+          !isHr(line) && !ITEM_RE.test(line)) {
+        blocks.push({
+          type: 'heading',
+          level: lines[i + 1].trim().charAt(0) === '=' ? 1 : 2,
+          text: line.trim()
+        });
+        i += 2;
+        continue;
+      }
+
+      /* ---- thematic break ---- */
+      if (isHr(line)) { blocks.push({ type: 'hr' }); i++; continue; }
+
+      /* ---- blockquote ---- */
+      if (isQuote(line)) {
+        const buf = [];
+        while (i < n && isQuote(lines[i])) {
+          buf.push(lines[i].replace(/^ {0,3}>[ \t]?/, ''));
+          i++;
+        }
+        blocks.push({ type: 'blockquote', blocks: parseBlocks(buf.join('\n')) });
+        continue;
+      }
+
+      /* ---- list ---- */
+      m = ITEM_RE.exec(line);
+      if (m) {
+        const base = m[1].length;
+        const ordered = /^\d/.test(m[2]);
+        const start = ordered ? parseInt(m[2], 10) : 1;
+        const buf = [];
+
+        while (i < n) {
+          const l = lines[i];
+
+          if (isBlank(l)) {
+            const nx = lines[i + 1];
+            if (nx !== undefined && !isBlank(nx)) {
+              const nm = ITEM_RE.exec(nx);
+              if (indentOf(nx) > base ||
+                  (nm && nm[1].length === base && /^\d/.test(nm[2]) === ordered)) {
+                buf.push('');
+                i++;
+                continue;
+              }
+            }
+            break;
+          }
+
+          const ind = indentOf(l);
+          const lm = ITEM_RE.exec(l);
+          if (ind > base || (lm && /^\d/.test(lm[2]) === ordered)) {
+            buf.push(l);
+            i++;
+          } else {
+            break;
+          }
+        }
+
+        blocks.push(buildList(buf, ordered, start));
+        continue;
+      }
+
+      /* ---- table ---- */
+      if (line.indexOf('|') !== -1 && i + 1 < n && isDelimRow(lines[i + 1])) {
+        const header = splitRow(line);
+        const align = splitRow(lines[i + 1]).map(function (c) {
+          const left = c.charAt(0) === ':';
+          const right = c.charAt(c.length - 1) === ':';
+          return left && right ? 'center' : right ? 'right' : left ? 'left' : '';
+        });
+        i += 2;
+        const rows = [];
+        while (i < n && !isBlank(lines[i]) && lines[i].indexOf('|') !== -1) {
+          rows.push(splitRow(lines[i]));
+          i++;
+        }
+        blocks.push({ type: 'table', header: header, align: align, rows: rows });
+        continue;
+      }
+
+      /* ---- paragraph ---- */
+      const buf = [];
+      while (i < n) {
+        if (isBlank(lines[i])) break;
+        if (buf.length && startsBlock(lines, i)) break;
+        buf.push(lines[i]);
+        i++;
+      }
+      if (buf.length) {
+        blocks.push({ type: 'paragraph', text: buf.join('\n').trim() });
+      }
+    }
+
+    return blocks;
+  }
+
+  /* =========================================================
+     3. BLOCKS -> SLIDES
+     ========================================================= */
+
+  function buildSlides(blocks) {
+    const stack = [];
+    const slides = [];
+
+    for (const b of blocks) {
+      if (b.type === 'heading') {
+        while (stack.length && stack[stack.length - 1].level >= b.level) stack.pop();
+        stack.push({ level: b.level, text: b.text });
+      } else {
+        slides.push({ headers: stack.slice(), block: b });
+      }
+    }
+    return slides;
+  }
+
+  /* =========================================================
+     4. RENDER BLOCKS -> HTML
+     ========================================================= */
+
+  function renderBlock(b) {
+    switch (b.type) {
+      case 'paragraph':
+        return '<p>' + renderInline(b.text) + '</p>';
+
+      case 'code':
+        return '<pre><code' + (b.lang ? ' class="language-' + escapeHtml(b.lang) + '"' : '') +
+               '>' + escapeHtml(b.text) + '</code></pre>';
+
+      case 'hr':
+        return '<hr>';
+
+      case 'blockquote':
+        return '<blockquote>' + b.blocks.map(renderBlock).join('') + '</blockquote>';
+
+      case 'list':
+        return renderList(b);
+
+      case 'table':
+        return renderTable(b);
+
+      default:
+        return '';
+    }
+  }
+
+  function renderList(b) {
+    const tag = b.ordered ? 'ol' : 'ul';
+    const attr = (b.ordered && b.start !== 1) ? ' start="' + b.start + '"' : '';
+
+    const items = b.items.map(function (parts) {
+      const rest = parts.slice();
+      let inner = '';
+      if (rest.length && rest[0].type === 'paragraph') {
+        inner += renderInline(rest.shift().text);
+      }
+      inner += rest.map(renderBlock).join('');
+      return '<li>' + inner + '</li>';
+    }).join('');
+
+    return '<' + tag + attr + '>' + items + '</' + tag + '>';
+  }
+
+  function renderTable(b) {
+    const cols = b.header.length;
+
+    const head = b.header.map(function (c, idx) {
+      const a = b.align[idx];
+      return '<th' + (a ? ' style="text-align:' + a + '"' : '') + '>' +
+             renderInline(c) + '</th>';
+    }).join('');
+
+    const body = b.rows.map(function (r) {
+      const cells = r.slice(0, cols);
+      while (cells.length < cols) cells.push('');
+      return '<tr>' + cells.map(function (c, idx) {
+        const a = b.align[idx];
+        return '<td' + (a ? ' style="text-align:' + a + '"' : '') + '>' +
+               renderInline(c) + '</td>';
+      }).join('') + '</tr>';
+    }).join('');
+
+    return '<table><thead><tr>' + head + '</tr></thead><tbody>' + body + '</tbody></table>';
+  }
+
+  /* =========================================================
+     5. APP
+     ========================================================= */
+
+  const $ = function (id) { return document.getElementById(id); };
+
+  const startScreen = $('startScreen');
+  const deckScreen  = $('deckScreen');
+  const mdInput     = $('mdInput');
+  const crumbsEl    = $('crumbs');
+  const contentEl   = $('content');
+  const innerEl     = $('contentInner');
+  const counterEl   = $('counter');
+  const progressEl  = $('progressBar');
+  const prevBtn     = $('prevBtn');
+  const nextBtn     = $('nextBtn');
+
+  let slides = [];
+  let idx = 0;
+
+  function start() {
+    const md = mdInput.value;
+    if (!md.trim()) { mdInput.focus(); return; }
+
+    const blocks = parseBlocks(md);
+    slides = buildSlides(blocks);
+
+    if (!slides.length) {
+      alert('No slides found.\n\nAdd some content (a paragraph, list, code block…) under your headings.');
+      return;
+    }
+
+    idx = 0;
+    startScreen.classList.add('hidden');
+    deckScreen.classList.remove('hidden');
+    render(0);
+    contentEl.focus();
+  }
+
+  function exit() {
+    deckScreen.classList.add('hidden');
+    startScreen.classList.remove('hidden');
+    mdInput.focus();
+  }
+
+  function render(dir) {
+    const s = slides[idx];
+
+    // --- headers, indented by level ---
+    crumbsEl.innerHTML = s.headers.map(function (h) {
+      return '<div class="crumb crumb-' + h.level + '" style="--indent:' + (h.level - 1) + '">' +
+             renderInline(h.text) + '</div>';
+    }).join('');
+
+    // --- content (scrollable) ---
+    innerEl.innerHTML = renderBlock(s.block);
+    contentEl.scrollTop = 0;
+
+    // --- chrome ---
+    counterEl.textContent = (idx + 1) + ' / ' + slides.length;
+    progressEl.style.width = (((idx + 1) / slides.length) * 100) + '%';
+    prevBtn.disabled = idx === 0;
+    nextBtn.disabled = idx === slides.length - 1;
+
+    if (dir) {
+      innerEl.classList.remove('anim-next', 'anim-prev');
+      void innerEl.offsetWidth;
+      innerEl.classList.add(dir > 0 ? 'anim-next' : 'anim-prev');
+    }
+  }
+
+  function go(delta) {
+    const next = idx + delta;
+    if (next < 0 || next >= slides.length) return;
+    idx = next;
+    render(delta);
+  }
+
+  function jump(to) {
+    if (to === idx) return;
+    const dir = to > idx ? 1 : -1;
+    idx = to;
+    render(dir);
+  }
+
+  /* ---- events ---- */
+
+  $('startBtn').addEventListener('click', start);
+  $('exitBtn').addEventListener('click', exit);
+  prevBtn.addEventListener('click', function () { go(-1); });
+  nextBtn.addEventListener('click', function () { go(1); });
+
+  $('clearBtn').addEventListener('click', function () {
+    mdInput.value = '';
+    mdInput.focus();
+  });
+
+  $('sampleBtn').addEventListener('click', function () {
+    mdInput.value = SAMPLE;
+    mdInput.focus();
+  });
+
+  document.addEventListener('keydown', function (e) {
+    if (deckScreen.classList.contains('hidden')) {
+      if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); start(); }
+      return;
+    }
+
+    switch (e.key) {
+      case 'ArrowRight':
+      case 'ArrowDown':
+      case 'PageDown':
+      case ' ':
+      case 'Enter':
+        e.preventDefault(); go(1); break;
+
+      case 'ArrowLeft':
+      case 'ArrowUp':
+      case 'PageUp':
+        e.preventDefault(); go(-1); break;
+
+      case 'Home':
+        e.preventDefault(); jump(0); break;
+
+      case 'End':
+        e.preventDefault(); jump(slides.length - 1); break;
+
+      case 'Escape':
+        e.preventDefault(); exit(); break;
+    }
+  });
+
+  /* Drag & drop a .md file onto the textarea */
+  ['dragover', 'drop'].forEach(function (evt) {
+    mdInput.addEventListener(evt, function (e) {
+      e.preventDefault();
+      if (evt !== 'drop') return;
+      const f = e.dataTransfer.files && e.dataTransfer.files[0];
+      if (!f) return;
+      const reader = new FileReader();
+      reader.onload = function () { mdInput.value = String(reader.result); };
+      reader.readAsText(f);
+    });
+  });
+
+  /* ---- sample document ---- */
+  const SAMPLE = [
+    '# Markdown Slides',
+    '',
+    '## How it works',
+    '',
+    'Paste any markdown, then press **Start**. The document is split into slides automatically.',
+    '',
+    '- Headings become the slide header',
+    '- Headings are indented by their level',
+    '- Every content block becomes one slide',
+    '- Content scrolls when it is too long',
+    '',
+    '### Lists',
+    '',
+    '1. Ordered items work',
+    '2. So do nested ones',
+    '   - like this',
+    '   - and this',
+    '3. And back to the top level',
+    '',
+    '### Code',
+    '',
+    '```js',
+    'function greet(name) {',
+    '  return `Hello, ${name}!`;',
+    '}',
+    '```',
+    '',
+    '### Tables',
+    '',
+    '| Feature | Supported |',
+    '| :--- | ---: |',
+    '| Headings | yes |',
+    '| Code blocks | yes |',
+    '| Tables | yes |',
+    '',
+    '### Quotes',
+    '',
+    '> Simplicity is the soul of efficiency.',
+    '> — Austin Freeman',
+    '',
+    '## Links & images',
+    '',
+    'You can use [links](https://example.com), `inline code`, **bold**, *italic*, and ~~strikethrough~~.',
+    '',
+    '---',
+    '',
+    'The end.'
+  ].join('\n');
+
+  // Preload the sample so the box isn't empty on first load.
+  mdInput.value = SAMPLE;
+  mdInput.focus();
+})();
+</script>
+</body>
+</html>
