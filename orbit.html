@@ -27,15 +27,55 @@ const FIXED    = 1/240;
 const MAXDRAG  = 170;
 const MAXSPEED = 720;
 
+const SAVE_KEY = 'orbit_save_v1';
+
 let level = 1;
 let planets = [], collectStars = [], bgStars = [], particles = [], trail = [];
 let goal = null, ship = null;
 let worldTime = 0, flightTime = 0, acc = 0;
-let state = 'aim';
+let state = 'welcome';
 let aiming = false, aimStart = null, aimCur = null;
 let attempts = 0, levelStars = 0, totalStars = 0;
 let deadTimer = 0;
 let preview = [];
+let hasSave = false;
+let welcomeHover = null;
+
+// ================================================================ SAVE
+function loadSave(){
+  try {
+    const raw = localStorage.getItem(SAVE_KEY);
+    if(!raw) return null;
+    const d = JSON.parse(raw);
+    if(!d || typeof d.level !== 'number' || !isFinite(d.level)) return null;
+    return {
+      level: Math.max(1, Math.floor(d.level)),
+      totalStars: Math.max(0, Math.floor(d.totalStars || 0)),
+      muted: !!d.muted
+    };
+  } catch(_) { return null; }
+}
+
+function saveGame(){
+  try {
+    localStorage.setItem(SAVE_KEY, JSON.stringify({
+      v: 1,
+      level: level,
+      totalStars: totalStars,
+      muted: muted
+    }));
+    hasSave = true;
+  } catch(_) {}
+}
+
+function clearSave(){
+  try { localStorage.removeItem(SAVE_KEY); } catch(_) {}
+  hasSave = false;
+}
+
+function canContinue(){
+  return hasSave && (level > 1 || totalStars > 0);
+}
 
 // ================================================================ AUDIO
 let audioCtx = null;
@@ -134,12 +174,14 @@ function ensureAudio(){
 
 function toggleMute(){
   muted = !muted;
-  if(!audioCtx) return;
-  const now = audioCtx.currentTime;
-  const g = masterGain.gain;
-  g.cancelScheduledValues(now);
-  g.setValueAtTime(g.value, now);
-  g.linearRampToValueAtTime(muted ? 0 : 0.9, now + 0.08);
+  if(audioCtx){
+    const now = audioCtx.currentTime;
+    const g = masterGain.gain;
+    g.cancelScheduledValues(now);
+    g.setValueAtTime(g.value, now);
+    g.linearRampToValueAtTime(muted ? 0 : 0.9, now + 0.08);
+  }
+  saveGame();
 }
 
 function getNoiseBuffer(){
@@ -451,6 +493,24 @@ function sfxWin(){
   osc.start(t + 0.5); osc.stop(t + 1.9);
 }
 
+function sfxGoalOpen(){
+  if(!audioCtx) return;
+  const t = audioCtx.currentTime;
+  const notes = [60, 67, 72, 76, 79];
+  notes.forEach((m, i) => {
+    const time = t + i * 0.055;
+    const osc = audioCtx.createOscillator();
+    osc.type = 'triangle';
+    osc.frequency.value = midiToFreq(m);
+    const g = audioCtx.createGain();
+    g.gain.setValueAtTime(0.001, time);
+    g.gain.linearRampToValueAtTime(0.15, time + 0.01);
+    g.gain.exponentialRampToValueAtTime(0.001, time + 0.7);
+    osc.connect(g).connect(sfxGain);
+    osc.start(time); osc.stop(time + 0.75);
+  });
+}
+
 // ================================================================ utilities
 function mulberry32(a){
   return function(){
@@ -461,6 +521,16 @@ function mulberry32(a){
   };
 }
 const TAU = Math.PI * 2;
+
+// --- star / goal state helpers --------------------------------------------
+function starsLeft(){
+  let n = 0;
+  for(const s of collectStars) if(!s.got) n++;
+  return n;
+}
+function goalActive(){
+  return starsLeft() === 0;
+}
 
 function planetX(p, t){
   return p.orbit ? p.orbit.cx + Math.cos(p.orbit.a0 + p.orbit.sp * t) * p.orbit.r : p.cx0;
@@ -484,7 +554,9 @@ function resize(){
   cvs.style.height = H + 'px';
   ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
   makeBgStars();
-  startLevel(level);
+
+  // On the menu we don't build a level — just keep the starfield.
+  if(state !== 'welcome') startLevel(level);
 }
 window.addEventListener('resize', () => {
   clearTimeout(resizeTimer);
@@ -524,6 +596,8 @@ function startLevel(n){
   flightTime = 0;
   acc = 0;
   deadTimer = 0;
+  welcomeHover = null;
+  cvs.style.cursor = '';
 
   const startPos = { x: Math.max(58, W * 0.08), y: H * 0.5 };
   const goalPos  = { x: W - Math.max(58, W * 0.08), y: H * (0.14 + 0.72 * rnd()) };
@@ -573,18 +647,26 @@ function startLevel(n){
     });
   }
 
+  // ---- collectible stars: spread out, away from planets & the start ------
   for(let i = 0; i < 3; i++){
-    for(let k = 0; k < 250; k++){
+    for(let k = 0; k < 400; k++){
       const x = W * 0.19 + rnd() * W * 0.66;
       const y = 80 + rnd() * (H - 160);
       if(Math.hypot(x - startPos.x, y - startPos.y) < 95) continue;
       if(Math.hypot(x - goalPos.x,  y - goalPos.y)  < 75) continue;
+
       let ok = true;
       for(const p of planets){
         const pr = p.r + (p.orbit ? p.orbit.r : 0);
         if(Math.hypot(x - p.cx0, y - p.cy0) < pr + 35){ ok = false; break; }
       }
       if(!ok) continue;
+      // keep stars reasonably separated so each one is its own problem
+      for(const s of collectStars){
+        if(Math.hypot(x - s.x, y - s.y) < 90){ ok = false; break; }
+      }
+      if(!ok) continue;
+
       collectStars.push({ x, y, got: false, ph: rnd() * TAU });
       break;
     }
@@ -593,6 +675,8 @@ function startLevel(n){
   goal = { x: goalPos.x, y: goalPos.y, r: 26 };
   ship = { x: startPos.x, y: startPos.y, vx: 0, vy: 0, sx: startPos.x, sy: startPos.y };
   state = 'aim';
+
+  saveGame();
 }
 
 // ---------------------------------------------------------------- physics
@@ -627,14 +711,22 @@ function stepFlight(h){
     const py = planetY(p, worldTime);
     if(Math.hypot(px - ship.x, py - ship.y) < p.r + 5){ die(); return; }
   }
-  if(Math.hypot(goal.x - ship.x, goal.y - ship.y) < goal.r){ win(); return; }
+
+  // ---- exit only works once every star has been collected ----------------
+  if(goalActive() && Math.hypot(goal.x - ship.x, goal.y - ship.y) < goal.r){
+    win(); return;
+  }
+
   for(const s of collectStars){
     if(!s.got && Math.hypot(s.x - ship.x, s.y - ship.y) < 22){
       s.got = true; levelStars++; totalStars++;
       spawnBurst(s.x, s.y, 48, 16, 150);
       sfxStar(levelStars - 1);
+      if(goalActive()) unlockGoal();
+      saveGame();
     }
   }
+
   if(ship.x < -180 || ship.x > W + 180 || ship.y < -180 || ship.y > H + 180){ die(); return; }
   if(flightTime > 25) die();
 }
@@ -652,6 +744,12 @@ function win(){
   spawnBurst(goal.x, goal.y, 155, 34, 240);
   sfxWin();
   duckMusic();
+  saveGame();
+}
+
+function unlockGoal(){
+  spawnBurst(goal.x, goal.y, 155, 46, 210);
+  sfxGoalOpen();
 }
 
 function resetShip(){
@@ -668,6 +766,7 @@ function computePreview(vx, vy){
   let t = worldTime;
   const h = 1/200;
   const maxSteps = Math.floor(3.2 / h);
+  const markedStars = new Set();
 
   for(let i = 0; i < maxSteps; i++){
     let ax = 0, ay = 0;
@@ -687,13 +786,24 @@ function computePreview(vx, vy){
 
     if(i % 6 === 0) pts.push({ x, y, age: i * h, kind: 0 });
 
+    // flag stars the shot would scoop up
+    for(const s of collectStars){
+      if(s.got || markedStars.has(s)) continue;
+      if(Math.hypot(s.x - x, s.y - y) < 22){
+        markedStars.add(s);
+        pts.push({ x, y, age: i * h, kind: 3 });
+      }
+    }
+
     let hit = false;
     for(const p of planets){
       const qx = planetX(p, t), qy = planetY(p, t);
       if(Math.hypot(qx - x, qy - y) < p.r + 5){ hit = true; break; }
     }
     if(hit){ pts.push({ x, y, age: i * h, kind: 1 }); break; }
-    if(Math.hypot(goal.x - x, goal.y - y) < goal.r){ pts.push({ x, y, age: i * h, kind: 2 }); break; }
+    if(goalActive() && Math.hypot(goal.x - x, goal.y - y) < goal.r){
+      pts.push({ x, y, age: i * h, kind: 2 }); break;
+    }
     if(x < -150 || x > W + 150 || y < -150 || y > H + 150) break;
   }
   return pts;
@@ -710,6 +820,213 @@ function spawnBurst(x, y, hue, n, spd){
       hue, size: 1 + Math.random() * 2.6
     });
   }
+}
+
+// ================================================================ MENU
+function welcomeButtons(){
+  const bw = Math.min(320, Math.max(190, W - 72));
+  const bh = 58;
+  const gap = 14;
+
+  const items = [];
+  if(canContinue()){
+    items.push({ id:'continue', label:'CONTINUE', sub:'LEVEL ' + level, accent:true });
+  }
+  items.push({
+    id:'new',
+    label: canContinue() ? 'NEW GAME' : 'PLAY',
+    sub: canContinue() ? 'RESET ALL PROGRESS' : 'START AT LEVEL 1'
+  });
+  items.push({
+    id:'mute',
+    label: muted ? 'SOUND  OFF' : 'SOUND  ON',
+    sub: muted ? 'TAP TO UNMUTE' : 'TAP TO MUTE'
+  });
+
+  const n = items.length;
+  const stackH = n * bh + (n - 1) * gap;
+  const cx = W / 2;
+
+  const titleBottom = Math.max(72, H * 0.24) + 92;
+  const footerTop = H - 74;
+  const avail = Math.max(0, footerTop - titleBottom);
+  const top = titleBottom + Math.max(0, (avail - stackH) / 2);
+
+  return items.map((it, i) => ({
+    id: it.id, label: it.label, sub: it.sub, accent: !!it.accent,
+    x: cx, y: top + i * (bh + gap) + bh / 2, w: bw, h: bh
+  }));
+}
+
+function roundRectPath(x, y, w, h, r){
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.lineTo(x + w - r, y);
+  ctx.arcTo(x + w, y, x + w, y + r, r);
+  ctx.lineTo(x + w, y + h - r);
+  ctx.arcTo(x + w, y + h, x + w - r, y + h, r);
+  ctx.lineTo(x + r, y + h);
+  ctx.arcTo(x, y + h, x, y + h - r, r);
+  ctx.lineTo(x, y + r);
+  ctx.arcTo(x, y, x + r, y, r);
+  ctx.closePath();
+}
+
+function drawWelcomeDecor(){
+  const cx = W / 2, cy = H * 0.5;
+  const rnd = mulberry32(99);
+  for(let i = 0; i < 5; i++){
+    const r = 130 + i * 78;
+    const sp = 0.08 + rnd() * 0.18;
+    const a0 = rnd() * TAU;
+    const hue = 175 + rnd() * 165;
+
+    ctx.save();
+    ctx.setLineDash([3, 10]);
+    ctx.strokeStyle = `hsla(${hue},70%,60%,0.10)`;
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.ellipse(cx, cy, r, r * 0.42, 0, 0, TAU);
+    ctx.stroke();
+    ctx.restore();
+
+    const a = a0 + worldTime * sp;
+    const px = cx + Math.cos(a) * r;
+    const py = cy + Math.sin(a) * r * 0.42;
+    ctx.save();
+    ctx.shadowColor = `hsl(${hue},85%,65%)`;
+    ctx.shadowBlur = 16;
+    ctx.fillStyle = `hsla(${hue},85%,68%,0.5)`;
+    ctx.beginPath(); ctx.arc(px, py, 3.5, 0, TAU); ctx.fill();
+    ctx.restore();
+  }
+}
+
+function drawMenuButton(b){
+  const x = b.x - b.w / 2, y = b.y - b.h / 2;
+  const hov = welcomeHover === b.id;
+  const r = 12;
+
+  ctx.save();
+
+  if(b.accent){
+    ctx.shadowColor = 'rgba(124,247,200,0.5)';
+    ctx.shadowBlur = hov ? 30 : 16;
+  } else if(hov){
+    ctx.shadowColor = 'rgba(140,210,255,0.35)';
+    ctx.shadowBlur = 20;
+  }
+
+  const g = ctx.createLinearGradient(0, y, 0, y + b.h);
+  if(b.accent){
+    g.addColorStop(0, hov ? 'rgba(32,86,72,0.96)' : 'rgba(18,54,47,0.92)');
+    g.addColorStop(1, hov ? 'rgba(14,44,38,0.96)' : 'rgba(9,28,25,0.92)');
+  } else {
+    g.addColorStop(0, hov ? 'rgba(24,42,68,0.96)' : 'rgba(12,22,40,0.90)');
+    g.addColorStop(1, hov ? 'rgba(15,28,50,0.96)' : 'rgba(7,14,28,0.90)');
+  }
+  ctx.fillStyle = g;
+  roundRectPath(x, y, b.w, b.h, r);
+  ctx.fill();
+
+  ctx.shadowBlur = 0;
+
+  ctx.strokeStyle = b.accent
+    ? 'rgba(124,247,200,' + (hov ? 0.95 : 0.6) + ')'
+    : 'rgba(140,200,240,' + (hov ? 0.72 : 0.32) + ')';
+  ctx.lineWidth = 1.6;
+  roundRectPath(x, y, b.w, b.h, r);
+  ctx.stroke();
+
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+
+  ctx.font = '700 17px ui-monospace, monospace';
+  ctx.fillStyle = b.accent ? '#9dfbe0' : 'rgba(218,240,255,0.95)';
+  ctx.fillText(b.label, b.x, b.y - 9);
+
+  ctx.font = '600 10px ui-monospace, monospace';
+  ctx.fillStyle = b.accent ? 'rgba(124,247,200,0.6)' : 'rgba(150,190,225,0.5)';
+  ctx.fillText(b.sub, b.x, b.y + 13);
+
+  ctx.restore();
+}
+
+function drawWelcome(){
+  // dim the starfield
+  ctx.fillStyle = 'rgba(4,8,18,0.66)';
+  ctx.fillRect(0, 0, W, H);
+
+  drawWelcomeDecor();
+
+  const btns = welcomeButtons();
+  const titleY = Math.max(72, H * 0.24);
+  const pulse = 0.5 + 0.5 * Math.sin(worldTime * 1.5);
+
+  // ---- title
+  ctx.save();
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.font = '700 ' + Math.round(Math.min(104, Math.max(44, W * 0.12))) +
+             'px ui-monospace, monospace';
+  if('letterSpacing' in ctx) ctx.letterSpacing = '6px';
+  ctx.shadowColor = 'rgba(124,247,200,' + (0.5 + pulse * 0.45) + ')';
+  ctx.shadowBlur = 22 + pulse * 28;
+  ctx.fillStyle = '#8dfad2';
+  ctx.fillText('ORBIT', W / 2, titleY);
+  ctx.restore();
+
+  // ---- subtitle
+  ctx.save();
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.font = '600 11px ui-monospace, monospace';
+  if('letterSpacing' in ctx) ctx.letterSpacing = '4px';
+  ctx.fillStyle = 'rgba(150,200,235,0.55)';
+  ctx.fillText('A SLINGSHOT PUZZLE', W / 2, titleY + 54);
+  ctx.restore();
+
+  // ---- buttons
+  for(const b of btns) drawMenuButton(b);
+
+  // ---- footer
+  ctx.save();
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.font = '600 11px ui-monospace, monospace';
+  if(totalStars > 0){
+    ctx.fillStyle = 'rgba(255,215,94,0.55)';
+    ctx.fillText('TOTAL  ★  ' + totalStars, W / 2, H - 46);
+  }
+  ctx.fillStyle = 'rgba(140,180,220,0.28)';
+  ctx.fillText('ESC  ·  RETURN TO MENU', W / 2, H - 24);
+  ctx.restore();
+}
+
+function handleWelcomeButton(id){
+  if(id === 'continue'){ startLevel(level); return; }
+  if(id === 'new'){ newGame(); return; }
+  if(id === 'mute'){ toggleMute(); return; }
+}
+
+function newGame(){
+  level = 1;
+  totalStars = 0;
+  clearSave();
+  startLevel(level);
+}
+
+function gotoWelcome(){
+  saveGame();
+  state = 'welcome';
+  aiming = false;
+  aimStart = null;
+  aimCur = null;
+  preview = [];
+  trail = [];
+  particles = [];
+  welcomeHover = null;
+  cvs.style.cursor = 'default';
 }
 
 // ---------------------------------------------------------------- input
@@ -738,6 +1055,19 @@ function handleDown(e){
   if(e.type === 'mousedown' && e.button !== 0) return;
 
   const pos = getPos(e);
+
+  // ---- menu screen ----
+  if(state === 'welcome'){
+    for(const b of welcomeButtons()){
+      if(Math.abs(pos.x - b.x) < b.w / 2 && Math.abs(pos.y - b.y) < b.h / 2){
+        handleWelcomeButton(b.id);
+        if(e.cancelable) e.preventDefault();
+        return;
+      }
+    }
+    return;
+  }
+
   const mb = getMuteBtn();
   if(Math.hypot(pos.x - mb.x, pos.y - mb.y) < mb.r){
     toggleMute();
@@ -758,6 +1088,21 @@ function handleDown(e){
 }
 
 function handleMove(e){
+  if(state === 'welcome'){
+    const pos = getPos(e);
+    let hov = null;
+    for(const b of welcomeButtons()){
+      if(Math.abs(pos.x - b.x) < b.w / 2 && Math.abs(pos.y - b.y) < b.h / 2){
+        hov = b.id; break;
+      }
+    }
+    if(hov !== welcomeHover){
+      welcomeHover = hov;
+      cvs.style.cursor = hov ? 'pointer' : 'default';
+    }
+    return;
+  }
+
   if(!aiming) return;
   aimCur = getPos(e);
   if(e.cancelable) e.preventDefault();
@@ -807,6 +1152,20 @@ if(window.PointerEvent){
 
 window.addEventListener('keydown', e => {
   ensureAudio();
+
+  // ---- menu keys ----
+  if(state === 'welcome'){
+    if(e.key === 'Enter' || e.key === ' '){
+      e.preventDefault();
+      if(canContinue()) startLevel(level); else newGame();
+      return;
+    }
+    if(e.key === 'n' || e.key === 'N'){ newGame(); return; }
+    if(e.key === 'm' || e.key === 'M'){ toggleMute(); return; }
+    return;
+  }
+
+  if(e.key === 'Escape'){ gotoWelcome(); return; }
   if(e.key === 'r' || e.key === 'R') startLevel(level);
   if(e.key === 's' || e.key === 'S'){ level++; startLevel(level); }
   if(e.key === 'm' || e.key === 'M') toggleMute();
@@ -866,6 +1225,11 @@ function render(){
   }
   ctx.globalAlpha = 1;
 
+  if(state === 'welcome'){
+    drawWelcome();
+    return;
+  }
+
   for(const p of planets){
     if(!p.orbit) continue;
     ctx.save();
@@ -904,26 +1268,53 @@ function render(){
   }
 
   const gp = 1 + 0.06 * Math.sin(worldTime * 3.2);
-  ctx.save();
-  ctx.translate(goal.x, goal.y);
-  ctx.rotate(worldTime * 0.7);
-  ctx.shadowColor = '#7cf7c8';
-  ctx.shadowBlur = 22;
-  ctx.strokeStyle = '#7cf7c8';
-  ctx.lineWidth = 3;
-  ctx.lineCap = 'round';
-  for(let i = 0; i < 3; i++){
-    ctx.beginPath();
-    ctx.arc(0, 0, goal.r * gp, i * TAU / 3, i * TAU / 3 + 1.15);
-    ctx.stroke();
-  }
-  ctx.restore();
 
-  ctx.save();
-  ctx.shadowColor = '#7cf7c8'; ctx.shadowBlur = 26;
-  ctx.fillStyle = 'rgba(124,247,200,0.20)';
-  ctx.beginPath(); ctx.arc(goal.x, goal.y, goal.r * 0.45 * gp, 0, TAU); ctx.fill();
-  ctx.restore();
+  if(goalActive()){
+    ctx.save();
+    ctx.translate(goal.x, goal.y);
+    ctx.rotate(worldTime * 0.7);
+    ctx.shadowColor = '#7cf7c8';
+    ctx.shadowBlur = 22;
+    ctx.strokeStyle = '#7cf7c8';
+    ctx.lineWidth = 3;
+    ctx.lineCap = 'round';
+    for(let i = 0; i < 3; i++){
+      ctx.beginPath();
+      ctx.arc(0, 0, goal.r * gp, i * TAU / 3, i * TAU / 3 + 1.15);
+      ctx.stroke();
+    }
+    ctx.restore();
+
+    ctx.save();
+    ctx.shadowColor = '#7cf7c8'; ctx.shadowBlur = 26;
+    ctx.fillStyle = 'rgba(124,247,200,0.20)';
+    ctx.beginPath(); ctx.arc(goal.x, goal.y, goal.r * 0.45 * gp, 0, TAU); ctx.fill();
+    ctx.restore();
+  } else {
+    // ---- locked exit: faint dashed ring + one pip per uncollected star ----
+    ctx.save();
+    ctx.translate(goal.x, goal.y);
+    ctx.rotate(-worldTime * 0.3);
+    ctx.setLineDash([5, 11]);
+    ctx.strokeStyle = 'rgba(124,247,200,0.18)';
+    ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.arc(0, 0, goal.r * 0.92, 0, TAU); ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.restore();
+
+    const n = collectStars.length;
+    for(let i = 0; i < n; i++){
+      const a = -Math.PI / 2 + i * TAU / n;
+      const dx = Math.cos(a) * goal.r * 0.5;
+      const dy = Math.sin(a) * goal.r * 0.5;
+      ctx.beginPath();
+      ctx.arc(goal.x + dx, goal.y + dy, 3, 0, TAU);
+      ctx.fillStyle = collectStars[i].got
+        ? 'rgba(255,215,94,0.95)'
+        : 'rgba(120,165,205,0.30)';
+      ctx.fill();
+    }
+  }
 
   for(const s of collectStars){
     if(s.got) continue;
@@ -966,6 +1357,9 @@ function render(){
       } else if(pt.kind === 2){
         ctx.fillStyle = `rgba(124,247,200,${alpha})`;
         ctx.beginPath(); ctx.arc(pt.x, pt.y, 6, 0, TAU); ctx.fill();
+      } else if(pt.kind === 3){
+        ctx.fillStyle = `rgba(255,215,94,${alpha})`;
+        ctx.beginPath(); ctx.arc(pt.x, pt.y, 4.2, 0, TAU); ctx.fill();
       } else {
         ctx.fillStyle = `rgba(150,220,255,${alpha})`;
         ctx.beginPath(); ctx.arc(pt.x, pt.y, 2.2, 0, TAU); ctx.fill();
@@ -1058,23 +1452,32 @@ function render(){
 function drawHUD(){
   ctx.textBaseline = 'alphabetic';
 
-  ctx.font = '600 15px ui-monospace, monospace';
   ctx.textAlign = 'left';
+  ctx.font = '600 15px ui-monospace, monospace';
   ctx.fillStyle = 'rgba(200,230,255,0.85)';
   ctx.fillText('LEVEL ' + level, 20, 32);
 
+  const open = goalActive();
+  ctx.font = '600 12px ui-monospace, monospace';
+  ctx.fillStyle = open ? 'rgba(124,247,200,0.9)' : 'rgba(150,180,215,0.5)';
+  ctx.fillText(open ? 'EXIT OPEN' : 'EXIT LOCKED', 20, 52);
+
   ctx.textAlign = 'right';
+  ctx.font = '600 15px ui-monospace, monospace';
   ctx.fillStyle = 'rgba(255,215,94,0.9)';
   ctx.fillText('★ ' + levelStars + '/' + collectStars.length, W - 20, 32);
-  ctx.fillStyle = 'rgba(160,200,240,0.55)';
   ctx.font = '600 12px ui-monospace, monospace';
+  ctx.fillStyle = 'rgba(160,200,240,0.55)';
   ctx.fillText('TOTAL ★ ' + totalStars, W - 20, 52);
 
   if(state === 'aim'){
     ctx.textAlign = 'center';
-    ctx.font = '600 13px ui-monospace, monospace';
+    ctx.font = '600 12px ui-monospace, monospace';
     ctx.fillStyle = 'rgba(150,195,235,0.42)';
-    const hint = aiming ? 'release to launch' : 'drag to launch  ·  R restart  ·  M mute';
+    const hint = aiming
+      ? 'release to launch'
+      : (open ? 'drag to launch · R restart · M mute · ESC menu'
+              : 'collect every ★ to unlock the exit');
     ctx.fillText(hint.toUpperCase(), W / 2, H - 28);
 
     if(attempts >= 5){
@@ -1168,8 +1571,24 @@ function loop(now){
 }
 
 // ---------------------------------------------------------------- boot
-resize();
-requestAnimationFrame(loop);
+(function boot(){
+  const saved = loadSave();
+  if(saved){
+    level      = saved.level;
+    totalStars = saved.totalStars;
+    muted      = saved.muted;
+    hasSave    = true;
+  } else {
+    level = 1;
+    totalStars = 0;
+    muted = false;
+    hasSave = false;
+  }
+  state = 'welcome';
+  cvs.style.cursor = 'default';
+  resize();
+  requestAnimationFrame(loop);
+})();
 
 })();
 </script>

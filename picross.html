@@ -2,7 +2,8 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#0a0c14">
 <title>Picross</title>
 <style>
   * { box-sizing: border-box; }
@@ -12,17 +13,38 @@
     color: #c8d2f0;
     font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
     display: flex; align-items: center; justify-content: center;
-    padding: 20px;
+    padding: 12px;
+    overscroll-behavior: none;
     -webkit-tap-highlight-color: transparent;
+    -webkit-touch-callout: none;
+    user-select: none;
+    -webkit-user-select: none;
   }
-  .wrap { display: flex; flex-direction: column; gap: 14px; align-items: center; }
+  .wrap {
+    display: flex; flex-direction: column; gap: 12px; align-items: center;
+    width: 100%; max-width: 520px;
+  }
 
   .head {
-    width: 100%; display: flex; align-items: baseline; justify-content: space-between;
-    padding: 0 4px;
+    width: 100%; display: flex; align-items: center; justify-content: space-between;
+    padding: 0 6px;
   }
-  .title { font-size: 15px; letter-spacing: .35em; color: #5f6f9e; font-weight: 700; }
+  .title { font-size: 14px; letter-spacing: .35em; color: #5f6f9e; font-weight: 700; }
+  .head-right { display: flex; align-items: center; gap: 10px; }
   .timer { font-size: 14px; color: #7f90c0; letter-spacing: .1em; }
+
+  .icon-btn {
+    background: #161b2c; color: #8a9bca;
+    border: 1px solid #262e4a; border-radius: 9px;
+    width: 38px; height: 38px; padding: 0;
+    display: flex; align-items: center; justify-content: center;
+    cursor: pointer; font-size: 17px;
+    touch-action: manipulation;
+    transition: background .12s, color .12s, border-color .12s;
+  }
+  .icon-btn:hover { background: #1e2540; color: #c5d3ff; }
+  .icon-btn.muted { color: #4a5578; border-color: #1d2338; }
+  .icon-btn:active { transform: translateY(1px); }
 
   .board-wrap { position: relative; }
 
@@ -31,7 +53,7 @@
     background: #0e111c;
     border-radius: 12px;
     overflow: hidden;
-    box-shadow: 0 24px 70px rgba(0,0,0,.7), 0 0 0 1px #2b3252,
+    box-shadow: 0 20px 60px rgba(0,0,0,.65), 0 0 0 1px #2b3252,
                 inset 0 0 0 1px rgba(255,255,255,.02);
     touch-action: none;
     user-select: none;
@@ -44,15 +66,15 @@
     display: flex;
     background: #11141f;
     color: #92a3d4;
-    font-size: 12px;
     font-weight: 600;
+    line-height: 1.05;
     border-right: 1px solid #1e2438;
     border-bottom: 1px solid #1e2438;
-    transition: color .2s;
+    transition: color .25s;
   }
-  .clue.row { align-items: center; justify-content: flex-end; gap: 5px; padding-right: 7px; }
-  .clue.col { flex-direction: column; align-items: center; justify-content: flex-end; gap: 2px; padding-bottom: 7px; }
-  .clue.done { color: #34406b; }
+  .clue.row { align-items: center; justify-content: flex-end; gap: 5px; padding-right: 8px; }
+  .clue.col { flex-direction: column; align-items: center; justify-content: flex-end; gap: 2px; padding-bottom: 8px; }
+  .clue.done { color: #333f6b; }
 
   .cell {
     position: relative;
@@ -60,60 +82,108 @@
     border-right: 1px solid #1f2537;
     border-bottom: 1px solid #1f2537;
     cursor: pointer;
-    transition: background .07s;
+    transition: background .08s;
+    touch-action: none;
   }
-  .cell:hover { background: #212942; }
+  @media (hover: hover) {
+    .cell:hover { background: #212942; }
+  }
   .cell.sep-l { border-left: 2px solid #39426b; }
   .cell.sep-t { border-top: 2px solid #39426b; }
 
   .cell.on {
     background: linear-gradient(135deg, #82b2ff, #4a7dff);
-    box-shadow: inset 0 0 0 1px rgba(255,255,255,.15);
+    box-shadow: inset 0 0 0 1px rgba(255,255,255,.16);
   }
-  .cell.on:hover { background: linear-gradient(135deg, #96c0ff, #5c8aff); }
-
   .cell.mark::after {
     content: '×';
     position: absolute; inset: 0;
     display: flex; align-items: center; justify-content: center;
-    color: #47527a; font-size: 15px; line-height: 1;
+    color: #4a5680; font-size: .95em; line-height: 1;
   }
+
+  /* Segmented mode toggle */
+  .mode-toggle {
+    display: flex;
+    background: #10141f;
+    border: 1px solid #242b45;
+    border-radius: 11px;
+    padding: 4px;
+    gap: 4px;
+    width: 100%;
+    max-width: 320px;
+  }
+  .mode-btn {
+    flex: 1;
+    font: inherit; font-size: 13px; letter-spacing: .06em;
+    background: transparent; color: #7e8fbc;
+    border: 1px solid transparent; border-radius: 8px;
+    padding: 11px 8px; cursor: pointer;
+    touch-action: manipulation;
+    transition: background .13s, color .13s, border-color .13s;
+  }
+  .mode-btn.active {
+    background: #223052;
+    color: #d6e3ff;
+    border-color: #3a4a7d;
+    box-shadow: 0 2px 10px rgba(60,110,255,.15);
+  }
+  .mode-btn:not(.active):active { background: #1a2135; }
 
   .bar { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; }
-  button {
+  .bar button {
     font: inherit; font-size: 12px; letter-spacing: .08em;
     background: #1a2036; color: #9aabd8;
-    border: 1px solid #2c3454; border-radius: 7px;
-    padding: 7px 13px; cursor: pointer;
+    border: 1px solid #2c3454; border-radius: 9px;
+    padding: 11px 14px; cursor: pointer;
+    touch-action: manipulation;
     transition: all .12s;
   }
-  button:hover { background: #232c4a; color: #cfdcff; border-color: #3d4877; }
-  button:active { transform: translateY(1px); }
-  button.active { background: #2c3d6e; color: #dce7ff; border-color: #4a5da0; }
+  .bar button:hover { background: #232c4a; color: #cfdcff; border-color: #3d4877; }
+  .bar button:active { transform: translateY(1px); }
+  .bar button.active { background: #2c3d6e; color: #dce7ff; border-color: #4a5da0; }
 
-  .hint { font-size: 11px; color: #4b5678; letter-spacing: .04em; text-align: center; }
+  .hint {
+    font-size: 11px; color: #4b5678; letter-spacing: .04em;
+    text-align: center; line-height: 1.5; padding: 0 8px;
+  }
 
   #banner {
     position: absolute; inset: 0; border-radius: 12px;
     display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px;
     background: rgba(9,11,19,.86);
+    backdrop-filter: blur(2px);
+    -webkit-backdrop-filter: blur(2px);
     opacity: 0; pointer-events: none; transition: opacity .35s;
   }
   #banner.show { opacity: 1; }
-  #banner .big { font-size: 20px; letter-spacing: .3em; color: #8fd0ff; text-shadow: 0 0 24px rgba(90,160,255,.6); }
+  #banner .big {
+    font-size: 20px; letter-spacing: .3em; color: #8fd0ff;
+    text-shadow: 0 0 24px rgba(90,160,255,.6);
+    animation: pop .5s cubic-bezier(.2,1.4,.5,1);
+  }
   #banner .sub { font-size: 12px; color: #6b7aa8; letter-spacing: .1em; }
+  @keyframes pop { from { transform: scale(.7); opacity: 0; } to { transform: scale(1); opacity: 1; } }
 </style>
 </head>
 <body>
 <div class="wrap">
   <div class="head">
     <div class="title">PICROSS</div>
-    <div class="timer" id="timer">0:00</div>
+    <div class="head-right">
+      <div class="timer" id="timer">0:00</div>
+      <button class="icon-btn" id="muteBtn" title="Sound on/off" aria-label="Toggle sound">♪</button>
+    </div>
   </div>
 
   <div class="board-wrap">
     <div id="board"></div>
     <div id="banner"><div class="big">SOLVED</div><div class="sub" id="bannerSub"></div></div>
+  </div>
+
+  <div class="mode-toggle" role="tablist" aria-label="Input mode">
+    <button class="mode-btn active" data-mode="fill" role="tab" aria-selected="true">✎ Fill</button>
+    <button class="mode-btn" data-mode="mark" role="tab" aria-selected="false">✕ Mark</button>
   </div>
 
   <div class="bar">
@@ -124,21 +194,78 @@
     <button id="newBtn">New</button>
   </div>
 
-  <div class="hint">left click / drag = fill &nbsp;·&nbsp; right click = mark &nbsp;·&nbsp; numbers dim when a line is done</div>
+  <div class="hint" id="hint">tap to fill · tap a filled cell to erase · switch to Mark to flag cells</div>
 </div>
 
 <script>
 /* ============================================================
-   LINE SOLVER
-   cells: 0 = unknown, 1 = filled, 2 = empty
+   AUDIO — tiny synthesized blips
    ============================================================ */
+const Sfx = (() => {
+  let ctx = null;
+  let muted = false;
+  let lastBlip = 0;
 
+  function getCtx() {
+    if (muted) return null;
+    if (!ctx) {
+      const AC = window.AudioContext || window.webkitAudioContext;
+      if (!AC) return null;
+      try { ctx = new AC(); } catch (e) { return null; }
+    }
+    if (ctx.state === 'suspended') ctx.resume().catch(() => {});
+    return ctx;
+  }
+
+  function tone(freq, dur, type = 'sine', vol = 0.04, delay = 0) {
+    const c = getCtx();
+    if (!c) return;
+    const t0 = c.currentTime + delay;
+    const osc = c.createOscillator();
+    const g = c.createGain();
+    osc.type = type;
+    osc.frequency.setValueAtTime(freq, t0);
+    g.gain.setValueAtTime(0.0001, t0);
+    g.gain.exponentialRampToValueAtTime(vol, t0 + 0.008);
+    g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+    osc.connect(g); g.connect(c.destination);
+    osc.start(t0);
+    osc.stop(t0 + dur + 0.04);
+  }
+
+  // rate-limit repetitive blips so fast drags don't turn into a buzz
+  function throttle(ms = 40) {
+    const now = performance.now();
+    if (now - lastBlip < ms) return false;
+    lastBlip = now;
+    return true;
+  }
+
+  return {
+    resume() { getCtx(); },
+    fill()   { if (throttle(35)) { tone(440, 0.055, 'sine', 0.045); tone(660, 0.045, 'sine', 0.02, 0.006); } },
+    unfill() { if (throttle(35)) tone(330, 0.05, 'sine', 0.035); },
+    mark()   { if (throttle(35)) tone(300, 0.045, 'triangle', 0.032); },
+    unmark() { if (throttle(35)) tone(390, 0.04, 'triangle', 0.026); },
+    lineDone() { tone(587, 0.09, 'sine', 0.045); tone(880, 0.13, 'sine', 0.038, 0.07); },
+    win() {
+      [523.25, 659.25, 783.99, 1046.5].forEach((f, i) =>
+        tone(f, 0.34, 'sine', 0.055, i * 0.095));
+      tone(1046.5, 0.6, 'sine', 0.03, 0.4);
+    },
+    toggleMute() { muted = !muted; return muted; },
+    get muted() { return muted; },
+  };
+})();
+
+/* ============================================================
+   LINE SOLVER  (cells: 0 unknown, 1 filled, 2 empty)
+   ============================================================ */
 function deduceLine(cells, blocks) {
   const len = cells.length;
   const counts = new Int32Array(len);
   const placement = new Uint8Array(len);
-  let total = 0;
-  let bailed = false;
+  let total = 0, bailed = false;
 
   function rec(pos, j) {
     if (bailed) return;
@@ -151,27 +278,20 @@ function deduceLine(cells, blocks) {
     }
     const b = blocks[j];
     for (let start = pos; start + b <= len; start++) {
-      // gap cells pos..start-1 must not be filled
       if (start > pos && cells[start - 1] === 1) break;
-      // block cells must not be empty
       let ok = true;
       for (let i = start; i < start + b; i++) {
         if (cells[i] === 2) { ok = false; break; }
       }
       if (!ok) continue;
-      // separator after block must not be filled
       if (start + b < len && cells[start + b] === 1) continue;
-
       for (let i = start; i < start + b; i++) placement[i] = 1;
       rec(start + b + 1, j + 1);
       for (let i = start; i < start + b; i++) placement[i] = 0;
-
       if (bailed) return;
     }
   }
-
   rec(0, 0);
-
   if (bailed) return { ok: true, changed: false };
   if (total === 0) return { ok: false, changed: false };
 
@@ -187,16 +307,13 @@ function deduceLine(cells, blocks) {
 function lineSolveFull(grid, rowClues, colClues) {
   const n = grid.length, m = grid[0].length;
   let progress = true, guard = 0;
-
   while (progress && guard++ < 200) {
     progress = false;
-
     for (let r = 0; r < n; r++) {
       const res = deduceLine(grid[r], rowClues[r]);
       if (!res.ok) return { complete: false, unknown: Infinity };
       if (res.changed) progress = true;
     }
-
     for (let c = 0; c < m; c++) {
       const col = new Uint8Array(n);
       for (let r = 0; r < n; r++) col[r] = grid[r][c];
@@ -208,22 +325,18 @@ function lineSolveFull(grid, rowClues, colClues) {
       }
     }
   }
-
   let unknown = 0;
   for (let r = 0; r < n; r++)
     for (let c = 0; c < m; c++)
       if (grid[r][c] === 0) unknown++;
-
   return { complete: unknown === 0, unknown };
 }
 
 /* ============================================================
    HELPERS
    ============================================================ */
-
 function cluesOf(arr) {
-  const out = [];
-  let run = 0;
+  const out = []; let run = 0;
   for (let i = 0; i < arr.length; i++) {
     if (arr[i] === 1) run++;
     else if (run) { out.push(run); run = 0; }
@@ -231,18 +344,14 @@ function cluesOf(arr) {
   if (run) out.push(run);
   return out;
 }
-
-const sameArr = (a, b) =>
-  a.length === b.length && a.every((v, i) => v === b[i]);
+const sameArr = (a, b) => a.length === b.length && a.every((v, i) => v === b[i]);
 
 /* ============================================================
-   PUZZLE GENERATION  (rejection sampling for line-solvability)
+   PUZZLE GENERATION (rejection sampling for line-solvability)
    ============================================================ */
-
 function makePuzzle(n) {
   const deadline = performance.now() + 1500;
-  let fallback = null;
-  let fallbackUnknown = Infinity;
+  let fallback = null, fallbackUnknown = Infinity;
 
   for (let attempt = 0; attempt < 40000; attempt++) {
     if ((attempt & 15) === 0 && performance.now() > deadline) break;
@@ -253,7 +362,6 @@ function makePuzzle(n) {
       for (let c = 0; c < n; c++) row[c] = Math.random() < 0.5 ? 1 : 0;
       sol.push(row);
     }
-
     let filled = 0;
     for (const row of sol) for (let i = 0; i < n; i++) filled += row[i];
     const ratio = filled / (n * n);
@@ -266,63 +374,73 @@ function makePuzzle(n) {
       for (let r = 0; r < n; r++) col[r] = sol[r][c];
       cc.push(cluesOf(col));
     }
-
     const grid = [];
     for (let r = 0; r < n; r++) grid.push(new Uint8Array(n));
-
     const res = lineSolveFull(grid, rc, cc);
     if (res.complete) return { sol, rc, cc };
-
     if (res.unknown < fallbackUnknown) {
       fallbackUnknown = res.unknown;
       fallback = { sol, rc, cc };
     }
   }
-
   return fallback;
 }
 
 /* ============================================================
-   GAME STATE
+   STATE
    ============================================================ */
-
 const boardEl  = document.getElementById('board');
 const timerEl  = document.getElementById('timer');
 const banner   = document.getElementById('banner');
 const bannerSub= document.getElementById('bannerSub');
+const muteBtn  = document.getElementById('muteBtn');
 
 let N = 8;
 let solution, rowClues, colClues;
-let state;                 // 0 empty | 1 filled | 2 marked
-let cellEls = [];
-let rowClueEls = [], colClueEls = [];
+let state;
+let cellEls = [], rowClueEls = [], colClueEls = [];
 
-let dragging = false, paintVal = null;
+let dragActive = false, dragLast = null, dragButton = 0;
+let mode = 'fill';                       // 'fill' | 'mark'
+let doneRows = new Set(), doneCols = new Set();
 let solved = false;
 let timerId = null, startTime = 0, running = false;
+let pendingRefresh = false;
 
 /* ============================================================
-   BUILD
+   SIZING / BUILD
    ============================================================ */
+function isTouch() {
+  return matchMedia('(pointer: coarse)').matches || navigator.maxTouchPoints > 0;
+}
+
+function computeSizes(n) {
+  const vw = Math.min(window.innerWidth - 24, 520);
+  const vh = window.innerHeight - 320;
+  const minCell = isTouch() ? 34 : 30;
+  const clueW = n <= 5 ? 56 : n <= 8 ? 68 : 78;
+  const byW = Math.floor((vw - clueW) / n);
+  const byH = Math.floor((vh - clueW) / n);
+  const cell = Math.max(minCell, Math.min(54, byW, byH));
+  const clueH = Math.max(clueW, Math.round(cell * 1.55));
+  return { cell, clueW, clueH };
+}
 
 function buildBoard() {
-  const cell  = Math.min(46, Math.floor(340 / N));
-  const clue  = N <= 5 ? 62 : 76;
+  const { cell, clueW, clueH } = computeSizes(N);
+  const fontSize = Math.max(11, Math.min(15, Math.round(cell * 0.42)));
 
-  boardEl.style.gridTemplateColumns = `${clue}px repeat(${N}, ${cell}px)`;
-  boardEl.style.gridTemplateRows    = `${clue}px repeat(${N}, ${cell}px)`;
+  boardEl.style.gridTemplateColumns = `${clueW}px repeat(${N}, ${cell}px)`;
+  boardEl.style.gridTemplateRows    = `${clueH}px repeat(${N}, ${cell}px)`;
+  boardEl.style.fontSize = fontSize + 'px';
   boardEl.innerHTML = '';
 
-  cellEls = [];
-  rowClueEls = [];
-  colClueEls = [];
+  cellEls = []; rowClueEls = []; colClueEls = [];
 
-  // corner
   const corner = document.createElement('div');
   corner.className = 'corner';
   boardEl.appendChild(corner);
 
-  // column clues
   for (let c = 0; c < N; c++) {
     const d = document.createElement('div');
     d.className = 'clue col' + (c % 5 === 0 && c > 0 ? ' sep-l' : '');
@@ -336,7 +454,6 @@ function buildBoard() {
     colClueEls.push(d);
   }
 
-  // rows
   for (let r = 0; r < N; r++) {
     const rc = document.createElement('div');
     rc.className = 'clue row' + (r % 5 === 0 && r > 0 ? ' sep-t' : '');
@@ -373,46 +490,57 @@ function paintCell(r, c) {
 
 function refreshAllCells() {
   for (let r = 0; r < N; r++)
-    for (let c = 0; c < N; c++)
-      paintCell(r, c);
+    for (let c = 0; c < N; c++) paintCell(r, c);
 }
 
-function refreshClueStates() {
+function refreshClueStates(playSound = false) {
+  const newRows = new Set(), newCols = new Set();
+
   for (let r = 0; r < N; r++) {
     const line = [];
     for (let c = 0; c < N; c++) line.push(state[r][c] === 1 ? 1 : 0);
-    rowClueEls[r].classList.toggle('done', sameArr(cluesOf(line), rowClues[r]));
+    const done = sameArr(cluesOf(line), rowClues[r]);
+    rowClueEls[r].classList.toggle('done', done);
+    if (done) newRows.add(r);
   }
   for (let c = 0; c < N; c++) {
     const line = [];
     for (let r = 0; r < N; r++) line.push(state[r][c] === 1 ? 1 : 0);
-    colClueEls[c].classList.toggle('done', sameArr(cluesOf(line), colClues[c]));
+    const done = sameArr(cluesOf(line), colClues[c]);
+    colClueEls[c].classList.toggle('done', done);
+    if (done) newCols.add(c);
   }
+
+  if (playSound) {
+    let justDone = false;
+    for (const r of newRows) if (!doneRows.has(r)) { justDone = true; break; }
+    if (!justDone) for (const c of newCols) if (!doneCols.has(c)) { justDone = true; break; }
+    if (justDone) Sfx.lineDone();
+  }
+
+  doneRows = newRows;
+  doneCols = newCols;
 }
 
 /* ============================================================
    NEW GAME
    ============================================================ */
-
 function newGame(n) {
   N = n;
   const p = makePuzzle(n);
-  solution  = p.sol;
-  rowClues  = p.rc;
-  colClues  = p.cc;
+  solution = p.sol; rowClues = p.rc; colClues = p.cc;
 
   state = [];
   for (let r = 0; r < N; r++) state.push(new Uint8Array(N));
 
-  solved = false;
-  running = false;
-  clearInterval(timerId);
-  timerId = null;
+  doneRows = new Set(); doneCols = new Set();
+  solved = false; running = false;
+  clearInterval(timerId); timerId = null;
   timerEl.textContent = '0:00';
   banner.classList.remove('show');
 
   buildBoard();
-  refreshClueStates();
+  refreshClueStates(false);
 
   document.querySelectorAll('[data-size]').forEach(b => {
     b.classList.toggle('active', +b.dataset.size === n);
@@ -423,13 +551,12 @@ function clearBoard() {
   if (solved) return;
   for (let r = 0; r < N; r++) state[r].fill(0);
   refreshAllCells();
-  refreshClueStates();
+  refreshClueStates(false);
 }
 
 /* ============================================================
    TIMER
    ============================================================ */
-
 function startTimer() {
   if (running || solved) return;
   running = true;
@@ -439,7 +566,6 @@ function startTimer() {
     timerEl.textContent = Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0');
   }, 200);
 }
-
 function stopTimer() {
   running = false;
   clearInterval(timerId);
@@ -449,50 +575,100 @@ function stopTimer() {
 /* ============================================================
    INTERACTION
    ============================================================ */
-
 boardEl.addEventListener('contextmenu', e => e.preventDefault());
+
+function targetStateFor(cur, button) {
+  // Right-click always acts as "mark"
+  const effectiveMode = (button === 2) ? 'mark' : mode;
+  if (effectiveMode === 'fill') {
+    return cur === 1 ? 0 : 1;
+  } else {
+    return cur === 2 ? 0 : 2;
+  }
+}
+
+function applyPaint(r, c, val) {
+  const cur = state[r][c];
+  if (cur === val) return;
+
+  state[r][c] = val;
+  paintCell(r, c);
+
+  if (val === 1) Sfx.fill();
+  else if (val === 2) Sfx.mark();
+  else if (cur === 1) Sfx.unfill();
+  else if (cur === 2) Sfx.unmark();
+
+  scheduleRefresh();
+}
+
+function scheduleRefresh() {
+  if (pendingRefresh) return;
+  pendingRefresh = true;
+  requestAnimationFrame(() => {
+    pendingRefresh = false;
+    refreshClueStates(true);
+    checkWin();
+  });
+}
 
 boardEl.addEventListener('pointerdown', e => {
   const t = e.target.closest('.cell');
   if (!t || solved) return;
   e.preventDefault();
 
+  Sfx.resume();
+  if (navigator.vibrate && isTouch()) navigator.vibrate(8);
+
   const r = +t.dataset.r, c = +t.dataset.c;
-  const cur = state[r][c];
+  const button = (e.button === 2 || (e.pointerType === 'touch' && e.buttons === 2)) ? 2 : 0;
+  const val = targetStateFor(state[r][c], button);
 
-  paintVal = (e.button === 2 || e.pointerType === 'touch' && e.buttons === 2)
-    ? (cur === 2 ? 0 : 2)
-    : (cur === 1 ? 0 : 1);
+  dragActive = true;
+  dragLast = { r, c };
+  dragButton = button;
 
-  dragging = true;
   startTimer();
-  applyPaint(r, c);
+  applyPaint(r, c, val);
 });
 
 window.addEventListener('pointermove', e => {
-  if (!dragging || solved) return;
+  if (!dragActive || solved) return;
+
   const el = document.elementFromPoint(e.clientX, e.clientY);
   if (!el || !el.classList.contains('cell')) return;
-  applyPaint(+el.dataset.r, +el.dataset.c);
-});
 
-window.addEventListener('pointerup',     () => { dragging = false; paintVal = null; });
-window.addEventListener('pointercancel', () => { dragging = false; paintVal = null; });
+  const r = +el.dataset.r, c = +el.dataset.c;
+  if (dragLast && dragLast.r === r && dragLast.c === c) return;
 
-function applyPaint(r, c) {
-  const cur = state[r][c];
-  if (cur === paintVal) return;
-  if (paintVal === 1 && cur === 2) return;   // don't overwrite marks while filling
-  state[r][c] = paintVal;
-  paintCell(r, c);
-  refreshClueStates();
-  checkWin();
-}
+  // Interpolate skipped cells for fast swipes
+  if (dragLast) {
+    const r0 = dragLast.r, c0 = dragLast.c;
+    const dr = Math.abs(r - r0), dc = Math.abs(c - c0);
+    const steps = Math.max(dr, dc);
+    if (steps > 1) {
+      const val0 = targetStateFor(state[r0][c0], dragButton);
+      for (let i = 1; i <= steps; i++) {
+        const rr = Math.round(r0 + (r - r0) * i / steps);
+        const cc = Math.round(c0 + (c - c0) * i / steps);
+        const v = (i === steps) ? targetStateFor(state[rr][cc], dragButton) : val0;
+        applyPaint(rr, cc, v);
+      }
+    } else {
+      applyPaint(r, c, targetStateFor(state[r][c], dragButton));
+    }
+  }
+  dragLast = { r, c };
+}, { passive: true });
+
+function endDrag() { dragActive = false; dragLast = null; }
+window.addEventListener('pointerup', endDrag);
+window.addEventListener('pointercancel', endDrag);
+window.addEventListener('blur', endDrag);
 
 /* ============================================================
    WIN
    ============================================================ */
-
 function checkWin() {
   for (let r = 0; r < N; r++)
     for (let c = 0; c < N; c++)
@@ -501,28 +677,70 @@ function checkWin() {
   solved = true;
   stopTimer();
 
-  // reveal any stray marks as filled (they're all correct anyway)
   for (let r = 0; r < N; r++)
     for (let c = 0; c < N; c++)
       if (state[r][c] === 2) state[r][c] = 0;
 
   refreshAllCells();
-  refreshClueStates();
+  refreshClueStates(false);
 
   bannerSub.textContent = 'in ' + timerEl.textContent;
   banner.classList.add('show');
+  Sfx.win();
+  if (navigator.vibrate) navigator.vibrate([12, 40, 12]);
 }
 
 /* ============================================================
    WIRING
    ============================================================ */
-
 document.querySelectorAll('[data-size]').forEach(btn => {
-  btn.addEventListener('click', () => newGame(+btn.dataset.size));
+  btn.addEventListener('click', () => { Sfx.resume(); newGame(+btn.dataset.size); });
 });
 
-document.getElementById('newBtn').addEventListener('click', () => newGame(N));
+document.getElementById('newBtn').addEventListener('click', () => { Sfx.resume(); newGame(N); });
 document.getElementById('clearBtn').addEventListener('click', clearBoard);
+
+document.querySelectorAll('.mode-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    Sfx.resume();
+    mode = btn.dataset.mode;
+    document.querySelectorAll('.mode-btn').forEach(b => {
+      const on = b === btn;
+      b.classList.toggle('active', on);
+      b.setAttribute('aria-selected', on ? 'true' : 'false');
+    });
+    if (navigator.vibrate) navigator.vibrate(6);
+  });
+});
+
+muteBtn.addEventListener('click', () => {
+  const muted = Sfx.toggleMute();
+  muteBtn.classList.toggle('muted', muted);
+  muteBtn.textContent = muted ? '♪̸' : '♪';
+  muteBtn.setAttribute('aria-label', muted ? 'Unmute' : 'Mute');
+  if (!muted) Sfx.resume();
+});
+
+// Rebuild on significant resize / orientation change (state is preserved)
+let lastW = window.innerWidth, lastH = window.innerHeight;
+let resizeTimer = null;
+window.addEventListener('resize', () => {
+  clearTimeout(resizeTimer);
+  resizeTimer = setTimeout(() => {
+    if (Math.abs(window.innerWidth - lastW) < 24 &&
+        Math.abs(window.innerHeight - lastH) < 60) return;
+    lastW = window.innerWidth; lastH = window.innerHeight;
+    if (!solution) return;
+    const { cell } = computeSizes(N);
+    // only rebuild if size actually changed enough
+    const cur = parseFloat(getComputedStyle(cellEls[0][0]).width || '0');
+    if (Math.abs(cur - cell) > 2) {
+      buildBoard();
+      refreshAllCells();
+      refreshClueStates(false);
+    }
+  }, 180);
+});
 
 newGame(8);
 </script>
