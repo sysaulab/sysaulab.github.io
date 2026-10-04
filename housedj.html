@@ -1,0 +1,1627 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#08060e">
+<title>House DJ — endless house generator</title>
+<style>
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{margin:0;padding:0}
+  body{
+    background:#08060e;
+    background-image:
+      radial-gradient(900px 520px at 12% -12%, rgba(150,60,255,.28), transparent 62%),
+      radial-gradient(820px 520px at 102% 2%, rgba(255,60,180,.20), transparent 58%),
+      radial-gradient(760px 620px at 50% 112%, rgba(0,200,255,.14), transparent 62%);
+    background-attachment:fixed;
+    color:#efe9ff;
+    font-family:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+    min-height:100vh;
+    padding:14px 13px calc(52px + env(safe-area-inset-bottom));
+    touch-action:manipulation;
+    -webkit-user-select:none;user-select:none;
+  }
+  .wrap{max-width:860px;margin:0 auto;display:flex;flex-direction:column;gap:12px}
+
+  header{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:6px 2px 2px}
+  .title-wrap{min-width:0}
+  h1{font-size:clamp(19px,5.2vw,27px);letter-spacing:.16em;margin:0;font-weight:800;line-height:1.1;
+     background:linear-gradient(90deg,#8be9ff,#c07bff 46%,#ff6ad5);
+     -webkit-background-clip:text;background-clip:text;color:transparent;white-space:nowrap}
+  .sub{font-size:9.5px;letter-spacing:.28em;color:#8b7fa8;text-transform:uppercase;margin-top:4px}
+
+  .hdr-controls{display:flex;align-items:center;gap:10px;flex:0 0 auto}
+
+  .skip{width:54px;height:54px;flex:0 0 auto;border-radius:50%;
+    border:1px solid rgba(255,255,255,.14);background:rgba(255,255,255,.06);
+    color:#efe9ff;font-size:19px;cursor:pointer;font-family:inherit;
+    display:flex;align-items:center;justify-content:center;padding-left:2px;
+    transition:transform .1s,background .15s,box-shadow .15s}
+  .skip:active{transform:scale(.92);background:rgba(192,123,255,.22)}
+  .skip:disabled{opacity:.32;cursor:default}
+  .skip:not(:disabled){box-shadow:0 4px 16px rgba(120,80,200,.22)}
+
+  .play{width:72px;height:72px;flex:0 0 auto;border-radius:50%;border:none;font-size:25px;
+    background:linear-gradient(145deg,#c07bff,#ff4fd8);color:#12071c;font-weight:900;
+    box-shadow:0 8px 26px rgba(200,80,255,.45);cursor:pointer;transition:transform .1s,box-shadow .2s;
+    display:flex;align-items:center;justify-content:center;padding-left:4px}
+  .play:active{transform:scale(.93)}
+  .play.playing{background:linear-gradient(145deg,#4fe0ff,#7bffcf);box-shadow:0 8px 26px rgba(80,224,255,.45);padding-left:0}
+
+  .card{background:rgba(255,255,255,.045);border:1px solid rgba(255,255,255,.09);
+    border-radius:18px;padding:13px;backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px)}
+  .card.secret{display:none}
+
+  .transport{display:flex;align-items:center;gap:14px}
+  .bpmbox{flex:0 0 auto;text-align:center;min-width:74px}
+  .bpmbox span{display:block;font-size:30px;font-weight:800;letter-spacing:.02em;
+    background:linear-gradient(180deg,#fff,#b79cff);-webkit-background-clip:text;background-clip:text;color:transparent;
+    font-variant-numeric:tabular-nums}
+  .bpmbox small{font-size:9px;letter-spacing:.24em;color:#8b7fa8}
+
+  input[type=range]{-webkit-appearance:none;appearance:none;width:100%;height:36px;background:transparent;margin:0}
+  input[type=range]::-webkit-slider-runnable-track{height:8px;border-radius:99px;background:rgba(255,255,255,.13)}
+  input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:26px;height:26px;border-radius:50%;
+    background:linear-gradient(145deg,#d29bff,#ff4fd8);margin-top:-9px;box-shadow:0 2px 12px rgba(0,0,0,.55);border:none}
+  input[type=range]::-moz-range-track{height:8px;border-radius:99px;background:rgba(255,255,255,.13)}
+  input[type=range]::-moz-range-thumb{width:26px;height:26px;border:none;border-radius:50%;
+    background:linear-gradient(145deg,#d29bff,#ff4fd8);box-shadow:0 2px 12px rgba(0,0,0,.55)}
+
+  .chips{display:flex;gap:7px;flex-wrap:wrap}
+  .chip{padding:9px 13px;border-radius:99px;border:1px solid rgba(255,255,255,.12);
+    background:rgba(255,255,255,.05);color:#cfc4e8;font-size:12.5px;font-weight:700;cursor:pointer;
+    transition:.15s;display:flex;align-items:center;gap:6px;font-family:inherit}
+  .chip:active{transform:scale(.96)}
+  .chip.sel{background:linear-gradient(145deg,#c07bff,#ff4fd8);color:#150a20;border-color:transparent;
+    box-shadow:0 4px 16px rgba(200,80,255,.35)}
+  .dot{width:6px;height:6px;border-radius:50%;background:#4a3f60;transition:.15s}
+  .chip.act .dot{background:#4fe0ff;box-shadow:0 0 8px #4fe0ff}
+  .chip.sel .dot{background:#150a20;box-shadow:none}
+
+  .btn{padding:13px 15px;border-radius:14px;border:1px solid rgba(255,255,255,.12);
+    background:rgba(255,255,255,.06);color:#efe9ff;font-weight:700;font-size:14px;cursor:pointer;
+    display:flex;align-items:center;justify-content:center;gap:7px;transition:.12s;font-family:inherit}
+  .btn:active{transform:scale(.97)}
+  .btn.primary{background:linear-gradient(120deg,#ff9a3d,#ff4fd8 55%,#a05bff);color:#1a0b1f;
+    border-color:transparent;box-shadow:0 6px 22px rgba(255,80,200,.32);font-weight:800;letter-spacing:.03em}
+  .btn:disabled{opacity:.4}
+  .row{display:flex;gap:9px;align-items:center}
+  .row > *{min-width:0}
+
+  .djbar{height:5px;border-radius:99px;background:rgba(255,255,255,.09);overflow:hidden}
+  #djFill{height:100%;width:0%;border-radius:99px;
+    background:linear-gradient(90deg,#7be0ff,#c07bff,#ff6ad5);transition:width .2s linear}
+  #djMeta{font-size:11px;color:#8b7fa8;letter-spacing:.06em;margin-top:9px;line-height:1.55}
+  #djMeta b{color:#c9b6f5;font-weight:700}
+  #djMeta .live{color:#7bffcf;font-weight:800;letter-spacing:.12em}
+
+  .gridhead{display:flex;align-items:center;justify-content:space-between;margin:14px 0 8px}
+  .gridhead span{font-size:11px;letter-spacing:.22em;text-transform:uppercase;color:#a99cc4;font-weight:700}
+  .mini{padding:6px 12px;border-radius:9px;border:1px solid rgba(255,255,255,.14);
+    background:rgba(255,255,255,.07);color:#cbbfe8;font-size:11px;font-weight:800;letter-spacing:.1em;
+    cursor:pointer;font-family:inherit;transition:.12s}
+  .mini:active{transform:scale(.95)}
+  .mini.off{background:rgba(255,80,120,.16);border-color:rgba(255,80,120,.35);color:#ff8aa8}
+  .mini.danger{color:#ff8aa8;padding:6px 10px}
+
+  .pads{display:grid;grid-template-columns:repeat(8,minmax(0,1fr));gap:7px}
+  .pad{aspect-ratio:1/1;border-radius:11px;border:1px solid rgba(255,255,255,.09);
+    background:rgba(255,255,255,.05);cursor:pointer;transition:background .1s,transform .06s,box-shadow .1s;padding:0}
+  .pad.beat{background:rgba(255,255,255,.085)}
+  .pad:active{transform:scale(.9)}
+  .pad.on{background:linear-gradient(150deg,#7be0ff,#c07bff);border-color:transparent;
+    box-shadow:0 0 14px rgba(160,120,255,.45)}
+  .pad.on.beat{background:linear-gradient(150deg,#9beaff,#e07bff)}
+  .pad.now{box-shadow:inset 0 0 0 2px rgba(255,255,255,.9),0 0 16px rgba(255,255,255,.35)}
+
+  .prog{display:flex;gap:7px;margin-top:12px;align-items:center}
+  .prog .lbl{font-size:10px;letter-spacing:.18em;color:#8b7fa8;font-weight:700;margin-right:2px}
+  .progbtn{flex:1;padding:11px 0;border-radius:11px;border:1px solid rgba(255,255,255,.12);
+    background:rgba(255,255,255,.05);color:#d9cff2;font-weight:800;font-size:13px;cursor:pointer;
+    font-family:inherit;transition:.12s;letter-spacing:.06em}
+  .progbtn:active{transform:scale(.95);background:rgba(192,123,255,.25)}
+
+  .srow{display:flex;align-items:center;gap:12px;margin:2px 0}
+  .srow label{flex:0 0 92px;font-size:11px;letter-spacing:.15em;text-transform:uppercase;color:#a99cc4;font-weight:700}
+  .srow .val{flex:0 0 40px;text-align:right;font-size:12px;color:#8b7fa8;font-variant-numeric:tabular-nums}
+
+  input[type=text]{flex:1;padding:13px 14px;border-radius:14px;border:1px solid rgba(255,255,255,.12);
+    background:rgba(0,0,0,.28);color:#efe9ff;font-size:14px;font-family:inherit;outline:none;min-width:0}
+  input[type=text]:focus{border-color:rgba(192,123,255,.6)}
+  input[type=text]::placeholder{color:#6b6083}
+
+  .lib{margin-top:12px;display:flex;flex-direction:column;gap:7px}
+  .empty{font-size:12px;color:#6b6083;padding:8px 2px;line-height:1.5}
+  .libitem{display:flex;align-items:center;gap:8px;background:rgba(255,255,255,.045);
+    border:1px solid rgba(255,255,255,.07);border-radius:13px;padding:9px 11px}
+  .libinfo{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
+  .libinfo b{font-size:13.5px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .libinfo span{font-size:10.5px;color:#8b7fa8;letter-spacing:.06em}
+
+  #toast{position:fixed;left:50%;bottom:calc(22px + env(safe-area-inset-bottom));transform:translate(-50%,20px);
+    background:rgba(30,18,48,.96);border:1px solid rgba(192,123,255,.4);color:#efe9ff;padding:11px 18px;
+    border-radius:99px;font-size:13px;font-weight:600;opacity:0;pointer-events:none;transition:.25s;
+    z-index:99;box-shadow:0 10px 34px rgba(0,0,0,.6);max-width:88vw;text-align:center}
+  #toast.show{opacity:1;transform:translate(-50%,0)}
+  .hint{font-size:10.5px;color:#6b6083;line-height:1.5;margin-top:9px}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <div class="title-wrap">
+      <h1>HOUSE DJ</h1>
+      <div class="sub">endless house generator</div>
+    </div>
+    <div class="hdr-controls">
+      <button id="djSkip" class="skip" aria-label="Skip to the next tune, on the bar" disabled>⏭</button>
+      <button id="playBtn" class="play" aria-label="Play / Stop">▶</button>
+    </div>
+  </header>
+
+  <div class="card transport">
+    <div class="bpmbox"><span id="bpmVal">124</span><small>BPM</small></div>
+    <input type="range" id="bpm" min="108" max="135" step="1" value="124">
+  </div>
+
+  <!-- hidden generation controls (kept in place) -->
+  <div class="card secret">
+    <div class="row" style="margin-bottom:11px">
+      <button class="btn primary" id="genBtn" style="flex:1">🎲 Generate</button>
+    </div>
+    <div class="chips" id="styleChips"></div>
+  </div>
+
+  <div class="card">
+    <div class="djbar"><div id="djFill"></div></div>
+    <div id="djMeta">Press play — house drifts in every 2 minutes, forever.</div>
+  </div>
+
+  <div class="card">
+    <div class="chips" id="partChips"></div>
+    <div class="gridhead">
+      <span id="gridTitle">Kick</span>
+      <button class="mini" id="muteBtn">ON</button>
+    </div>
+    <div class="pads" id="pads"></div>
+    <div class="prog" id="progRow"></div>
+    <div class="hint">Tap pads to build your pattern. Tap the roman numerals to change the chord progression.</div>
+  </div>
+
+  <div class="card">
+    <div class="srow"><label>Energy</label><input type="range" id="energy" min="0" max="100" value="50"><div class="val" id="energyV">50</div></div>
+    <div class="srow"><label>Bright</label><input type="range" id="bright" min="0" max="100" value="50"><div class="val" id="brightV">50</div></div>
+    <div class="srow"><label>Space</label><input type="range" id="space" min="0" max="100" value="40"><div class="val" id="spaceV">40</div></div>
+    <div class="srow"><label>Swing</label><input type="range" id="swing" min="0" max="30" value="8"><div class="val" id="swingV">8</div></div>
+    <div class="chips" style="margin-top:8px">
+      <button class="chip" id="padChip"><span class="dot"></span>Pad layer</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="row" style="margin-bottom:9px">
+      <input type="text" id="nameInput" placeholder="Track name…" maxlength="40">
+      <button class="btn" id="saveBtn">💾</button>
+    </div>
+    <div class="row">
+      <button class="btn" id="shareBtn">🔗 Share</button>
+      <button class="btn" id="wavBtn">⬇ WAV</button>
+    </div>
+    <div class="lib" id="libList"></div>
+  </div>
+
+</div>
+<div id="toast"></div>
+
+<script>
+(() => {
+"use strict";
+
+/* ============================================================
+   HELPERS
+   ============================================================ */
+const $ = s => document.querySelector(s);
+const rnd = (a,b) => a + Math.random()*(b-a);
+const randInt = (a,b) => Math.floor(rnd(a,b+1));
+const pick = a => a[Math.floor(Math.random()*a.length)];
+const clamp = (v,a,b) => Math.max(a,Math.min(b,v));
+const lerp = (a,b,t) => a + (b-a)*t;
+const mtof = m => 440 * Math.pow(2,(m-69)/12);
+const deepCopy = o => JSON.parse(JSON.stringify(o));
+const esc = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+function shuffle(a){
+  for(let i=a.length-1;i>0;i--){
+    const j = Math.floor(Math.random()*(i+1));
+    const t = a[i]; a[i] = a[j]; a[j] = t;
+  }
+  return a;
+}
+
+const SCALES = {
+  minor:    [0,2,3,5,7,8,10],
+  dorian:   [0,2,3,5,7,9,10],
+  major:    [0,2,4,5,7,9,11],
+  phrygian: [0,1,3,5,7,8,10]
+};
+function scaleNote(scale, deg){
+  const n = scale.length;
+  const oct = Math.floor(deg/n);
+  const i = ((deg % n) + n) % n;
+  return scale[i] + 12*oct;
+}
+
+/* ============================================================
+   AUDIO ENGINE
+   ============================================================ */
+const noiseCache = new WeakMap();
+function noise(ctx){
+  let b = noiseCache.get(ctx);
+  if(b) return b;
+  const len = Math.floor(ctx.sampleRate * 2);
+  b = ctx.createBuffer(1, len, ctx.sampleRate);
+  const d = b.getChannelData(0);
+  for(let i=0;i<len;i++) d[i] = Math.random()*2 - 1;
+  noiseCache.set(ctx, b);
+  return b;
+}
+
+function makeIR(ctx, dur=2.4, decay=2.6){
+  const rate = ctx.sampleRate;
+  const len = Math.floor(rate*dur);
+  const buf = ctx.createBuffer(2, len, rate);
+  for(let c=0;c<2;c++){
+    const d = buf.getChannelData(c);
+    for(let i=0;i<len;i++){
+      d[i] = (Math.random()*2-1) * Math.pow(1 - i/len, decay);
+    }
+  }
+  return buf;
+}
+
+function createGraph(ctx){
+  const master = ctx.createGain();
+  master.gain.value = 0.9;
+
+  const djFilter = ctx.createBiquadFilter();
+  djFilter.type = 'lowpass';
+  djFilter.frequency.value = 20000;
+  djFilter.Q.value = 0.7;
+
+  /* Single-compressor chain.
+     The old glue comp + limiter pair misbehaved on Safari (different knee
+     and lookahead behavior, plus extra CPU) — one limiter is enough, and
+     it's consistent across engines. */
+  const limiter = ctx.createDynamicsCompressor();
+  limiter.threshold.value = -3;
+  limiter.knee.value = 0;
+  limiter.ratio.value = 20;
+  limiter.attack.value = 0.001;
+  limiter.release.value = 0.12;
+
+  master.connect(djFilter);
+  djFilter.connect(limiter);
+  limiter.connect(ctx.destination);
+
+  const dry = ctx.createGain();
+  dry.gain.value = 1;
+  dry.connect(master);
+
+  const revSend = ctx.createGain();
+  revSend.gain.value = 0.4;
+  const convolver = ctx.createConvolver();
+  convolver.buffer = makeIR(ctx);
+  const revGain = ctx.createGain();
+  revGain.gain.value = 0.65;
+  revSend.connect(convolver);
+  convolver.connect(revGain);
+  revGain.connect(master);
+
+  /* delay (dotted 8th) — feedback capped < 1 with a highpass to keep bass
+     out of the loop, so a sustained lead can't pump it into runaway */
+  const dlySend = ctx.createGain();
+  dlySend.gain.value = 0.3;
+
+  const delay = ctx.createDelay(1.5);
+  delay.delayTime.value = 0.36;
+
+  const dlyLP = ctx.createBiquadFilter();
+  dlyLP.type = 'lowpass';
+  dlyLP.frequency.value = 2600;
+  dlyLP.Q.value = 0.4;
+
+  const dlyHP = ctx.createBiquadFilter();
+  dlyHP.type = 'highpass';
+  dlyHP.frequency.value = 320;
+
+  const dlyFB = ctx.createGain();
+  dlyFB.gain.value = 0.34;
+
+  const dlyGain = ctx.createGain();
+  dlyGain.gain.value = 0.34;
+
+  dlySend.connect(delay);
+  delay.connect(dlyLP);
+  dlyLP.connect(dlyHP);
+  dlyHP.connect(dlyFB);
+  dlyFB.connect(delay);
+  dlyLP.connect(dlyGain);
+  dlyGain.connect(master);
+
+  return { ctx, master, dry, revSend, dlySend, delay, dlyGain, dlyFB, djFilter };
+}
+
+/* ---------- instruments ---------- */
+
+function playKick(ctx, D, t, v){
+  const o = ctx.createOscillator();
+  const g = ctx.createGain();
+  o.type = 'sine';
+  o.frequency.setValueAtTime(185, t);
+  o.frequency.exponentialRampToValueAtTime(46, t + 0.07);
+  g.gain.setValueAtTime(0.0001, t);
+  g.gain.linearRampToValueAtTime(v, t + 0.004);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + 0.46);
+  o.connect(g); g.connect(D.dry);
+  o.start(t); o.stop(t + 0.5);
+
+  const c = ctx.createBufferSource();
+  c.buffer = noise(ctx);
+  const cf = ctx.createBiquadFilter();
+  cf.type = 'bandpass'; cf.frequency.value = 1900; cf.Q.value = 0.8;
+  const cg = ctx.createGain();
+  cg.gain.setValueAtTime(v*0.3, t);
+  cg.gain.exponentialRampToValueAtTime(0.0001, t + 0.022);
+  c.connect(cf); cf.connect(cg); cg.connect(D.dry);
+  c.start(t); c.stop(t + 0.03);
+}
+
+function playClap(ctx, D, t, v){
+  const src = ctx.createBufferSource();
+  src.buffer = noise(ctx);
+  const f = ctx.createBiquadFilter();
+  f.type = 'bandpass'; f.frequency.value = 1150; f.Q.value = 1.1;
+  const g = ctx.createGain();
+  g.gain.setValueAtTime(0.0001, t);
+  for(let i=0;i<3;i++){
+    const tt = t + i*0.012;
+    g.gain.setValueAtTime(v*0.55, tt);
+    g.gain.exponentialRampToValueAtTime(0.0006, tt + 0.01);
+  }
+  g.gain.setValueAtTime(v*0.85, t + 0.038);
+  g.gain.exponentialRampToValueAtTime(0.0006, t + 0.26);
+  src.connect(f); f.connect(g); g.connect(D.dry);
+
+  const rv = ctx.createGain(); rv.gain.value = 0.3;
+  g.connect(rv); rv.connect(D.revSend);
+
+  src.start(t); src.stop(t + 0.35);
+}
+
+function playHat(ctx, D, t, v, open){
+  const src = ctx.createBufferSource();
+  src.buffer = noise(ctx);
+  const f = ctx.createBiquadFilter();
+  f.type = 'highpass';
+  f.frequency.value = open ? 6800 : 8600;
+  const g = ctx.createGain();
+  const dur = open ? 0.26 : 0.045;
+  g.gain.setValueAtTime(v, t);
+  g.gain.exponentialRampToValueAtTime(0.0005, t + dur);
+  src.connect(f); f.connect(g); g.connect(D.dry);
+  if(open){
+    const rv = ctx.createGain(); rv.gain.value = 0.22;
+    g.connect(rv); rv.connect(D.revSend);
+  }
+  src.start(t); src.stop(t + dur + 0.06);
+}
+
+function playBass(ctx, D, t, midi, dur, v, bright){
+  const f = mtof(midi);
+  const o1 = ctx.createOscillator();
+  o1.type = 'sawtooth'; o1.frequency.value = f;
+  const o2 = ctx.createOscillator();
+  o2.type = 'sine'; o2.frequency.value = f/2;
+
+  const lp = ctx.createBiquadFilter();
+  lp.type = 'lowpass';
+  lp.Q.value = 7;
+  const cut = 170 + bright*2300;
+  lp.frequency.setValueAtTime(Math.min(cut*1.8, 9000), t);
+  lp.frequency.exponentialRampToValueAtTime(Math.max(70, cut*0.35), t + dur*0.9);
+
+  const g = ctx.createGain();
+  g.gain.setValueAtTime(0.0001, t);
+  g.gain.linearRampToValueAtTime(v, t + 0.008);
+  g.gain.setValueAtTime(v, t + dur*0.75);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+
+  const og2 = ctx.createGain(); og2.gain.value = 0.55;
+  o1.connect(lp);
+  o2.connect(og2); og2.connect(lp);
+  lp.connect(g); g.connect(D.dry);
+
+  o1.start(t); o2.start(t);
+  o1.stop(t + dur + 0.06); o2.stop(t + dur + 0.06);
+}
+
+function playStab(ctx, D, t, midis, dur, v, bright){
+  const lp = ctx.createBiquadFilter();
+  lp.type = 'lowpass';
+  lp.Q.value = 1.8;
+  lp.frequency.setValueAtTime(Math.min(1100 + bright*5200, 12000), t);
+  lp.frequency.exponentialRampToValueAtTime(520, t + dur);
+
+  const g = ctx.createGain();
+  g.gain.setValueAtTime(0.0001, t);
+  g.gain.linearRampToValueAtTime(v, t + 0.006);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+
+  lp.connect(g); g.connect(D.dry);
+  const rv = ctx.createGain(); rv.gain.value = 0.45;
+  g.connect(rv); rv.connect(D.revSend);
+  const dl = ctx.createGain(); dl.gain.value = 0.20;
+  g.connect(dl); dl.connect(D.dlySend);
+
+  const amp = 0.9 / Math.max(1, midis.length);
+  midis.forEach((m,i) => {
+    const o = ctx.createOscillator();
+    o.type = (i % 2) ? 'sawtooth' : 'square';
+    o.frequency.value = mtof(m);
+    o.detune.value = (i - 1.5) * 5;
+    const og = ctx.createGain();
+    og.gain.value = amp;
+    o.connect(og); og.connect(lp);
+    o.start(t); o.stop(t + dur + 0.06);
+  });
+}
+
+function playPad(ctx, D, t, midis, dur, v){
+  const lp = ctx.createBiquadFilter();
+  lp.type = 'lowpass';
+  lp.frequency.value = 1500;
+  lp.Q.value = 0.6;
+  const g = ctx.createGain();
+  g.gain.setValueAtTime(0.0001, t);
+  g.gain.linearRampToValueAtTime(v, t + dur*0.32);
+  g.gain.setValueAtTime(v, t + dur*0.7);
+  g.gain.linearRampToValueAtTime(0.0001, t + dur);
+  lp.connect(g); g.connect(D.dry);
+  const rv = ctx.createGain(); rv.gain.value = 0.85;
+  g.connect(rv); rv.connect(D.revSend);
+
+  midis.forEach(m => {
+    for(const d of [-1, 1]){
+      const o = ctx.createOscillator();
+      o.type = 'sawtooth';
+      o.frequency.value = mtof(m);
+      o.detune.value = d * 9;
+      const og = ctx.createGain(); og.gain.value = 0.11;
+      o.connect(og); og.connect(lp);
+      o.start(t); o.stop(t + dur + 0.12);
+    }
+  });
+}
+
+function playAcid(ctx, D, t, midi, dur, v, accent, bright){
+  const o = ctx.createOscillator();
+  o.type = 'sawtooth';
+  o.frequency.value = mtof(midi);
+  const lp = ctx.createBiquadFilter();
+  lp.type = 'lowpass';
+  lp.Q.value = 15;
+  const base = 190 + bright*1700;
+  const peak = accent ? base*6.5 : base*3.2;
+  lp.frequency.setValueAtTime(Math.min(peak, 9500), t);
+  lp.frequency.exponentialRampToValueAtTime(Math.max(110, base*0.55), t + dur*0.85);
+  const g = ctx.createGain();
+  g.gain.setValueAtTime(0.0001, t);
+  g.gain.linearRampToValueAtTime(v * (accent ? 1 : 0.68), t + 0.005);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+  o.connect(lp); lp.connect(g); g.connect(D.dry);
+  const dl = ctx.createGain(); dl.gain.value = 0.18;
+  g.connect(dl); dl.connect(D.dlySend);
+  o.start(t); o.stop(t + dur + 0.06);
+}
+
+function playPluck(ctx, D, t, midi, dur, v){
+  const o = ctx.createOscillator();
+  o.type = 'triangle';
+  o.frequency.value = mtof(midi);
+  const g = ctx.createGain();
+  g.gain.setValueAtTime(0.0001, t);
+  g.gain.linearRampToValueAtTime(v, t + 0.006);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+  o.connect(g); g.connect(D.dry);
+  const dl = ctx.createGain(); dl.gain.value = 0.22;
+  g.connect(dl); dl.connect(D.dlySend);
+  const rv = ctx.createGain(); rv.gain.value = 0.32;
+  g.connect(rv); rv.connect(D.revSend);
+  o.start(t); o.stop(t + dur + 0.06);
+}
+
+/* ---------- step scheduler ---------- */
+
+function scheduleStep(ac, G, S, absStep, time, stepDur){
+  const s = ((absStep % 16) + 16) % 16;
+  const bar = Math.floor(absStep / 16) % S.prog.length;
+  const deg = S.prog[bar];
+  const sc = SCALES[S.scale] || SCALES.minor;
+  const root = 36 + S.key;
+  const E = S.energy;
+  const B = S.bright;
+  const P = S.pat;
+  const on = S.on;
+
+  if(on.kick && P.kick[s]) playKick(ac, G, time, 0.92 + E*0.1);
+  if(on.clap && P.clap[s]) playClap(ac, G, time, 0.55 + E*0.3);
+  if(on.hat  && P.hat[s])  playHat(ac, G, time, 0.16 + E*0.16, false);
+  if(on.ohat && P.ohat[s]) playHat(ac, G, time, 0.18 + E*0.15, true);
+
+  if(on.bass && P.bass[s]){
+    const n = root + scaleNote(sc, deg + (S.bassNotes[s] || 0));
+    const dur = stepDur * (s % 4 === 0 ? 1.7 : 1.1);
+    playBass(ac, G, time, n, dur, 0.42 + E*0.26, 0.2 + B*0.65);
+  }
+
+  if(on.stab && P.stab[s]){
+    const notes = [0,2,4,6].map(k => root + 24 + scaleNote(sc, deg + k));
+    playStab(ac, G, time, notes, stepDur * (1.9 + E*2.2), 0.2 + E*0.18, B);
+  }
+
+  if(on.acid && P.acid[s]){
+    const n = root + 12 + scaleNote(sc, deg + (S.acidNotes[s] || 0));
+    playAcid(ac, G, time, n, stepDur*0.92, 0.3 + E*0.22, !!S.acidAcc[s], B);
+  }
+
+  if(on.pluck && P.pluck[s]){
+    const n = root + 36 + scaleNote(sc, deg + (S.pluckNotes[s] || 0));
+    playPluck(ac, G, time, n, stepDur*1.6, 0.22 + E*0.16);
+  }
+
+  if(on.pad && s === 0){
+    const notes = [0,2,4,6,8].map(k => root + 24 + scaleNote(sc, deg + k));
+    playPad(ac, G, time, notes, stepDur*16, 0.11 + E*0.08);
+  }
+}
+
+/* ============================================================
+   STATE
+   ============================================================ */
+const PARTS = [
+  { id:'kick',  label:'Kick'     },
+  { id:'clap',  label:'Clap'     },
+  { id:'hat',   label:'Hat'      },
+  { id:'ohat',  label:'Open Hat' },
+  { id:'bass',  label:'Bass'     },
+  { id:'stab',  label:'Chords'   },
+  { id:'acid',  label:'Acid'     },
+  { id:'pluck', label:'Lead'     }
+];
+const ON_IDS = PARTS.map(p => p.id).concat(['pad']);
+
+const STYLE_DEFS = {
+  deep:    { name:'Deep',    bpm:[118,123] },
+  tech:    { name:'Tech',    bpm:[124,128] },
+  acid:    { name:'Acid',    bpm:[126,131] },
+  chicago: { name:'Chicago', bpm:[120,126] },
+  prog:    { name:'Prog',    bpm:[124,128] },
+  lofi:    { name:'Lo-Fi',   bpm:[110,118] }
+};
+
+const PROGS = [
+  [0,5,3,4],[0,3,4,3],[5,3,0,4],[0,6,5,4],
+  [3,4,0,0],[0,4,5,3],[5,4,3,2],[0,2,5,4]
+];
+
+function Z(){ return new Array(16).fill(0); }
+
+function blankState(){
+  return {
+    v: 1,
+    style: 'deep',
+    bpm: 124,
+    swing: 0.08,
+    key: 0,
+    scale: 'minor',
+    prog: [0,5,3,4],
+    energy: 0.5,
+    bright: 0.5,
+    space: 0.4,
+    on: { kick:1, clap:1, hat:1, ohat:1, bass:1, stab:1, acid:0, pluck:0, pad:0 },
+    pat: { kick:Z(), clap:Z(), hat:Z(), ohat:Z(), bass:Z(), stab:Z(), acid:Z(), pluck:Z() },
+    bassNotes: Z(),
+    acidNotes: Z(),
+    pluckNotes: Z(),
+    acidAcc: Z()
+  };
+}
+
+function normalize(S){
+  const B = blankState();
+  const out = Object.assign(B, S || {});
+  out.on  = Object.assign(B.on,  (S && S.on)  || {});
+  out.pat = Object.assign(B.pat, (S && S.pat) || {});
+  PARTS.forEach(p => {
+    const a = out.pat[p.id];
+    if(!Array.isArray(a) || a.length !== 16) out.pat[p.id] = Z();
+    else out.pat[p.id] = a.map(v => v ? 1 : 0);
+  });
+  ['bassNotes','acidNotes','pluckNotes','acidAcc'].forEach(k => {
+    if(!Array.isArray(out[k]) || out[k].length !== 16) out[k] = Z();
+    else out[k] = out[k].map(Number);
+  });
+  if(!Array.isArray(out.prog) || out.prog.length !== 4) out.prog = [0,5,3,4];
+  out.prog = out.prog.map(d => clamp(Math.round(d)||0, 0, 6));
+  out.bpm = clamp(Math.round(out.bpm) || 124, 108, 135);
+  out.key = clamp(Math.round(out.key) || 0, 0, 11);
+  if(!SCALES[out.scale]) out.scale = 'minor';
+  if(!STYLE_DEFS[out.style]) out.style = 'deep';
+  ['energy','bright','space'].forEach(k => out[k] = clamp(Number(out[k]) || 0, 0, 1));
+  out.swing = clamp(Number(out.swing) || 0, 0, 0.3);
+  ON_IDS.forEach(id => out.on[id] = out.on[id] ? 1 : 0);
+  return out;
+}
+
+/* ============================================================
+   GENERATOR (hidden UI, still used by the DJ)
+   ============================================================ */
+const OFF8 = [0,0,1,0,0,0,1,0,0,0,1,0,0,0,1,0];
+
+const BASS_PATS = {
+  deep:    [[0,0,1,0,0,0,1,0,0,0,1,0,0,0,1,0],
+            [1,0,0,0,0,0,1,0,1,0,0,0,0,0,1,0],
+            [0,0,1,0,0,0,1,0,0,0,1,0,0,1,0,1]],
+  tech:    [[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
+            [1,0,0,1,1,0,0,1,1,0,0,1,1,0,0,1],
+            [0,0,1,0,0,0,1,0,0,0,1,0,0,0,1,0]],
+  acid:    [[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
+            [1,0,1,1,1,0,1,1,1,0,1,1,1,0,1,1]],
+  chicago: [[0,0,1,0,0,0,1,0,0,0,1,0,0,0,1,0],
+            [1,0,0,1,0,0,1,0,0,1,0,0,1,0,0,0]],
+  prog:    [[0,0,1,0,0,0,1,0,0,0,1,0,0,0,1,0],
+            [0,0,0,0,1,0,0,0,0,0,0,0,1,0,0,0]],
+  lofi:    [[0,0,1,0,0,0,1,0,0,0,1,0,0,0,1,0],
+            [1,0,0,0,0,0,1,0,1,0,0,0,0,0,1,0]]
+};
+
+const STAB_PATS = [
+  [0,0,1,0,0,0,1,0,0,0,1,0,0,0,1,0],
+  [1,0,0,1,0,0,1,0,0,1,0,0,1,0,0,0],
+  [0,0,0,0,1,0,0,0,0,0,0,0,1,0,0,0],
+  [1,0,0,0,0,0,1,0,1,0,0,0,0,0,1,0],
+  [0,0,0,0,1,0,0,1,0,0,0,0,1,0,0,1]
+];
+
+function generate(styleKey){
+  const S = blankState();
+  const style = (styleKey && STYLE_DEFS[styleKey]) ? styleKey : pick(Object.keys(STYLE_DEFS));
+  S.style = style;
+  const def = STYLE_DEFS[style];
+
+  S.bpm   = randInt(def.bpm[0], def.bpm[1]);
+  S.key   = randInt(0, 11);
+  S.scale = (style === 'lofi') ? pick(['minor','dorian']) : pick(['minor','minor','dorian','phrygian']);
+  S.swing = (style === 'lofi') ? rnd(0.14, 0.26) : rnd(0.0, 0.11);
+  S.prog  = pick(PROGS).slice();
+  S.energy = rnd(0.32, 0.78);
+  S.bright = rnd(0.28, 0.72);
+  S.space  = rnd(0.2, 0.62);
+
+  const P = S.pat;
+
+  [0,4,8,12].forEach(i => P.kick[i] = 1);
+  if(style === 'tech' && Math.random() < 0.5) P.kick[14] = 1;
+  if(Math.random() < 0.18) P.kick[10] = 1;
+
+  P.clap[4] = 1; P.clap[12] = 1;
+  if(Math.random() < 0.2) P.clap[14] = 1;
+
+  if(style === 'deep' || style === 'lofi'){
+    if(Math.random() < 0.5) P.ohat = OFF8.slice();
+    else P.hat = OFF8.slice();
+  } else {
+    P.hat = OFF8.slice();
+    if(Math.random() < 0.65){ P.ohat[6] = 1; P.ohat[14] = 1; }
+  }
+  if(style === 'tech' || style === 'acid' || Math.random() < 0.55){
+    for(let i=1;i<16;i+=2) if(Math.random() < 0.5) P.hat[i] = 1;
+  }
+
+  P.bass = pick(BASS_PATS[style] || BASS_PATS.deep).slice();
+  S.on.bass = 1;
+  S.bassNotes = S.bassNotes.map((_,i) => (i % 4 === 0) ? 0 : pick([0,0,0,0,0,2,4,-1,7,3]));
+
+  const stabChance = { deep:0.9, chicago:0.95, prog:0.85, lofi:0.8, tech:0.45, acid:0.3 }[style] ?? 0.7;
+  if(Math.random() < stabChance){
+    S.on.stab = 1;
+    P.stab = pick(STAB_PATS).slice();
+  }
+
+  if(style === 'acid' || Math.random() < 0.22){
+    S.on.acid = 1;
+    for(let i=0;i<16;i++) if(Math.random() < 0.72) P.acid[i] = 1;
+    P.acid[0] = 1; P.acid[8] = 1;
+    S.acidNotes = S.acidNotes.map(() => pick([0,0,2,3,4,5,7,-1,-2,10,12,0]));
+    S.acidAcc = S.acidAcc.map(() => Math.random() < 0.3 ? 1 : 0);
+  }
+
+  if((style === 'prog' || style === 'deep') && Math.random() < 0.5){
+    S.on.pluck = 1;
+    [2,6,10,14].forEach(i => { if(Math.random() < 0.6) P.pluck[i] = 1; });
+    if(!P.pluck.some(v => v)) P.pluck[6] = 1;
+    S.pluckNotes = S.pluckNotes.map(() => pick([0,2,4,7,9,4]));
+  }
+
+  const padChance = { deep:0.7, prog:0.8, lofi:0.65, chicago:0.35, tech:0.2, acid:0.1 }[style] ?? 0.3;
+  S.on.pad = Math.random() < padChance ? 1 : 0;
+
+  return S;
+}
+
+/* ============================================================
+   TRANSPORT
+   ============================================================ */
+let ac = null, G = null;
+let playing = false, absStep = 0, nextTime = 0, timer = null, playGen = 0;
+let rafId = null;
+let clockNode = null;
+
+/* Timers get throttled hard by Safari (and by any browser when the tab
+   is backgrounded). We now run three wake-up sources in parallel, and
+   the scheduler is idempotent so calling it extra is harmless:
+     1. AudioWorklet clock — sample-accurate, runs on the audio thread,
+        survives backgrounding. This is the real fix.
+     2. setInterval — covers the window before the worklet loads.
+     3. requestAnimationFrame — covers interval throttling.
+   LOOKAHEAD is generous so a stalled timer can't starve the queue. */
+const LOOKAHEAD = 1.2;
+const TICK_MS   = 25;
+
+let nowStep = 0;
+let nowStepTime = 0;
+
+function ensureAudio(){
+  if(ac) return;
+  const AC = window.AudioContext || window.webkitAudioContext;
+  ac = new AC();
+  G = createGraph(ac);
+  applyMix();
+  initClockWorklet(); // async, fire-and-forget
+}
+
+/* AudioWorklet clock — a tiny processor that just pings the main thread
+   every ~1024 frames so we can top up the schedule on the audio thread's
+   own time base, immune to main-thread throttling. */
+async function initClockWorklet(){
+  if(!ac) return;
+  if(!ac.audioWorklet){ clockNode = null; return; }
+  const src = `
+    class HMClock extends AudioWorkletProcessor {
+      constructor(){ super(); this.n = 0; }
+      process(){
+        this.n += 128;
+        if(this.n >= 1024){ this.n = 0; this.port.postMessage(1); }
+        return true;
+      }
+    }
+    registerProcessor('hm-clock', HMClock);
+  `;
+  try {
+    const url = URL.createObjectURL(new Blob([src], {type:'application/javascript'}));
+    await ac.audioWorklet.addModule(url);
+    URL.revokeObjectURL(url);
+    clockNode = new AudioWorkletNode(ac, 'hm-clock');
+    clockNode.port.onmessage = () => { if(playing) scheduler(); };
+    // The worklet outputs nothing; route it to a silent sink so the graph
+    // keeps pulling on it.
+    const sink = ac.createGain();
+    sink.gain.value = 0;
+    clockNode.connect(sink);
+    sink.connect(ac.destination);
+  } catch(e){
+    console.warn('AudioWorklet clock unavailable, using timer fallback', e);
+    clockNode = null;
+  }
+}
+
+let lastMixKey = '';
+function mixKey(){
+  return Math.round(state.bpm) + '|' + Math.round(state.space * 200);
+}
+function applyMix(){
+  if(!G || !ac) return;
+  lastMixKey = mixKey();
+  const t = ac.currentTime;
+  const sp = state.space;
+
+  G.revSend.gain.setTargetAtTime(sp * 1.1, t, 0.08);
+  G.dlySend.gain.setTargetAtTime(sp * 0.8, t, 0.08);
+  G.dlyGain.gain.setTargetAtTime(0.26 + sp * 0.16, t, 0.08);
+  G.dlyFB.gain.setTargetAtTime(0.20 + sp * 0.28, t, 0.08);
+
+  const dt = (60 / state.bpm / 4) * 3;
+  G.delay.delayTime.setTargetAtTime(dt, t, 0.25);
+}
+
+function scheduler(){
+  if(!ac || !playing) return;
+  while(nextTime < ac.currentTime + LOOKAHEAD){
+    const stepDur = 60 / state.bpm / 4;
+    const swing = (absStep % 2) ? state.swing * stepDur * 0.5 : 0;
+    const stepTime = nextTime + swing;
+    scheduleStep(ac, G, state, absStep, stepTime, stepDur);
+
+    const delayMs = Math.max(0, (stepTime - ac.currentTime) * 1000);
+    const st = absStep % 16;
+    const gen = playGen;
+    const absAt = absStep;
+    setTimeout(() => {
+      if(playing && gen === playGen){
+        setPlayhead(st);
+        nowStep = absAt;
+        nowStepTime = stepTime;
+      }
+    }, delayMs);
+
+    nextTime += stepDur;
+    absStep++;
+  }
+}
+
+function startRAF(){
+  if(rafId) return;
+  const loop = () => {
+    if(!playing){ rafId = null; return; }
+    scheduler();
+    rafId = requestAnimationFrame(loop);
+  };
+  rafId = requestAnimationFrame(loop);
+}
+function stopRAF(){
+  if(rafId){ cancelAnimationFrame(rafId); rafId = null; }
+}
+
+async function play(){
+  ensureAudio();
+  if(ac.state === 'suspended') await ac.resume();
+  playing = true;
+  playGen++;
+  absStep = 0;
+  nextTime = ac.currentTime + 0.08;
+  nowStep = 0;
+  nowStepTime = nextTime;
+  if(timer) clearInterval(timer);
+  timer = setInterval(scheduler, TICK_MS);
+  scheduler();
+  startRAF();
+  djEngage();
+  updateTransport();
+}
+
+function stop(){
+  playing = false;
+  playGen++;
+  if(timer){ clearInterval(timer); timer = null; }
+  stopRAF();
+  setPlayhead(-1);
+  djDisengage();
+  updateTransport();
+}
+
+function updateTransport(){
+  const b = $('#playBtn');
+  b.classList.toggle('playing', playing);
+  b.textContent = playing ? '■' : '▶';
+  $('#djSkip').disabled = !playing;
+  if(!playing) $('#djFill').style.width = '0%';
+}
+
+/* ============================================================
+   UI
+   ============================================================ */
+let state = blankState();
+let uiPart = 'kick';
+let padEls = [];
+let partChipEls = {};
+
+function buildStyleChips(){
+  const wrap = $('#styleChips');
+  wrap.innerHTML = '';
+  Object.entries(STYLE_DEFS).forEach(([k, def]) => {
+    const b = document.createElement('button');
+    b.className = 'chip';
+    b.textContent = def.name;
+    b.dataset.k = k;
+    b.addEventListener('click', () => {
+      loadState(generate(k));
+      toast(def.name + ' house — ' + state.bpm + ' BPM');
+    });
+    wrap.appendChild(b);
+  });
+}
+
+function buildPartChips(){
+  const wrap = $('#partChips');
+  wrap.innerHTML = '';
+  PARTS.forEach(p => {
+    const b = document.createElement('button');
+    b.className = 'chip';
+    b.innerHTML = '<span class="dot"></span>' + p.label;
+    b.addEventListener('click', () => {
+      uiPart = p.id;
+      refreshPartChips();
+      refreshPads();
+      updateMuteBtn();
+    });
+    wrap.appendChild(b);
+    partChipEls[p.id] = b;
+  });
+}
+
+function refreshPartChips(){
+  PARTS.forEach(p => {
+    const b = partChipEls[p.id];
+    if(!b) return;
+    b.classList.toggle('sel', p.id === uiPart);
+    b.classList.toggle('act', !!state.on[p.id]);
+  });
+  $('#gridTitle').textContent = (PARTS.find(p => p.id === uiPart) || {}).label || '';
+}
+
+function updateMuteBtn(){
+  const on = !!state.on[uiPart];
+  const b = $('#muteBtn');
+  b.textContent = on ? 'ON' : 'OFF';
+  b.classList.toggle('off', !on);
+}
+
+function buildPads(){
+  const wrap = $('#pads');
+  wrap.innerHTML = '';
+  padEls = [];
+  for(let i=0;i<16;i++){
+    const b = document.createElement('button');
+    b.className = 'pad';
+    b.setAttribute('aria-label', 'step ' + (i+1));
+    b.addEventListener('pointerdown', e => {
+      e.preventDefault();
+      toggleStep(i);
+    });
+    wrap.appendChild(b);
+    padEls.push(b);
+  }
+}
+
+function refreshPads(){
+  const pat = state.pat[uiPart] || Z();
+  padEls.forEach((b,i) => {
+    b.classList.toggle('on', !!pat[i]);
+    b.classList.toggle('beat', i % 4 === 0);
+  });
+}
+
+function setPlayhead(i){
+  padEls.forEach((el,k) => el.classList.toggle('now', k === i));
+}
+
+function toggleStep(i){
+  const pat = state.pat[uiPart];
+  if(!pat) return;
+  const was = pat[i];
+  pat[i] = was ? 0 : 1;
+  refreshPads();
+  if(!was && !playing) previewStep(uiPart, i);
+}
+
+function renderProg(){
+  const row = $('#progRow');
+  row.innerHTML = '<div class="lbl">CHORDS</div>';
+  const RN = ['I','II','III','IV','V','VI','VII'];
+  state.prog.forEach((d,i) => {
+    const b = document.createElement('button');
+    b.className = 'progbtn';
+    b.textContent = RN[d];
+    b.addEventListener('click', () => {
+      state.prog[i] = (state.prog[i] + 1) % 7;
+      renderProg();
+      if(!playing) previewStep('stab', 0);
+    });
+    row.appendChild(b);
+  });
+}
+
+function previewStep(part, i){
+  ensureAudio();
+  if(ac.state === 'suspended') ac.resume();
+  const t = ac.currentTime + 0.02;
+  const stepDur = 60 / state.bpm / 4;
+  const sc = SCALES[state.scale] || SCALES.minor;
+  const root = 36 + state.key;
+  const deg = state.prog[0] || 0;
+  const B = state.bright;
+
+  if(part === 'kick')      playKick(ac, G, t, 1);
+  else if(part === 'clap') playClap(ac, G, t, 0.75);
+  else if(part === 'hat')  playHat(ac, G, t, 0.3, false);
+  else if(part === 'ohat') playHat(ac, G, t, 0.3, true);
+  else if(part === 'bass') playBass(ac, G, t, root + scaleNote(sc, deg), stepDur*1.3, 0.6, 0.2 + B*0.65);
+  else if(part === 'stab') playStab(ac, G, t, [0,2,4,6].map(k => root + 24 + scaleNote(sc, deg + k)), stepDur*2.2, 0.34, B);
+  else if(part === 'acid') playAcid(ac, G, t, root + 12 + scaleNote(sc, deg), stepDur, 0.5, true, B);
+  else if(part === 'pluck')playPluck(ac, G, t, root + 36 + scaleNote(sc, deg), stepDur*1.6, 0.3);
+}
+
+function refreshAll(){
+  $('#bpm').value = state.bpm;
+  $('#bpmVal').textContent = state.bpm;
+  $('#energy').value = Math.round(state.energy * 100);
+  $('#energyV').textContent = Math.round(state.energy * 100);
+  $('#bright').value = Math.round(state.bright * 100);
+  $('#brightV').textContent = Math.round(state.bright * 100);
+  $('#space').value = Math.round(state.space * 100);
+  $('#spaceV').textContent = Math.round(state.space * 100);
+  $('#swing').value = Math.round(state.swing * 100);
+  $('#swingV').textContent = Math.round(state.swing * 100);
+
+  document.querySelectorAll('#styleChips .chip').forEach(c => {
+    c.classList.toggle('sel', c.dataset.k === state.style);
+  });
+
+  $('#padChip').classList.toggle('act', !!state.on.pad);
+
+  refreshPartChips();
+  refreshPads();
+  updateMuteBtn();
+  renderProg();
+  applyMix();
+}
+
+function refreshLive(){
+  $('#bpm').value = state.bpm;
+  $('#bpmVal').textContent = state.bpm;
+  $('#energy').value = Math.round(state.energy * 100);
+  $('#energyV').textContent = Math.round(state.energy * 100);
+  $('#bright').value = Math.round(state.bright * 100);
+  $('#brightV').textContent = Math.round(state.bright * 100);
+  $('#space').value = Math.round(state.space * 100);
+  $('#spaceV').textContent = Math.round(state.space * 100);
+  $('#swing').value = Math.round(state.swing * 100);
+  $('#swingV').textContent = Math.round(state.swing * 100);
+  refreshPartChips();
+  refreshPads();
+  if(mixKey() !== lastMixKey) applyMix();
+}
+
+function loadState(S){
+  state = normalize(S);
+  refreshAll();
+}
+
+/* ============================================================
+   HOUSE DJ — always-on auto-mix
+   ============================================================ */
+const DJ = {
+  on: false,
+  CYCLE: 120000,
+  TRANS: 16000,
+  TICK: 90,
+  t0: 0,
+  from: null,
+  target: null,
+  slots: [],
+  perTick: 1,
+  inTrans: false,
+  timer: null
+};
+
+function djEngage(){
+  DJ.on = true;
+  DJ.from = deepCopy(state);
+  DJ.target = generate();
+  DJ.t0 = performance.now();
+  DJ.inTrans = false;
+  DJ.slots = [];
+  releaseDjFilter();
+  if(DJ.timer) clearInterval(DJ.timer);
+  DJ.timer = setInterval(djTick, DJ.TICK);
+  djTick();
+}
+
+function djDisengage(){
+  DJ.on = false;
+  DJ.inTrans = false;
+  DJ.slots = [];
+  if(DJ.timer){ clearInterval(DJ.timer); DJ.timer = null; }
+  releaseDjFilter();
+  $('#djFill').style.width = '0%';
+  $('#djMeta').innerHTML = 'Press play — house drifts in every 2 minutes, forever.';
+}
+
+function releaseDjFilter(){
+  if(!G || !ac) return;
+  const f = G.djFilter.frequency;
+  f.cancelScheduledValues(ac.currentTime);
+  f.setTargetAtTime(20000, ac.currentTime, 0.06);
+}
+
+function msToNextBar(){
+  if(!ac) return 0;
+  const stepDur = 60 / state.bpm / 4;
+  const intoStep = Math.max(0, ac.currentTime - nowStepTime);
+  const stepsIntoBar = ((nowStep % 16) + 16) % 16;
+  const stepsToBar = (16 - stepsIntoBar) % 16;
+  let sec = stepsToBar * stepDur - intoStep;
+  if(sec < 0.04 && sec > -0.10) sec = 0;
+  else if(sec < 0) sec += 16 * stepDur;
+  return Math.max(0, sec) * 1000;
+}
+
+function djSkip(){
+  if(!playing || !DJ.on) return;
+  const ms = msToNextBar();
+
+  DJ.from = deepCopy(state);
+  DJ.inTrans = false;
+  DJ.slots = [];
+  releaseDjFilter();
+
+  DJ.t0 = performance.now() + ms - (DJ.CYCLE - DJ.TRANS);
+
+  if(!DJ.timer) DJ.timer = setInterval(djTick, DJ.TICK);
+  djTick();
+
+  toast(ms < 90 ? 'Dropping on the bar ⏭' : 'Queued — drops on the bar ⏭');
+}
+
+function djTick(){
+  if(!DJ.on) return;
+  const el = performance.now() - DJ.t0;
+  const p = clamp(el / DJ.CYCLE, 0, 1);
+  $('#djFill').style.width = (p * 100).toFixed(2) + '%';
+
+  const transStart = DJ.CYCLE - DJ.TRANS;
+  const nextDef = STYLE_DEFS[DJ.target.style] || { name:'House' };
+
+  if(el < transStart){
+    const leftMs = transStart - el;
+    let when;
+    if(leftMs < 1400){
+      when = 'dropping on the bar…';
+    } else {
+      const left = Math.ceil(leftMs / 1000);
+      when = 'drifting in ' + Math.floor(left/60) + ':' + String(left % 60).padStart(2,'0');
+    }
+    $('#djMeta').innerHTML = '<span class="live">● LIVE</span> &nbsp; Next: <b>' +
+      nextDef.name + '</b> · ' + DJ.target.bpm + ' BPM &nbsp;·&nbsp; ' + when;
+    return;
+  }
+
+  if(!DJ.inTrans) beginTransition();
+
+  const tp = clamp((el - transStart) / DJ.TRANS, 0, 1);
+  applyMorph(tp);
+  $('#djMeta').innerHTML = '🔄 Morphing into <b>' + nextDef.name + '</b> · ' +
+    DJ.target.bpm + ' BPM …';
+
+  if(tp >= 1) completeTransition();
+}
+
+function beginTransition(){
+  DJ.from = deepCopy(state);
+  DJ.inTrans = true;
+  DJ.slots = diffSlots(state, DJ.target);
+  const ticks = Math.max(1, Math.round(DJ.TRANS / DJ.TICK));
+  DJ.perTick = Math.max(1, Math.ceil(DJ.slots.length / ticks));
+
+  if(G && ac){
+    const now = ac.currentTime;
+    const f = G.djFilter.frequency;
+    const secs = DJ.TRANS / 1000;
+    f.cancelScheduledValues(now);
+    f.setValueAtTime(20000, now);
+    f.exponentialRampToValueAtTime(1400, now + secs * 0.5);
+    f.exponentialRampToValueAtTime(20000, now + secs);
+  }
+  toast('Drifting into a new tune…');
+}
+
+function applyMorph(p){
+  const e = p*p*(3 - 2*p);
+  const from = DJ.from, to = DJ.target;
+
+  state.bpm    = Math.round(lerp(from.bpm, to.bpm, e));
+  state.energy = lerp(from.energy, to.energy, e);
+  state.bright = lerp(from.bright, to.bright, e);
+  state.swing  = lerp(from.swing, to.swing, e);
+
+  const wash = Math.sin(Math.PI * p) * 0.3;
+  state.space = clamp(lerp(from.space, to.space, e) + wash, 0, 1);
+
+  let n = DJ.perTick;
+  while(n-- > 0 && DJ.slots.length) applySlot(DJ.slots.pop());
+
+  refreshLive();
+}
+
+function completeTransition(){
+  releaseDjFilter();
+
+  state = normalize(deepCopy(DJ.target));
+  DJ.from = deepCopy(state);
+  DJ.target = generate();
+  DJ.t0 = performance.now();
+  DJ.inTrans = false;
+  DJ.slots = [];
+  refreshAll();
+
+  const def = STYLE_DEFS[state.style] || { name:'House' };
+  toast(def.name + ' house — ' + state.bpm + ' BPM');
+}
+
+function diffSlots(from, to){
+  const out = [];
+  PARTS.forEach(p => {
+    for(let i=0;i<16;i++){
+      if(!!from.pat[p.id][i] !== !!to.pat[p.id][i]) out.push({ arr:'pat', key:p.id, i });
+    }
+  });
+  ON_IDS.forEach(id => {
+    if(!!from.on[id] !== !!to.on[id]) out.push({ arr:'on', key:id, i:null });
+  });
+  ['bassNotes','acidNotes','pluckNotes','acidAcc'].forEach(k => {
+    for(let i=0;i<16;i++){
+      if(Number(from[k][i]) !== Number(to[k][i])) out.push({ arr:k, key:null, i });
+    }
+  });
+  return shuffle(out);
+}
+
+function applySlot(slot){
+  const to = DJ.target;
+  if(slot.i === null)       state[slot.arr][slot.key] = to[slot.arr][slot.key];
+  else if(slot.key === null) state[slot.arr][slot.i]  = to[slot.arr][slot.i];
+  else                       state[slot.arr][slot.key][slot.i] = to[slot.arr][slot.key][slot.i];
+}
+
+/* ============================================================
+   PERSISTENCE / SHARE
+   ============================================================ */
+const LS_KEY = 'housemachine.v1';
+
+function loadLib(){
+  try { return JSON.parse(localStorage.getItem(LS_KEY)) || []; }
+  catch(e){ return []; }
+}
+function saveLib(lib){
+  try { localStorage.setItem(LS_KEY, JSON.stringify(lib)); } catch(e){}
+}
+
+function autoName(){
+  const base = (STYLE_DEFS[state.style] || { name:'House' }).name;
+  return base + ' ' + pick(['Groove','Vibe','Cut','Session','Dub','Track','Motion','Pulse','Joint','Steam']);
+}
+
+function b64enc(str){
+  const bytes = new TextEncoder().encode(str);
+  let bin = '';
+  bytes.forEach(b => bin += String.fromCharCode(b));
+  return btoa(bin).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
+}
+function b64dec(s){
+  s = s.replace(/-/g,'+').replace(/_/g,'/');
+  while(s.length % 4) s += '=';
+  const bin = atob(s);
+  const bytes = new Uint8Array(bin.length);
+  for(let i=0;i<bin.length;i++) bytes[i] = bin.charCodeAt(i);
+  return new TextDecoder().decode(bytes);
+}
+
+function renderLib(){
+  const list = $('#libList');
+  const lib = loadLib();
+  list.innerHTML = '';
+  if(!lib.length){
+    list.innerHTML = '<div class="empty">No saved tracks yet. Tweak the groove, then tap <b>💾</b> to keep it.</div>';
+    return;
+  }
+  lib.forEach(item => {
+    const row = document.createElement('div');
+    row.className = 'libitem';
+
+    const info = document.createElement('div');
+    info.className = 'libinfo';
+    const st = STYLE_DEFS[(item.state && item.state.style) || 'deep'];
+    info.innerHTML = '<b>' + esc(item.name) + '</b><span>' +
+      esc(st ? st.name : 'House') + ' · ' + ((item.state && item.state.bpm) || 124) + ' BPM</span>';
+
+    const loadB = document.createElement('button');
+    loadB.className = 'mini';
+    loadB.textContent = 'Load';
+    loadB.addEventListener('click', () => {
+      loadState(item.state);
+      if(DJ.on){
+        DJ.from = deepCopy(state);
+        DJ.target = generate();
+        DJ.t0 = performance.now();
+        DJ.inTrans = false;
+        DJ.slots = [];
+        releaseDjFilter();
+      }
+      toast('Loaded “' + item.name + '”');
+    });
+
+    const delB = document.createElement('button');
+    delB.className = 'mini danger';
+    delB.textContent = '✕';
+    delB.addEventListener('click', () => {
+      saveLib(loadLib().filter(x => x.id !== item.id));
+      renderLib();
+    });
+
+    row.append(info, loadB, delB);
+    list.appendChild(row);
+  });
+}
+
+let toastTimer = null;
+function toast(msg){
+  const t = $('#toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => t.classList.remove('show'), 1900);
+}
+
+/* ---------- WAV export ---------- */
+function bufferToWav(buf){
+  const numCh = buf.numberOfChannels;
+  const len = buf.length;
+  const dataLen = len * numCh * 2;
+  const ab = new ArrayBuffer(44 + dataLen);
+  const view = new DataView(ab);
+  const ws = (o,s) => { for(let i=0;i<s.length;i++) view.setUint8(o+i, s.charCodeAt(i)); };
+  ws(0,'RIFF');  view.setUint32(4, 36 + dataLen, true); ws(8,'WAVE');
+  ws(12,'fmt '); view.setUint32(16, 16, true);
+  view.setUint16(20, 1, true);
+  view.setUint16(22, numCh, true);
+  view.setUint32(24, buf.sampleRate, true);
+  view.setUint32(28, buf.sampleRate * numCh * 2, true);
+  view.setUint16(32, numCh * 2, true);
+  view.setUint16(34, 16, true);
+  ws(36,'data'); view.setUint32(40, dataLen, true);
+
+  const chans = [];
+  for(let c=0;c<numCh;c++) chans.push(buf.getChannelData(c));
+
+  let off = 44;
+  for(let i=0;i<len;i++){
+    for(let c=0;c<numCh;c++){
+      let s = chans[c][i];
+      s = s < -1 ? -1 : (s > 1 ? 1 : s);
+      view.setInt16(off, s < 0 ? s * 0x8000 : s * 0x7FFF, true);
+      off += 2;
+    }
+  }
+  return new Blob([ab], { type:'audio/wav' });
+}
+
+/* Safari-safe offline render.
+   Modern Chromium returns a promise from startRendering(); old Safari
+   returns undefined and fires oncomplete instead. We cover both paths
+   and guard against double-resolution. */
+function renderOffline(oc){
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    const done = v => { if(!settled){ settled = true; resolve(v); } };
+    const fail = e => { if(!settled){ settled = true; reject(e); } };
+
+    oc.oncomplete = e => done(e.renderedBuffer);
+    oc.onerror    = e => fail(e);
+
+    try {
+      const p = oc.startRendering();
+      if(p && typeof p.then === 'function') p.then(done).catch(fail);
+    } catch(e){
+      fail(e);
+    }
+  });
+}
+
+async function exportWav(){
+  const btn = $('#wavBtn');
+  const original = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = '⏳ Rendering…';
+  try {
+    ensureAudio();
+    const sr = 44100;
+    const stepDur = 60 / state.bpm / 4;
+    const bars = 8;
+    const steps = bars * 16;
+    const dur = steps * stepDur + 3;
+    const OAC = window.OfflineAudioContext || window.webkitOfflineAudioContext;
+    const oc = new OAC(2, Math.ceil(sr * dur), sr);
+    const og = createGraph(oc);
+
+    og.revSend.gain.value = state.space * 1.1;
+    og.dlySend.gain.value = state.space * 0.8;
+    og.dlyGain.gain.value = 0.26 + state.space * 0.16;
+    og.dlyFB.gain.value  = 0.20 + state.space * 0.28;
+    og.djFilter.frequency.value = 20000;
+    og.delay.delayTime.value = stepDur * 3;
+
+    for(let i=0;i<steps;i++){
+      const sw = (i % 2) ? state.swing * stepDur * 0.5 : 0;
+      scheduleStep(oc, og, state, i, i*stepDur + sw + 0.05, stepDur);
+    }
+
+    const rendered = await renderOffline(oc);
+    const blob = bufferToWav(rendered);
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = (autoName().replace(/[^a-z0-9]+/gi,'-').toLowerCase()) + '-' + state.bpm + 'bpm.wav';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 4000);
+    toast('WAV exported 🎧');
+  } catch(err){
+    console.error(err);
+    toast('Export failed on this device');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = original;
+  }
+}
+
+/* ============================================================
+   WIRING
+   ============================================================ */
+function bindControls(){
+  $('#playBtn').addEventListener('click', () => {
+    if(playing) stop(); else play();
+  });
+
+  $('#djSkip').addEventListener('click', djSkip);
+
+  $('#genBtn').addEventListener('click', () => {
+    const S = generate();
+    loadState(S);
+    if(!playing) play();
+    else {
+      DJ.from = deepCopy(state);
+      DJ.target = generate();
+      DJ.t0 = performance.now();
+      DJ.inTrans = false;
+      DJ.slots = [];
+      releaseDjFilter();
+    }
+  });
+
+  $('#bpm').addEventListener('input', e => {
+    state.bpm = parseInt(e.target.value, 10);
+    $('#bpmVal').textContent = state.bpm;
+    applyMix();
+  });
+
+  $('#energy').addEventListener('input', e => {
+    state.energy = e.target.value / 100;
+    $('#energyV').textContent = e.target.value;
+  });
+  $('#bright').addEventListener('input', e => {
+    state.bright = e.target.value / 100;
+    $('#brightV').textContent = e.target.value;
+  });
+  $('#space').addEventListener('input', e => {
+    state.space = e.target.value / 100;
+    $('#spaceV').textContent = e.target.value;
+    applyMix();
+  });
+  $('#swing').addEventListener('input', e => {
+    state.swing = e.target.value / 100;
+    $('#swingV').textContent = e.target.value;
+  });
+
+  $('#muteBtn').addEventListener('click', () => {
+    state.on[uiPart] = state.on[uiPart] ? 0 : 1;
+    updateMuteBtn();
+    refreshPartChips();
+  });
+
+  $('#padChip').addEventListener('click', () => {
+    state.on.pad = state.on.pad ? 0 : 1;
+    $('#padChip').classList.toggle('act', !!state.on.pad);
+    if(state.on.pad && !playing) previewStep('pluck', 0);
+  });
+
+  $('#saveBtn').addEventListener('click', () => {
+    const input = $('#nameInput');
+    const name = input.value.trim() || autoName();
+    const lib = loadLib();
+    lib.unshift({
+      id: Date.now().toString(36) + Math.random().toString(36).slice(2,6),
+      name,
+      state: deepCopy(state),
+      at: Date.now()
+    });
+    saveLib(lib.slice(0, 60));
+    input.value = '';
+    renderLib();
+    toast('Saved “' + name + '”');
+  });
+
+  $('#shareBtn').addEventListener('click', async () => {
+    const encoded = b64enc(JSON.stringify(state));
+    const base = location.href.split('#')[0];
+    const url = base + '#p=' + encoded;
+    try { history.replaceState(null, '', '#p=' + encoded); } catch(e){}
+
+    const name = autoName();
+    if(navigator.share){
+      try {
+        await navigator.share({
+          title: 'House DJ',
+          text: '🎧 ' + name + ' — ' + state.bpm + ' BPM house track',
+          url
+        });
+        return;
+      } catch(e){ /* cancelled */ }
+    }
+    try {
+      await navigator.clipboard.writeText(url);
+      toast('Link copied — share the groove 🔗');
+    } catch(e){
+      toast('Link is in your address bar');
+    }
+  });
+
+  $('#wavBtn').addEventListener('click', exportWav);
+
+  // Backgrounded tabs: rAF stops, interval throttles, worklet keeps ticking.
+  // If we come back and the worklet isn't available, resync immediately.
+  document.addEventListener('visibilitychange', () => {
+    if(!document.hidden && playing && ac){
+      if(!clockNode) scheduler();
+      startRAF();
+    }
+  });
+}
+
+/* ============================================================
+   INIT
+   ============================================================ */
+function initFromHash(){
+  const m = location.hash.match(/#p=(.+)/);
+  if(!m) return false;
+  try {
+    loadState(JSON.parse(b64dec(m[1])));
+    return true;
+  } catch(e){
+    console.warn('bad share link', e);
+    return false;
+  }
+}
+
+function init(){
+  buildStyleChips();
+  buildPartChips();
+  buildPads();
+
+  const fromLink = initFromHash();
+  if(!fromLink) loadState(generate());
+
+  bindControls();
+  renderLib();
+  updateTransport();
+  refreshAll();
+  if(fromLink) toast('Loaded shared track 🎧');
+}
+
+init();
+
+})();
+</script>
+</body>
+</html>
