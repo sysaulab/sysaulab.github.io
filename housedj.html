@@ -95,6 +95,7 @@
   #djMeta{font-size:11px;color:#8b7fa8;letter-spacing:.06em;margin-top:9px;line-height:1.55}
   #djMeta b{color:#c9b6f5;font-weight:700}
   #djMeta .live{color:#7bffcf;font-weight:800;letter-spacing:.12em}
+  #autoDjChip.off{opacity:.6}
 
   .gridhead{display:flex;align-items:center;justify-content:space-between;margin:14px 0 8px}
   .gridhead span{font-size:11px;letter-spacing:.22em;text-transform:uppercase;color:#a99cc4;font-weight:700}
@@ -177,6 +178,9 @@
   <div class="card">
     <div class="djbar"><div id="djFill"></div></div>
     <div id="djMeta">Press play — house drifts in every 2 minutes, forever.</div>
+    <div class="chips" style="margin-top:11px">
+      <button class="chip sel" id="autoDjChip" aria-pressed="true"><span class="dot"></span>Auto DJ</button>
+    </div>
   </div>
 
   <div class="card">
@@ -289,10 +293,6 @@ function createGraph(ctx){
   djFilter.frequency.value = 20000;
   djFilter.Q.value = 0.7;
 
-  /* Single-compressor chain.
-     The old glue comp + limiter pair misbehaved on Safari (different knee
-     and lookahead behavior, plus extra CPU) — one limiter is enough, and
-     it's consistent across engines. */
   const limiter = ctx.createDynamicsCompressor();
   limiter.threshold.value = -3;
   limiter.knee.value = 0;
@@ -318,8 +318,6 @@ function createGraph(ctx){
   convolver.connect(revGain);
   revGain.connect(master);
 
-  /* delay (dotted 8th) — feedback capped < 1 with a highpass to keep bass
-     out of the loop, so a sustained lead can't pump it into runaway */
   const dlySend = ctx.createGain();
   dlySend.gain.value = 0.3;
 
@@ -665,7 +663,7 @@ function normalize(S){
 }
 
 /* ============================================================
-   GENERATOR (hidden UI, still used by the DJ)
+   GENERATOR
    ============================================================ */
 const OFF8 = [0,0,1,0,0,0,1,0,0,0,1,0,0,0,1,0];
 
@@ -768,14 +766,6 @@ let playing = false, absStep = 0, nextTime = 0, timer = null, playGen = 0;
 let rafId = null;
 let clockNode = null;
 
-/* Timers get throttled hard by Safari (and by any browser when the tab
-   is backgrounded). We now run three wake-up sources in parallel, and
-   the scheduler is idempotent so calling it extra is harmless:
-     1. AudioWorklet clock — sample-accurate, runs on the audio thread,
-        survives backgrounding. This is the real fix.
-     2. setInterval — covers the window before the worklet loads.
-     3. requestAnimationFrame — covers interval throttling.
-   LOOKAHEAD is generous so a stalled timer can't starve the queue. */
 const LOOKAHEAD = 1.2;
 const TICK_MS   = 25;
 
@@ -788,12 +778,9 @@ function ensureAudio(){
   ac = new AC();
   G = createGraph(ac);
   applyMix();
-  initClockWorklet(); // async, fire-and-forget
+  initClockWorklet();
 }
 
-/* AudioWorklet clock — a tiny processor that just pings the main thread
-   every ~1024 frames so we can top up the schedule on the audio thread's
-   own time base, immune to main-thread throttling. */
 async function initClockWorklet(){
   if(!ac) return;
   if(!ac.audioWorklet){ clockNode = null; return; }
@@ -814,8 +801,6 @@ async function initClockWorklet(){
     URL.revokeObjectURL(url);
     clockNode = new AudioWorkletNode(ac, 'hm-clock');
     clockNode.port.onmessage = () => { if(playing) scheduler(); };
-    // The worklet outputs nothing; route it to a silent sink so the graph
-    // keeps pulling on it.
     const sink = ac.createGain();
     sink.gain.value = 0;
     clockNode.connect(sink);
@@ -896,7 +881,7 @@ async function play(){
   timer = setInterval(scheduler, TICK_MS);
   scheduler();
   startRAF();
-  djEngage();
+  if(autoDj) djEngage(); else djDisengage();
   updateTransport();
 }
 
@@ -914,7 +899,7 @@ function updateTransport(){
   const b = $('#playBtn');
   b.classList.toggle('playing', playing);
   b.textContent = playing ? '■' : '▶';
-  $('#djSkip').disabled = !playing;
+  $('#djSkip').disabled = !playing || !DJ.on;
   if(!playing) $('#djFill').style.width = '0%';
 }
 
@@ -1099,7 +1084,34 @@ function loadState(S){
 }
 
 /* ============================================================
-   HOUSE DJ — always-on auto-mix
+   AUTO DJ TOGGLE
+   ============================================================ */
+const AUTO_KEY = 'housemachine.autodj';
+
+function loadAutoDjPref(){
+  try { return localStorage.getItem(AUTO_KEY) !== '0'; } catch(e){ return true; }
+}
+function saveAutoDjPref(v){
+  try { localStorage.setItem(AUTO_KEY, v ? '1' : '0'); } catch(e){}
+}
+
+let autoDj = loadAutoDjPref();
+
+function refreshAutoDj(){
+  const c = $('#autoDjChip');
+  c.classList.toggle('sel', autoDj);
+  c.setAttribute('aria-pressed', autoDj ? 'true' : 'false');
+}
+
+const DJ_OFF_MSG = '🎛 <b>Auto DJ off</b> — your groove loops until you change it.';
+const DJ_IDLE_MSG = 'Press play — house drifts in every 2 minutes, forever.';
+
+function djIdleMessage(){
+  return playing ? DJ_OFF_MSG : DJ_IDLE_MSG;
+}
+
+/* ============================================================
+   HOUSE DJ — auto-mix cycle
    ============================================================ */
 const DJ = {
   on: false,
@@ -1126,6 +1138,7 @@ function djEngage(){
   if(DJ.timer) clearInterval(DJ.timer);
   DJ.timer = setInterval(djTick, DJ.TICK);
   djTick();
+  updateTransport();
 }
 
 function djDisengage(){
@@ -1135,7 +1148,8 @@ function djDisengage(){
   if(DJ.timer){ clearInterval(DJ.timer); DJ.timer = null; }
   releaseDjFilter();
   $('#djFill').style.width = '0%';
-  $('#djMeta').innerHTML = 'Press play — house drifts in every 2 minutes, forever.';
+  $('#djMeta').innerHTML = djIdleMessage();
+  $('#djSkip').disabled = true;
 }
 
 function releaseDjFilter(){
@@ -1406,10 +1420,6 @@ function bufferToWav(buf){
   return new Blob([ab], { type:'audio/wav' });
 }
 
-/* Safari-safe offline render.
-   Modern Chromium returns a promise from startRendering(); old Safari
-   returns undefined and fires oncomplete instead. We cover both paths
-   and guard against double-resolution. */
 function renderOffline(oc){
   return new Promise((resolve, reject) => {
     let settled = false;
@@ -1486,11 +1496,28 @@ function bindControls(){
 
   $('#djSkip').addEventListener('click', djSkip);
 
+  $('#autoDjChip').addEventListener('click', () => {
+    autoDj = !autoDj;
+    saveAutoDjPref(autoDj);
+    refreshAutoDj();
+
+    if(!playing){
+      $('#djMeta').innerHTML = autoDj ? DJ_IDLE_MSG : DJ_OFF_MSG;
+      updateTransport();
+      toast(autoDj ? 'Auto DJ on — endless drift 🌊' : 'Auto DJ off — manual control 🎛');
+      return;
+    }
+
+    if(autoDj) djEngage(); else djDisengage();
+    updateTransport();
+    toast(autoDj ? 'Auto DJ on — endless drift 🌊' : 'Auto DJ off — manual control 🎛');
+  });
+
   $('#genBtn').addEventListener('click', () => {
     const S = generate();
     loadState(S);
     if(!playing) play();
-    else {
+    else if(autoDj){
       DJ.from = deepCopy(state);
       DJ.target = generate();
       DJ.t0 = performance.now();
@@ -1579,8 +1606,6 @@ function bindControls(){
 
   $('#wavBtn').addEventListener('click', exportWav);
 
-  // Backgrounded tabs: rAF stops, interval throttles, worklet keeps ticking.
-  // If we come back and the worklet isn't available, resync immediately.
   document.addEventListener('visibilitychange', () => {
     if(!document.hidden && playing && ac){
       if(!clockNode) scheduler();
@@ -1609,6 +1634,8 @@ function init(){
   buildPartChips();
   buildPads();
 
+  refreshAutoDj();
+
   const fromLink = initFromHash();
   if(!fromLink) loadState(generate());
 
@@ -1616,6 +1643,8 @@ function init(){
   renderLib();
   updateTransport();
   refreshAll();
+
+  if(!autoDj) $('#djMeta').innerHTML = DJ_OFF_MSG;
   if(fromLink) toast('Loaded shared track 🎧');
 }
 
