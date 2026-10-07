@@ -320,6 +320,44 @@ const ART_SQUARE = `
   <path d="M0 500 L128 500 Q156 440 92 402 Q40 424 0 414 Z" fill="#cdbb8c"/>
   <circle cx="642" cy="126" r="26" fill="#ffffff" opacity=".95"/>
   <circle cx="634" cy="118" r="8" fill="#eef4f6"/>
+
+  <!-- the lift: brass-and-glass tower on the arcade -->
+  <g>
+    <ellipse cx="90" cy="398" rx="62" ry="13" fill="#c2b791" opacity=".85"/>
+
+    <rect x="40" y="234" width="100" height="164" fill="#d8cfba"/>
+    <rect x="40" y="234" width="100" height="164" fill="none" stroke="#b9a888" stroke-width="3"/>
+
+    <rect x="48" y="244" width="84" height="120" fill="#8fb8c8" opacity=".55"/>
+    <rect x="48" y="244" width="4" height="120" fill="#b08d3f"/>
+    <rect x="88" y="244" width="4" height="120" fill="#b08d3f"/>
+    <rect x="128" y="244" width="4" height="120" fill="#b08d3f"/>
+    <rect x="48" y="280" width="84" height="3" fill="#b08d3f"/>
+    <rect x="48" y="316" width="84" height="3" fill="#b08d3f"/>
+
+    <rect x="58" y="286" width="64" height="54" rx="4" fill="#3a4a55" opacity=".6"/>
+    <rect x="58" y="286" width="64" height="54" rx="4" fill="none" stroke="#b08d3f" stroke-width="2"/>
+
+    <path d="M30 234 H150 L138 210 H42 Z" fill="#b4553f"/>
+    <rect x="34" y="230" width="112" height="6" fill="#8a3f2f"/>
+    <line x1="90" y1="210" x2="90" y2="192" stroke="#8a6a4a" stroke-width="3"/>
+    <circle cx="90" cy="189" r="5" fill="#c9a227"/>
+
+    <rect x="40" y="356" width="100" height="42" fill="#2f5d50"/>
+    <rect x="40" y="356" width="100" height="42" fill="none" stroke="#1d3d35" stroke-width="3"/>
+    <rect x="52" y="364" width="76" height="30" fill="#1d3d35"/>
+    <g stroke="#c9a227" stroke-width="2" opacity=".7">
+      <line x1="62" y1="364" x2="62" y2="394"/>
+      <line x1="76" y1="364" x2="76" y2="394"/>
+      <line x1="90" y1="364" x2="90" y2="394"/>
+      <line x1="104" y1="364" x2="104" y2="394"/>
+      <line x1="118" y1="364" x2="118" y2="394"/>
+    </g>
+    <rect x="52" y="378" width="76" height="3" fill="#c9a227" opacity=".7"/>
+
+    <rect x="64" y="344" width="52" height="13" rx="3" fill="#f7f4ee" stroke="#b9a888" stroke-width="2"/>
+    <text x="90" y="353" font-size="9" fill="#2f5d50" text-anchor="middle" font-family="sans-serif">LIFT</text>
+  </g>
 </svg>`;
 
 const ART_SHOP = `
@@ -742,11 +780,14 @@ SCENES.corridor = {
     {
       id:'lift', label:'the lift', x:77.5, y:24, w:17.5, h:56,
       look: ()=> 'A lift with one button. The button has no label.',
-      acts: ()=>[{t:'Press the button', run:()=>{
-        say('The lift hums, considers the request, and opens its doors on the square. '+
-            'It goes where it is required to go.');
-        go('square');
-      }}]
+      acts: ()=>[
+        {t:'Press the button', run:()=>{
+          say('The lift hums, considers the request, and opens its doors on the square. '+
+              'It goes where it is required to go.');
+          go('square');
+        }},
+        {t:'Ask for your floor', run:()=> go('flat')}
+      ]
     }
   ]
 };
@@ -762,6 +803,14 @@ SCENES.square = {
       'and the sea beyond the houses. Everyone is smiling. Nobody is talking.';
   },
   hotspots: [
+    {
+      id:'lift', label:'the lift', x:3.75, y:44, w:15, h:36,
+      look: ()=> 'The lift you came down in \u2014 a brass-and-glass tower bolted to the '+
+        'front of the houses, its grille door standing open. The car waits inside, '+
+        'patient, lit from nowhere in particular. Above the door, a small enamel sign: '+
+        '<b>LIFT \u2014 RESIDENCES</b>.',
+      acts: ()=>[{t:'Take the lift up', run:()=> go('corridor')}]
+    },
     {
       id:'fountain', label:'the fountain', x:45, y:60, w:22, h:26,
       look: ()=> 'A fountain. Water, a dolphin, a great deal of concrete. '+
@@ -971,6 +1020,12 @@ SCENES.tunnels = {
   desc: 'Rock, cables, and the hum of something that has been running for a very long time. '+
         'Light comes down through a hatch above your head.',
   hotspots: [
+    {
+      id:'beachDoor', label:'the iron door', x:0, y:78, w:14, h:20,
+      look: ()=> 'The iron door you came in by, standing open onto a wedge of grey daylight '+
+        'and the sound of the sea.',
+      acts: ()=>[{t:'Go back out to the beach', run:()=> go('beach')}]
+    },
     {
       id:'fuelCan', label:'the jerry can', x:25, y:76, w:12, h:18,
       look: ()=> 'A jerry can, half full, standing in the water.',
