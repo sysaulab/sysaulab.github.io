@@ -608,6 +608,74 @@ const STYLE_DEFS = {
   lofi:    { name:'Lo-Fi',   bpm:[110,118] }
 };
 
+/* ============================================================
+   NIGHT ARC — slow 6-hour energy shape
+   ============================================================
+   The arc is a smooth bell peaking at the midpoint of a 6-hour
+   window, cycling so a very long session gets a second wave.
+   It biases style choice, BPM within a style, energy, and
+   brightness for each *newly generated* tune. It never fights
+   a manual style pick.
+
+   nightStart lives in localStorage so a mid-party reload
+   continues the arc instead of restarting it. Clear it with:
+     localStorage.removeItem('housemachine.nightStart')
+*/
+const NIGHT_LEN = 6 * 3600 * 1000;
+const NIGHT_KEY = 'housemachine.nightStart';
+
+function loadNightStart(){
+  try {
+    const v = localStorage.getItem(NIGHT_KEY);
+    if(v){ const n = Number(v); if(Number.isFinite(n) && n > 0) return n; }
+  } catch(e){}
+  const t = Date.now();
+  try { localStorage.setItem(NIGHT_KEY, String(t)); } catch(e){}
+  return t;
+}
+const nightStart = loadNightStart();
+
+function computeNightArc(){
+  const t = ((Date.now() - nightStart) % NIGHT_LEN) / NIGHT_LEN;
+  const raw = Math.max(0, Math.sin(Math.PI * t));
+  return 0.12 + 0.88 * Math.pow(raw, 1.4);
+}
+
+function arcLabel(){
+  const t = ((Date.now() - nightStart) % NIGHT_LEN) / NIGHT_LEN;
+  const a = computeNightArc();
+  if(a < 0.30) return t < 0.5 ? 'warm-up'      : 'comedown';
+  if(a < 0.62) return t < 0.5 ? 'building'     : 'winding down';
+  if(a < 0.86) return t < 0.5 ? 'rising'       : 'cooling';
+  return 'peak';
+}
+
+// How "intense" each style feels. Used only for arc biasing.
+const STYLE_INTENSITY = {
+  lofi:    0.12,
+  deep:    0.30,
+  chicago: 0.50,
+  prog:    0.62,
+  tech:    0.80,
+  acid:    0.92
+};
+
+function pickStyleByArc(arc){
+  const keys = Object.keys(STYLE_DEFS);
+  const weights = keys.map(k => {
+    const intensity = STYLE_INTENSITY[k] ?? 0.5;
+    const d = intensity - arc;
+    return Math.exp(-d*d*8) + 0.04;
+  });
+  const total = weights.reduce((a,b)=>a+b, 0);
+  let r = Math.random() * total;
+  for(let i = 0; i < keys.length; i++){
+    r -= weights[i];
+    if(r <= 0) return keys[i];
+  }
+  return keys[keys.length-1];
+}
+
 const PROGS = [
   [0,5,3,4],[0,3,4,3],[5,3,0,4],[0,6,5,4],
   [3,4,0,0],[0,4,5,3],[5,4,3,2],[0,2,5,4]
@@ -663,7 +731,7 @@ function normalize(S){
 }
 
 /* ============================================================
-   GENERATOR
+   GENERATOR  (arc-biased)
    ============================================================ */
 const OFF8 = [0,0,1,0,0,0,1,0,0,0,1,0,0,0,1,0];
 
@@ -694,17 +762,25 @@ const STAB_PATS = [
 
 function generate(styleKey){
   const S = blankState();
-  const style = (styleKey && STYLE_DEFS[styleKey]) ? styleKey : pick(Object.keys(STYLE_DEFS));
+  const arc = computeNightArc();
+  const style = (styleKey && STYLE_DEFS[styleKey]) ? styleKey : pickStyleByArc(arc);
   S.style = style;
   const def = STYLE_DEFS[style];
 
-  S.bpm   = randInt(def.bpm[0], def.bpm[1]);
+  // BPM: bias toward the upper end of the style's range as the arc rises.
+  const bpmT = clamp(0.30 + arc * 0.55, 0, 1);
+  S.bpm = clamp(Math.round(lerp(def.bpm[0], def.bpm[1], bpmT) + rnd(-1, 1)), 108, 135);
+
   S.key   = randInt(0, 11);
   S.scale = (style === 'lofi') ? pick(['minor','dorian']) : pick(['minor','minor','dorian','phrygian']);
   S.swing = (style === 'lofi') ? rnd(0.14, 0.26) : rnd(0.0, 0.11);
   S.prog  = pick(PROGS).slice();
-  S.energy = rnd(0.32, 0.78);
-  S.bright = rnd(0.28, 0.72);
+
+  // Energy & brightness ride the arc.
+  const eC = lerp(0.34, 0.80, arc);
+  S.energy = clamp(rnd(eC - 0.16, eC + 0.12), 0.18, 0.95);
+  const bC = lerp(0.35, 0.65, arc);
+  S.bright = clamp(rnd(bC - 0.18, bC + 0.15), 0.15, 0.9);
   S.space  = rnd(0.2, 0.62);
 
   const P = S.pat;
@@ -830,28 +906,61 @@ function applyMix(){
   G.delay.delayTime.setTargetAtTime(dt, t, 0.25);
 }
 
+/* ------------------------------------------------------------
+   Scheduler — hardened.
+
+   Anything that could throw is wrapped. The outer try/catch
+   guarantees absStep and nextTime always advance, so a single
+   bad step can never freeze the transport.
+   ------------------------------------------------------------ */
 function scheduler(){
   if(!ac || !playing) return;
   while(nextTime < ac.currentTime + LOOKAHEAD){
-    const stepDur = 60 / state.bpm / 4;
-    const swing = (absStep % 2) ? state.swing * stepDur * 0.5 : 0;
-    const stepTime = nextTime + swing;
-    scheduleStep(ac, G, state, absStep, stepTime, stepDur);
+    let stepDur = 60 / (state.bpm || 124) / 4;
+    try {
+      const swing = (absStep % 2) ? state.swing * stepDur * 0.5 : 0;
+      const stepTime = nextTime + swing;
 
-    const delayMs = Math.max(0, (stepTime - ac.currentTime) * 1000);
-    const st = absStep % 16;
-    const gen = playGen;
-    const absAt = absStep;
-    setTimeout(() => {
-      if(playing && gen === playGen){
-        setPlayhead(st);
-        nowStep = absAt;
-        nowStepTime = stepTime;
+      // Chord drift: apply pending changes at bar boundaries, BEFORE this bar's
+      // steps are scheduled, so a bar never mixes old and new chords.
+      if(DJ.on && DJ.chordPlan.length && (absStep % 16 === 0)){
+        const currentBar = Math.floor(absStep / 16);
+        while(DJ.chordPlan.length && DJ.chordPlan[0].bar <= currentBar){
+          const change = DJ.chordPlan.shift();
+          state.prog[change.slot] = change.value;
+          const delayMs = Math.max(0, (stepTime - ac.currentTime) * 1000);
+          setTimeout(() => {
+            if(playing) renderProg();
+          }, delayMs);
+        }
       }
-    }, delayMs);
 
-    nextTime += stepDur;
-    absStep++;
+      // A bad voice must not take down the loop.
+      try {
+        scheduleStep(ac, G, state, absStep, stepTime, stepDur);
+      } catch(stepErr){
+        console.warn('step error, skipping', stepErr);
+      }
+
+      const delayMs = Math.max(0, (stepTime - ac.currentTime) * 1000);
+      const st = absStep % 16;
+      const gen = playGen;
+      const absAt = absStep;
+      setTimeout(() => {
+        if(playing && gen === playGen){
+          setPlayhead(st);
+          nowStep = absAt;
+          nowStepTime = stepTime;
+        }
+      }, delayMs);
+
+    } catch(e){
+      console.warn('scheduler error', e);
+    } finally {
+      // Always advance, no matter what.
+      nextTime += stepDur;
+      absStep++;
+    }
   }
 }
 
@@ -868,21 +977,93 @@ function stopRAF(){
   if(rafId){ cancelAnimationFrame(rafId); rafId = null; }
 }
 
+/* ------------------------------------------------------------
+   Watchdog — detects a stalled / suspended AudioContext.
+   Runs every 2s. Compares wall-clock advancement against
+   ac.currentTime advancement. If audio has fallen far behind,
+   we resume (if suspended) and reschedule from *now* rather
+   than trying to catch up on missed steps.
+   ------------------------------------------------------------ */
+let lastWatch = { wall: 0, audio: 0 };
+let watchdogBusy = false;
+
+async function watchdog(){
+  if(!ac || watchdogBusy) return;
+
+  if(lastWatch.wall === 0){
+    lastWatch = { wall: performance.now(), audio: ac.currentTime };
+    return;
+  }
+
+  const nowW = performance.now();
+  const nowA = ac.currentTime;
+  const wallDt  = (nowW - lastWatch.wall) / 1000;
+  const audioDt = nowA - lastWatch.audio;
+  lastWatch = { wall: nowW, audio: nowA };
+
+  if(wallDt < 0.5) return;
+
+  if(ac.state !== 'running'){
+    watchdogBusy = true;
+    try { await ac.resume(); } catch(e){ /* gesture needed */ }
+    watchdogBusy = false;
+    // Don't reschedule yet — next tick will verify.
+    return;
+  }
+
+  // Context claims to be running but the audio clock has barely moved.
+  if(playing && audioDt < wallDt * 0.4){
+    console.warn('audio stall detected — rescheduling', { wallDt, audioDt });
+    nextTime = Math.max(nextTime, ac.currentTime + 0.12);
+    try { scheduler(); } catch(e){ console.warn(e); }
+    startRAF();
+  }
+}
+
+/* ------------------------------------------------------------
+   Wake Lock — keeps the screen on so the audio context and
+   timers aren't suspended by the OS during long sets.
+   ------------------------------------------------------------ */
+let wakeLock = null;
+
+async function requestWakeLock(){
+  if(!('wakeLock' in navigator)) return;
+  if(wakeLock) return;
+  try {
+    wakeLock = await navigator.wakeLock.request('screen');
+    wakeLock.addEventListener('release', () => { wakeLock = null; });
+  } catch(e){
+    wakeLock = null;
+  }
+}
+
+function releaseWakeLock(){
+  if(!wakeLock) return;
+  const wl = wakeLock;
+  wakeLock = null;
+  wl.release().catch(()=>{});
+}
+
 async function play(){
   ensureAudio();
-  if(ac.state === 'suspended') await ac.resume();
+  if(ac.state === 'suspended') {
+    try { await ac.resume(); } catch(e){}
+  }
   playing = true;
   playGen++;
   absStep = 0;
   nextTime = ac.currentTime + 0.08;
   nowStep = 0;
   nowStepTime = nextTime;
+  lastWatch = { wall: performance.now(), audio: ac.currentTime };
+
   if(timer) clearInterval(timer);
   timer = setInterval(scheduler, TICK_MS);
   scheduler();
   startRAF();
   if(autoDj) djEngage(); else djDisengage();
   updateTransport();
+  requestWakeLock();
 }
 
 function stop(){
@@ -893,6 +1074,7 @@ function stop(){
   setPlayhead(-1);
   djDisengage();
   updateTransport();
+  releaseWakeLock();
 }
 
 function updateTransport(){
@@ -1107,7 +1289,11 @@ const DJ_OFF_MSG = '🎛 <b>Auto DJ off</b> — your groove loops until you chan
 const DJ_IDLE_MSG = 'Press play — house drifts in every 2 minutes, forever.';
 
 function djIdleMessage(){
-  return playing ? DJ_OFF_MSG : DJ_IDLE_MSG;
+  const lbl = arcLabel();
+  if(playing){
+    return DJ_OFF_MSG + ' &nbsp;·&nbsp; <b>' + lbl + '</b>';
+  }
+  return DJ_IDLE_MSG + ' &nbsp;·&nbsp; <b>' + lbl + '</b>';
 }
 
 /* ============================================================
@@ -1124,7 +1310,8 @@ const DJ = {
   slots: [],
   perTick: 1,
   inTrans: false,
-  timer: null
+  timer: null,
+  chordPlan: []
 };
 
 function djEngage(){
@@ -1134,6 +1321,7 @@ function djEngage(){
   DJ.t0 = performance.now();
   DJ.inTrans = false;
   DJ.slots = [];
+  DJ.chordPlan = [];
   releaseDjFilter();
   if(DJ.timer) clearInterval(DJ.timer);
   DJ.timer = setInterval(djTick, DJ.TICK);
@@ -1145,6 +1333,7 @@ function djDisengage(){
   DJ.on = false;
   DJ.inTrans = false;
   DJ.slots = [];
+  DJ.chordPlan = [];
   if(DJ.timer){ clearInterval(DJ.timer); DJ.timer = null; }
   releaseDjFilter();
   $('#djFill').style.width = '0%';
@@ -1178,6 +1367,7 @@ function djSkip(){
   DJ.from = deepCopy(state);
   DJ.inTrans = false;
   DJ.slots = [];
+  DJ.chordPlan = [];
   releaseDjFilter();
 
   DJ.t0 = performance.now() + ms - (DJ.CYCLE - DJ.TRANS);
@@ -1207,7 +1397,8 @@ function djTick(){
       when = 'drifting in ' + Math.floor(left/60) + ':' + String(left % 60).padStart(2,'0');
     }
     $('#djMeta').innerHTML = '<span class="live">● LIVE</span> &nbsp; Next: <b>' +
-      nextDef.name + '</b> · ' + DJ.target.bpm + ' BPM &nbsp;·&nbsp; ' + when;
+      nextDef.name + '</b> · ' + DJ.target.bpm + ' BPM &nbsp;·&nbsp; ' + when +
+      ' &nbsp;·&nbsp; <b>' + arcLabel() + '</b>';
     return;
   }
 
@@ -1216,7 +1407,7 @@ function djTick(){
   const tp = clamp((el - transStart) / DJ.TRANS, 0, 1);
   applyMorph(tp);
   $('#djMeta').innerHTML = '🔄 Morphing into <b>' + nextDef.name + '</b> · ' +
-    DJ.target.bpm + ' BPM …';
+    DJ.target.bpm + ' BPM … &nbsp;·&nbsp; <b>' + arcLabel() + '</b>';
 
   if(tp >= 1) completeTransition();
 }
@@ -1225,6 +1416,7 @@ function beginTransition(){
   DJ.from = deepCopy(state);
   DJ.inTrans = true;
   DJ.slots = diffSlots(state, DJ.target);
+  DJ.chordPlan = buildChordPlan(state, DJ.target);
   const ticks = Math.max(1, Math.round(DJ.TRANS / DJ.TICK));
   DJ.perTick = Math.max(1, Math.ceil(DJ.slots.length / ticks));
 
@@ -1267,10 +1459,46 @@ function completeTransition(){
   DJ.t0 = performance.now();
   DJ.inTrans = false;
   DJ.slots = [];
+  DJ.chordPlan = [];
   refreshAll();
 
   const def = STYLE_DEFS[state.style] || { name:'House' };
   toast(def.name + ' house — ' + state.bpm + ' BPM');
+}
+
+/* ---------- chord drift ---------- */
+/*
+ * Bar index is floor(absStep / 16); the chord for bar N is prog[N % 4].
+ * A prog slot s can only be changed at a bar where bar % 4 === s, otherwise
+ * the already-scheduled steps of that bar would mix the old and new chord.
+ *
+ * We schedule one slot change per bar, in order of harmonic distance
+ * (closest first), so the progression "walks" toward the target.
+ */
+function buildChordPlan(from, to){
+  const plan = [];
+  const nextBar = Math.ceil(absStep / 16);
+
+  const pending = [];
+  for(let s = 0; s < 4; s++){
+    if(from.prog[s] !== to.prog[s]){
+      const diff = Math.abs(from.prog[s] - to.prog[s]);
+      const dist = Math.min(diff, 7 - diff);
+      pending.push({ slot: s, value: to.prog[s], dist });
+    }
+  }
+  pending.sort((a, b) => a.dist - b.dist);
+
+  for(const p of pending){
+    let bar = nextBar;
+    const rem = bar % 4;
+    if(rem <= p.slot) bar += (p.slot - rem);
+    else bar += (4 - rem + p.slot);
+    plan.push({ bar, slot: p.slot, value: p.value });
+  }
+
+  plan.sort((a, b) => a.bar - b.bar);
+  return plan;
 }
 
 function diffSlots(from, to){
@@ -1360,6 +1588,7 @@ function renderLib(){
         DJ.t0 = performance.now();
         DJ.inTrans = false;
         DJ.slots = [];
+        DJ.chordPlan = [];
         releaseDjFilter();
       }
       toast('Loaded “' + item.name + '”');
@@ -1502,7 +1731,7 @@ function bindControls(){
     refreshAutoDj();
 
     if(!playing){
-      $('#djMeta').innerHTML = autoDj ? DJ_IDLE_MSG : DJ_OFF_MSG;
+      $('#djMeta').innerHTML = autoDj ? djIdleMessage() : djIdleMessage();
       updateTransport();
       toast(autoDj ? 'Auto DJ on — endless drift 🌊' : 'Auto DJ off — manual control 🎛');
       return;
@@ -1523,6 +1752,7 @@ function bindControls(){
       DJ.t0 = performance.now();
       DJ.inTrans = false;
       DJ.slots = [];
+      DJ.chordPlan = [];
       releaseDjFilter();
     }
   });
@@ -1607,9 +1837,16 @@ function bindControls(){
   $('#wavBtn').addEventListener('click', exportWav);
 
   document.addEventListener('visibilitychange', () => {
-    if(!document.hidden && playing && ac){
-      if(!clockNode) scheduler();
+    if(document.hidden) return;
+    if(!ac) return;
+    if(ac.state === 'suspended') ac.resume().catch(()=>{});
+    if(playing){
+      // Give the watchdog a fresh baseline; don't try to "catch up".
+      lastWatch = { wall: performance.now(), audio: ac.currentTime };
+      nextTime = Math.max(nextTime, ac.currentTime + 0.10);
+      try { scheduler(); } catch(e){}
       startRAF();
+      requestWakeLock();
     }
   });
 }
@@ -1645,6 +1882,10 @@ function init(){
   refreshAll();
 
   if(!autoDj) $('#djMeta').innerHTML = DJ_OFF_MSG;
+
+  // Watchdog runs from page load. Cheap when not playing.
+  setInterval(watchdog, 2000);
+
   if(fromLink) toast('Loaded shared track 🎧');
 }
 
