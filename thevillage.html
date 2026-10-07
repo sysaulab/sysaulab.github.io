@@ -1,0 +1,1163 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<meta name="theme-color" content="#101312">
+<title>The Village — a point and click escape</title>
+<style>
+  :root{ --cream:#f2ede0; --gold:#e8b04b; }
+  *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+  html,body{height:100%;background:#101312;color:var(--cream);
+    font-family:Georgia,'Iowan Old Style','Times New Roman',serif;
+    overflow:hidden;overscroll-behavior:none;touch-action:manipulation}
+  #game{height:100dvh;display:flex;flex-direction:column;
+    padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left)}
+  #stageWrap{flex:1 1 0;min-height:0;display:flex;align-items:center;justify-content:center;padding:8px 8px 0}
+  #stage{position:relative;border-radius:5px;overflow:hidden;background:#000;
+    box-shadow:0 0 0 1px #2a3230, 0 10px 34px rgba(0,0,0,.65)}
+  #art,#art svg{width:100%;height:100%;display:block}
+  #hotspots{position:absolute;inset:0}
+  .hs{position:absolute;border-radius:6px;cursor:pointer;transition:background .15s}
+  .hs:active{background:rgba(255,255,255,.16)}
+  .hs.flash{background:rgba(232,176,75,.22);box-shadow:inset 0 0 0 2px rgba(232,176,75,.75);
+    animation:pulse .55s ease-in-out 3}
+  @keyframes pulse{50%{background:rgba(232,176,75,.05)}}
+  #hint{position:absolute;top:8px;right:8px;width:38px;height:38px;border-radius:50%;z-index:5;
+    background:rgba(16,20,19,.7);color:var(--gold);border:1px solid rgba(232,176,75,.55);
+    font:600 16px/1 system-ui,sans-serif;cursor:pointer}
+  #hint:active{background:rgba(232,176,75,.25)}
+  #text{flex:0 0 auto;padding:10px 16px 4px;font-size:15px;line-height:1.5;
+    min-height:84px;max-height:26vh;overflow-y:auto;color:#e6e0d2}
+  #text b{color:#f8f4e8}
+  #text i{color:#c9c2b0}
+  .hint{color:#98a39e;font-size:13px}
+  #actions{flex:0 0 auto;display:flex;gap:8px;overflow-x:auto;align-items:center;
+    padding:4px 12px;min-height:56px;scrollbar-width:none}
+  #actions::-webkit-scrollbar{display:none}
+  .act{flex:0 0 auto;background:#212a28;color:var(--cream);border:1px solid #3a4642;
+    border-radius:999px;padding:0 18px;min-height:44px;white-space:nowrap;cursor:pointer;
+    font:500 14px/1 system-ui,sans-serif}
+  .act:active{background:#3a4642}
+  #inv{flex:0 0 auto;display:flex;gap:8px;align-items:center;overflow-x:auto;
+    padding:4px 12px 10px;min-height:74px;scrollbar-width:none}
+  #inv::-webkit-scrollbar{display:none}
+  .inv{flex:0 0 auto;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;
+    background:#1a2220;border:1px solid #313b38;border-radius:11px;padding:6px 10px;
+    min-width:58px;min-height:56px;color:#e8e2d4;cursor:pointer;
+    font:500 10px/1.15 system-ui,sans-serif;text-align:center}
+  .inv .ic{font-size:21px;line-height:1}
+  .inv.sel{border-color:var(--gold);background:#2b2a1c;box-shadow:inset 0 0 0 1px var(--gold)}
+  #overlay{position:fixed;inset:0;z-index:50;display:none;align-items:center;justify-content:center;
+    background:rgba(7,9,8,.94);padding:26px;overflow-y:auto}
+  #overlay.show{display:flex}
+  #overlay .card{max-width:540px;text-align:center}
+  #overlay h1{font-size:clamp(21px,6vw,29px);letter-spacing:.14em;font-weight:400;margin-bottom:18px;color:#f6f1e4}
+  #overlay p{font-size:15px;line-height:1.65;color:#cfc9bb;margin-bottom:14px}
+  #overlay .small{font-size:13px;color:#96a19c}
+  #overlay .kicker{font:500 11px/1 system-ui,sans-serif;letter-spacing:.26em;
+    text-transform:uppercase;color:var(--gold);margin-bottom:14px}
+  #overlay button{margin-top:10px;background:var(--gold);color:#1b1f1d;border:0;border-radius:999px;
+    padding:0 30px;min-height:50px;font:600 15px/1 system-ui,sans-serif;cursor:pointer}
+  #overlay button:active{background:#f3c768}
+</style>
+</head>
+<body>
+<div id="game">
+  <div id="stageWrap">
+    <div id="stage">
+      <div id="art"></div>
+      <div id="hotspots"></div>
+      <button id="hint" aria-label="Show what can be touched">?</button>
+    </div>
+  </div>
+  <div id="text"></div>
+  <div id="actions"></div>
+  <div id="inv"></div>
+</div>
+<div id="overlay"></div>
+
+<script>
+/* =========================================================
+   THE VILLAGE
+   ========================================================= */
+const $ = id => document.getElementById(id);
+const stage=$('stage'), artEl=$('art'), hsEl=$('hotspots'),
+      textEl=$('text'), actEl=$('actions'), invEl=$('inv'), overlay=$('overlay');
+
+const state = { scene:null, inv:[], sel:null, hs:null };
+const F = {};                                  // flags
+
+/* ---------- items ---------- */
+const ITEMS = {
+  key:    {n:'Small key',     icon:'🗝️', d:'A small silver key, still warm from the dish.'},
+  spoon:  {n:'Teaspoon',      icon:'🥄', d:'Village silver. The monogram is a number, not a letter.'},
+  paper:  {n:'The Tally Ho',  icon:'📰', d:'The Village newspaper. Tide tables, small ads, obituaries, a crossword.'},
+  coin:   {n:'Village coin',  icon:'🪙', d:'One credit. Stamped with somebody else\u2019s number.'},
+  boater: {n:'Straw boater',  icon:'👒', d:'A striped ribbon. It smells of the sea and of a long time ago.'},
+  radio:  {n:'Transistor',    icon:'📻', d:'Charged to Number 12. Everything here is charged to your number.'},
+  fuel:   {n:'Fuel can',      icon:'⛽', d:'Outboard fuel. Half full.'},
+  pliers: {n:'Pliers',        icon:'🔧', d:'Insulated grips. Somebody here expected to need them.'}
+};
+
+/* ---------- helpers ---------- */
+function has(i){ return state.inv.includes(i); }
+function add(i){ if(!has(i)){ state.inv.push(i); renderInv(); } }
+function remove(i){ state.inv = state.inv.filter(x=>x!==i);
+  if(state.sel===i) state.sel=null; renderInv(); }
+function say(t){ textEl.innerHTML = t; }
+function clearSel(){ state.sel=null; renderInv(); }
+
+function setActions(list){
+  actEl.innerHTML='';
+  (list||[]).forEach(a=>{
+    const b=document.createElement('button');
+    b.className='act'; b.textContent=a.t;
+    b.onclick=()=>{
+      const h=state.hs;
+      a.run();
+      if(state.hs===h && h) setActions(h.acts?h.acts():[]);
+    };
+    actEl.appendChild(b);
+  });
+}
+
+function renderInv(){
+  invEl.innerHTML='';
+  state.inv.forEach(id=>{
+    const it=ITEMS[id];
+    const b=document.createElement('button');
+    b.className='inv'+(state.sel===id?' sel':'');
+    b.innerHTML='<span class="ic">'+it.icon+'</span><span>'+it.n+'</span>';
+    b.onclick=()=>{
+      if(state.sel===id){ clearSel(); say('You put it away.'); return; }
+      state.sel=id; renderInv();
+      say('<b>'+it.n+'</b> \u2014 '+it.d+
+          '<br><span class="hint">Now tap something to use it on.</span>');
+      setActions([]);
+    };
+    invEl.appendChild(b);
+  });
+}
+
+/* ---------- procedural village ---------- */
+const PALETTE=['#e8b04b','#d97b6c','#7fb3c8','#a8c686','#e6d7a8','#c98fa8','#8fb8a8'];
+function rnd(i){ const v=Math.sin(i*12.9898)*43758.5453; return v-Math.floor(v); }
+
+function houseRow(x,y,w,n,baseH,seed){
+  seed = seed||0;
+  let s='', hw=w/n;
+  for(let i=0;i<n;i++){
+    const r1=rnd(i+1+seed), r2=rnd(i+7+seed);
+    const hx=x+i*hw+hw*0.06, ww=hw*0.88, hh=baseH*(0.72+r1*0.55);
+    const top=y-hh;
+    const col=PALETTE[Math.floor(r2*PALETTE.length)];
+    s+='<rect x="'+hx.toFixed(1)+'" y="'+top.toFixed(1)+'" width="'+ww.toFixed(1)+
+       '" height="'+hh.toFixed(1)+'" fill="'+col+'"/>';
+    s+='<polygon points="'+(hx-ww*0.11).toFixed(1)+','+(top+1).toFixed(1)+' '+
+       (hx+ww/2).toFixed(1)+','+(top-hw*0.45).toFixed(1)+' '+
+       (hx+ww*1.11).toFixed(1)+','+(top+1).toFixed(1)+'" fill="#b4553f"/>';
+    const rows=Math.max(1,Math.floor(hh/30));
+    for(let rr=0;rr<rows;rr++){
+      for(let cc=0;cc<2;cc++){
+        s+='<rect x="'+(hx+ww*(0.16+cc*0.44)).toFixed(1)+'" y="'+(top+9+rr*27).toFixed(1)+
+           '" width="'+(ww*0.22).toFixed(1)+'" height="13" fill="#33454f" opacity="0.78"/>';
+      }
+    }
+  }
+  return s;
+}
+
+/* =========================================================
+   ART
+   ========================================================= */
+const ART_FLAT = `
+<svg viewBox="0 0 800 500" preserveAspectRatio="none">
+  <defs><linearGradient id="sky1" x1="0" y1="0" x2="0" y2="1">
+    <stop offset="0" stop-color="#9fd0ea"/><stop offset="1" stop-color="#dceef7"/>
+  </linearGradient></defs>
+  <rect width="800" height="500" fill="#ece6da"/>
+  <rect y="398" width="800" height="102" fill="#c3ac8d"/>
+  <rect y="398" width="800" height="7" fill="#a8916f"/>
+  <g stroke="#b39d7d" stroke-width="2" opacity=".8">
+    <line x1="0" y1="432" x2="800" y2="432"/><line x1="0" y1="469" x2="800" y2="469"/>
+  </g>
+  <rect x="420" y="45" width="340" height="300" fill="url(#sky1)"/>
+  <rect x="420" y="205" width="340" height="42" fill="#3d7fa6"/>
+  <rect x="420" y="243" width="340" height="102" fill="#8fb87e"/>
+  ${houseRow(430,318,320,7,58,3)}
+  <circle cx="716" cy="118" r="8" fill="#ffffff" opacity=".9"/>
+  <rect x="420" y="45" width="340" height="300" fill="none" stroke="#f7f4ee" stroke-width="16"/>
+  <line x1="590" y1="45" x2="590" y2="345" stroke="#f7f4ee" stroke-width="9"/>
+  <line x1="420" y1="196" x2="760" y2="196" stroke="#f7f4ee" stroke-width="9"/>
+  <rect x="50" y="90" width="130" height="310" fill="#2f5d50"/>
+  <rect x="50" y="90" width="130" height="310" fill="none" stroke="#1d3d35" stroke-width="5"/>
+  <rect x="66" y="112" width="98" height="120" fill="#27503f"/>
+  <rect x="66" y="256" width="98" height="126" fill="#27503f"/>
+  <circle cx="165" cy="252" r="7" fill="#c9a227"/>
+  <rect x="146" y="200" width="27" height="13" rx="3" fill="#c9a227"/>
+  <text x="159.5" y="210" font-size="9" fill="#2f5d50" text-anchor="middle" font-family="sans-serif">TRAY</text>
+  <rect x="196" y="110" width="62" height="80" fill="#f7f4ee" stroke="#b9ac93" stroke-width="3"/>
+  <g fill="#9aa0a0">
+    <rect x="205" y="122" width="44" height="4"/><rect x="205" y="132" width="44" height="4"/>
+    <rect x="205" y="142" width="36" height="4"/><rect x="205" y="152" width="44" height="4"/>
+    <rect x="205" y="162" width="28" height="4"/><rect x="205" y="172" width="40" height="4"/>
+  </g>
+  <ellipse cx="320" cy="170" rx="58" ry="76" fill="#c9a227"/>
+  <ellipse cx="320" cy="170" rx="49" ry="67" fill="#b7d3dd"/>
+  <ellipse cx="305" cy="148" rx="16" ry="28" fill="#dceaf0" opacity=".8"/>
+  <rect x="190" y="332" width="280" height="58" rx="12" fill="#3f6b5e"/>
+  <rect x="190" y="378" width="280" height="68" rx="10" fill="#4a7d6e"/>
+  <rect x="190" y="352" width="44" height="94" rx="14" fill="#456f62"/>
+  <rect x="426" y="352" width="44" height="94" rx="14" fill="#456f62"/>
+  <rect x="240" y="392" width="94" height="22" rx="6" fill="#548a79"/>
+  <rect x="344" y="392" width="88" height="22" rx="6" fill="#548a79"/>
+  <rect x="536" y="404" width="12" height="58" fill="#8a6a4a"/>
+  <ellipse cx="542" cy="462" rx="42" ry="9" fill="#7a5c3e"/>
+  <ellipse cx="542" cy="400" rx="80" ry="24" fill="#9a7854"/>
+  <ellipse cx="542" cy="396" rx="72" ry="21" fill="#ddd5c6"/>
+  <ellipse cx="500" cy="384" rx="19" ry="13" fill="#f7f4ee"/>
+  <path d="M492 374 q8 -10 16 0" stroke="#f7f4ee" stroke-width="3" fill="none"/>
+  <path d="M536 392 q30 -44 60 0 z" fill="#eae3d5" stroke="#cfc7b8" stroke-width="2"/>
+  <circle cx="566" cy="373" r="4" fill="#cfc7b8"/>
+  <ellipse cx="614" cy="392" rx="10" ry="4" fill="#c9c2b3"/>
+  <ellipse cx="472" cy="390" rx="14" ry="7" fill="#f7f4ee"/>
+  <rect x="648" y="404" width="10" height="58" fill="#8a6a4a"/>
+  <ellipse cx="653" cy="462" rx="40" ry="9" fill="#7a5c3e"/>
+  <rect x="612" y="386" width="82" height="20" rx="5" fill="#8a6a4a"/>
+  <rect x="632" y="356" width="44" height="32" rx="7" fill="#f7f4ee" stroke="#d8d2c6" stroke-width="2"/>
+  <rect x="620" y="350" width="68" height="13" rx="6" fill="#f7f4ee" stroke="#d8d2c6" stroke-width="2"/>
+</svg>`;
+
+const ART_CORRIDOR = `
+<svg viewBox="0 0 800 500" preserveAspectRatio="none">
+  <rect width="800" height="500" fill="#f4f1ea"/>
+  <rect y="400" width="800" height="100" fill="#e0dacd"/>
+  <rect y="396" width="800" height="6" fill="#cdc6b7"/>
+  ${[0,1,2].map(i=>{
+    const x=140+i*150;
+    return '<path d="M'+x+' 350 V195 a65 65 0 0 1 130 0 V350 Z" fill="#a9d3e6"/>'+
+           '<path d="M'+x+' 350 V195 a65 65 0 0 1 130 0 V350" fill="none" stroke="#fbf9f4" stroke-width="15"/>'+
+           '<rect x="'+(x+6)+'" y="300" width="118" height="50" fill="#7fae7a"/>'+
+           houseRow(x+12,318,106,3,36,i*5);
+  }).join('')}
+  <rect x="0" y="350" width="620" height="14" fill="#fbf9f4"/>
+  <g stroke="#e5e0d5" stroke-width="4">
+    <line x1="20" y1="364" x2="20" y2="400"/><line x1="70" y1="364" x2="70" y2="400"/>
+    <line x1="120" y1="364" x2="120" y2="400"/><line x1="170" y1="364" x2="170" y2="400"/>
+    <line x1="220" y1="364" x2="220" y2="400"/><line x1="270" y1="364" x2="270" y2="400"/>
+    <line x1="320" y1="364" x2="320" y2="400"/><line x1="370" y1="364" x2="370" y2="400"/>
+    <line x1="420" y1="364" x2="420" y2="400"/><line x1="470" y1="364" x2="470" y2="400"/>
+    <line x1="520" y1="364" x2="520" y2="400"/><line x1="570" y1="364" x2="570" y2="400"/>
+  </g>
+  <rect x="20" y="130" width="100" height="270" fill="#2f5d50"/>
+  <rect x="20" y="130" width="100" height="270" fill="none" stroke="#1d3d35" stroke-width="4"/>
+  <rect x="34" y="150" width="72" height="100" fill="#27503f"/>
+  <rect x="34" y="266" width="72" height="112" fill="#27503f"/>
+  <circle cx="110" cy="268" r="6" fill="#c9a227"/>
+  <text x="70" y="120" font-size="15" fill="#8c948f" text-anchor="middle" font-family="sans-serif">12</text>
+  <rect x="620" y="120" width="140" height="280" fill="#c4ccca"/>
+  <rect x="620" y="120" width="140" height="280" fill="none" stroke="#a9b2b0" stroke-width="4"/>
+  <line x1="690" y1="120" x2="690" y2="400" stroke="#a9b2b0" stroke-width="4"/>
+  <rect x="700" y="240" width="30" height="30" rx="6" fill="#e8e2d6" stroke="#a9b2b0" stroke-width="3"/>
+  <text x="690" y="112" font-size="13" fill="#8c948f" text-anchor="middle" font-family="sans-serif">LIFT</text>
+  <g>
+    <ellipse cx="366" cy="384" rx="26" ry="9" fill="#c9c2b3"/>
+    <rect x="352" y="300" width="28" height="84" rx="10" fill="#b4553f"/>
+    <circle cx="366" cy="278" r="18" fill="#e8c9a8"/>
+    <path d="M348 272 a18 18 0 0 1 36 0 z" fill="#8a6a4a"/>
+    <rect x="352" y="318" width="28" height="40" fill="#d97b6c" opacity="0"/>
+    <ellipse cx="392" cy="322" rx="16" ry="8" fill="#7fb3c8"/>
+    <rect x="386" y="326" width="12" height="20" fill="#c98fa8"/>
+  </g>
+</svg>`;
+
+const ART_SQUARE = `
+<svg viewBox="0 0 800 500" preserveAspectRatio="none">
+  <defs><linearGradient id="sky2" x1="0" y1="0" x2="0" y2="1">
+    <stop offset="0" stop-color="#8ec6e6"/><stop offset="1" stop-color="#e8f3f8"/>
+  </linearGradient></defs>
+  <rect width="800" height="500" fill="url(#sky2)"/>
+  <rect y="200" width="800" height="62" fill="#3d7fa6"/>
+  <rect y="260" width="800" height="240" fill="#d9cfa8"/>
+  ${houseRow(0,300,800,12,68,11)}
+  <ellipse cx="112" cy="168" rx="118" ry="58" fill="#7fae7a"/>
+  <path d="M58 176 a54 54 0 0 1 108 0 z" fill="#4f7f5f"/>
+  <rect x="66" y="172" width="92" height="16" fill="#3f6b4f"/>
+  <line x1="112" y1="124" x2="112" y2="104" stroke="#3f6b4f" stroke-width="4"/>
+  <circle cx="112" cy="101" r="5" fill="#c9a227"/>
+  <g>
+    <ellipse cx="300" cy="404" rx="112" ry="24" fill="#c9bf9c"/>
+    <rect x="228" y="300" width="144" height="13" fill="#8a6a4a"/>
+    <rect x="238" y="313" width="11" height="90" fill="#8a6a4a"/>
+    <rect x="351" y="313" width="11" height="90" fill="#8a6a4a"/>
+    <path d="M214 300 q86 -84 172 0 z" fill="#b4553f"/>
+    <circle cx="300" cy="250" r="8" fill="#c9a227"/>
+    <path d="M300 250 v-24" stroke="#c9a227" stroke-width="3"/>
+  </g>
+  <g>
+    <ellipse cx="480" cy="432" rx="116" ry="32" fill="#cfc6a4"/>
+    <ellipse cx="480" cy="426" rx="100" ry="26" fill="#5b93b5"/>
+    <rect x="470" y="362" width="20" height="62" fill="#cfc6a4"/>
+    <ellipse cx="480" cy="360" rx="46" ry="12" fill="#e0d8bb"/>
+    <ellipse cx="480" cy="354" rx="30" ry="8" fill="#5b93b5"/>
+    <path d="M480 352 q-18 -42 -32 -52" stroke="#a9d9f0" stroke-width="6" fill="none" stroke-linecap="round"/>
+    <path d="M480 352 q18 -42 32 -52" stroke="#a9d9f0" stroke-width="6" fill="none" stroke-linecap="round"/>
+    <circle cx="496" cy="428" r="5" fill="#e8d98a" opacity=".9"/>
+  </g>
+  <g>
+    <rect x="600" y="232" width="180" height="190" fill="#e8dfc8"/>
+    <path d="M590 254 h200 l-16 -28 h-168 z" fill="#b4553f"/>
+    <rect x="612" y="268" width="156" height="30" fill="#f2f0e8"/>
+    <g fill="#4a7d6e">
+      <rect x="612" y="268" width="26" height="30"/>
+      <rect x="664" y="268" width="26" height="30"/>
+      <rect x="716" y="268" width="26" height="30"/>
+    </g>
+    <rect x="642" y="322" width="98" height="100" fill="#3a4a55" opacity=".7"/>
+    <rect x="600" y="232" width="180" height="190" fill="none" stroke="#c9bf9c" stroke-width="3"/>
+  </g>
+  <path d="M0 500 L128 500 Q156 440 92 402 Q40 424 0 414 Z" fill="#cdbb8c"/>
+  <circle cx="642" cy="126" r="26" fill="#ffffff" opacity=".95"/>
+  <circle cx="634" cy="118" r="8" fill="#eef4f6"/>
+</svg>`;
+
+const ART_SHOP = `
+<svg viewBox="0 0 800 500" preserveAspectRatio="none">
+  <rect width="800" height="500" fill="#e9e2d2"/>
+  <rect y="420" width="800" height="80" fill="#cbbfa6"/>
+  <rect x="20" y="190" width="110" height="280" fill="#5a7d6e"/>
+  <rect x="20" y="190" width="110" height="280" fill="none" stroke="#47655a" stroke-width="4"/>
+  <circle cx="112" cy="330" r="6" fill="#c9a227"/>
+  <rect x="160" y="100" width="176" height="24" fill="#b9a888"/>
+  <rect x="160" y="124" width="176" height="196" fill="#d8cfba"/>
+  <rect x="160" y="240" width="176" height="24" fill="#b9a888"/>
+  <g>
+    <rect x="176" y="150" width="46" height="34" rx="4" fill="#3a4a55"/>
+    <circle cx="199" cy="167" r="9" fill="#7fb3c8"/>
+    <rect x="234" y="150" width="38" height="34" rx="4" fill="#c98fa8"/>
+    <rect x="284" y="150" width="38" height="34" rx="4" fill="#e8b04b"/>
+    <rect x="176" y="196" width="38" height="34" rx="4" fill="#a8c686"/>
+    <rect x="226" y="196" width="46" height="34" rx="4" fill="#3a4a55"/>
+    <rect x="284" y="196" width="38" height="34" rx="4" fill="#d97b6c"/>
+    <rect x="176" y="272" width="42" height="36" rx="4" fill="#7fb3c8"/>
+    <rect x="230" y="272" width="42" height="36" rx="4" fill="#e8b04b"/>
+    <rect x="284" y="272" width="38" height="36" rx="4" fill="#c98fa8"/>
+  </g>
+  <rect x="560" y="100" width="200" height="24" fill="#b9a888"/>
+  <rect x="560" y="124" width="200" height="196" fill="#d8cfba"/>
+  <rect x="560" y="240" width="200" height="24" fill="#b9a888"/>
+  <g>
+    <rect x="578" y="152" width="40" height="34" rx="4" fill="#a8c686"/>
+    <rect x="630" y="152" width="52" height="34" rx="4" fill="#3a4a55"/>
+    <rect x="694" y="152" width="48" height="34" rx="4" fill="#d97b6c"/>
+    <ellipse cx="600" cy="212" rx="30" ry="12" fill="#f0e6c8"/>
+    <ellipse cx="668" cy="212" rx="30" ry="12" fill="#f0e6c8"/>
+    <path d="M580 276 h44 l-6 -30 h-32 z" fill="#e8dfc8" stroke="#b9a888" stroke-width="3"/>
+    <path d="M648 276 h44 l-6 -30 h-32 z" fill="#e8dfc8" stroke="#b9a888" stroke-width="3"/>
+  </g>
+  <rect x="140" y="340" width="640" height="26" fill="#8a6a4a"/>
+  <rect x="140" y="366" width="640" height="110" fill="#7a5c3e"/>
+  <g>
+    <circle cx="450" cy="222" r="26" fill="#e8c9a8"/>
+    <path d="M424 216 a26 26 0 0 1 52 0 z" fill="#e8e2d6"/>
+    <rect x="418" y="248" width="64" height="92" rx="10" fill="#f7f4ee"/>
+    <rect x="430" y="252" width="6" height="80" fill="#d8d2c6"/>
+    <rect x="452" y="262" width="16" height="30" fill="#e8b04b"/>
+    <circle cx="438" cy="216" r="3" fill="#3a4a55"/>
+    <circle cx="462" cy="216" r="3" fill="#3a4a55"/>
+    <path d="M440 230 q10 8 20 0" stroke="#3a4a55" stroke-width="3" fill="none"/>
+  </g>
+</svg>`;
+
+const ART_BEACH = `
+<svg viewBox="0 0 800 500" preserveAspectRatio="none">
+  <defs><linearGradient id="sky3" x1="0" y1="0" x2="0" y2="1">
+    <stop offset="0" stop-color="#a8b9c4"/><stop offset="1" stop-color="#e2e9ec"/>
+  </linearGradient></defs>
+  <rect width="800" height="500" fill="url(#sky3)"/>
+  <rect y="170" width="800" height="170" fill="#4d7f9b"/>
+  <g stroke="#6f9db4" stroke-width="3" opacity=".7">
+    <path d="M0 220 q60 -12 120 0 t120 0 t120 0 t120 0 t120 0 t120 0" fill="none"/>
+    <path d="M0 262 q60 -12 120 0 t120 0 t120 0 t120 0 t120 0 t120 0" fill="none"/>
+    <path d="M0 300 q60 -12 120 0 t120 0 t120 0 t120 0 t120 0 t120 0" fill="none"/>
+  </g>
+  <rect y="340" width="800" height="160" fill="#ddcfa6"/>
+  <path d="M0 340 q200 16 400 4 t400 -8 v14 h-800 z" fill="#cbbd94"/>
+  <path d="M640 60 L800 40 L800 420 L660 420 Z" fill="#6d6357"/>
+  <path d="M640 60 L800 40 L800 120 L648 150 Z" fill="#7d7365"/>
+  <path d="M656 180 L800 168 L800 300 L668 306 Z" fill="#5f574c"/>
+  <rect x="672" y="240" width="96" height="104" rx="4" fill="#2f5d50"/>
+  <rect x="672" y="240" width="96" height="104" rx="4" fill="none" stroke="#1d3d35" stroke-width="4"/>
+  <circle cx="750" cy="294" r="6" fill="#8a6a4a"/>
+  <text x="720" y="232" font-size="14" fill="#efe6cd" text-anchor="middle" font-family="sans-serif">6</text>
+  <g>
+    <rect x="40" y="380" width="300" height="18" fill="#8a6a4a"/>
+    <rect x="52" y="398" width="14" height="70" fill="#7a5c3e"/>
+    <rect x="122" y="398" width="14" height="70" fill="#7a5c3e"/>
+    <rect x="192" y="398" width="14" height="70" fill="#7a5c3e"/>
+    <rect x="262" y="398" width="14" height="70" fill="#7a5c3e"/>
+    <rect x="326" y="398" width="14" height="70" fill="#7a5c3e"/>
+    <path d="M120 380 q60 -34 130 -14 q30 22 -6 30 q-70 6 -124 -16 z" fill="#e6dfd0"/>
+    <path d="M120 380 q60 -34 130 -14 q30 22 -6 30 q-70 6 -124 -16 z" fill="none" stroke="#c9c2b3" stroke-width="3"/>
+    <rect x="236" y="344" width="26" height="34" rx="5" fill="#3a4a55"/>
+    <rect x="243" y="318" width="12" height="30" fill="#3a4a55"/>
+  </g>
+  <circle cx="420" cy="150" r="22" fill="#ffffff" opacity=".95"/>
+  <circle cx="413" cy="143" r="7" fill="#eef4f6"/>
+</svg>`;
+
+const ART_TUNNELS = `
+<svg viewBox="0 0 800 500" preserveAspectRatio="none">
+  <rect width="800" height="500" fill="#1e2428"/>
+  <path d="M0 0 h800 v130 Q400 240 0 130 Z" fill="#2b3238"/>
+  <g stroke="#343d43" stroke-width="3" fill="none" opacity=".9">
+    <path d="M0 70 Q400 190 800 70"/>
+    <path d="M0 110 Q400 230 800 110"/>
+  </g>
+  <rect y="420" width="800" height="80" fill="#15191c"/>
+  <path d="M0 420 Q400 400 800 420" stroke="#2b3238" stroke-width="6" fill="none"/>
+  <g stroke="#3f4a50" stroke-width="9" fill="none" stroke-linecap="round">
+    <path d="M0 250 H200"/>
+    <path d="M0 282 H200"/>
+    <path d="M0 314 H160"/>
+  </g>
+  <g fill="#2b3238">
+    <rect x="60" y="60" width="120" height="200" rx="6"/>
+    <rect x="72" y="72" width="96" height="176" fill="#0e1214"/>
+    <rect x="60" y="248" width="120" height="12" fill="#3f4a50"/>
+  </g>
+  <g stroke="#5b666d" stroke-width="7" stroke-linecap="round">
+    <line x1="86" y1="120" x2="86" y2="248"/>
+    <line x1="112" y1="120" x2="112" y2="248"/>
+    <line x1="138" y1="120" x2="138" y2="248"/>
+    <line x1="76" y1="150" x2="158" y2="150"/>
+    <line x1="76" y1="182" x2="158" y2="182"/>
+    <line x1="76" y1="214" x2="158" y2="214"/>
+  </g>
+  <rect x="200" y="400" width="76" height="66" rx="6" fill="#3f4a50"/>
+  <rect x="212" y="382" width="52" height="20" rx="4" fill="#5b666d"/>
+  <rect x="330" y="376" width="110" height="90" fill="#4a3d2e"/>
+  <rect x="330" y="376" width="110" height="12" fill="#5c4b39"/>
+  <g stroke="#b9bec2" stroke-width="7" stroke-linecap="round">
+    <line x1="356" y1="410" x2="410" y2="440"/>
+    <line x1="410" y1="410" x2="356" y2="440"/>
+  </g>
+  <circle cx="356" cy="410" r="9" fill="#c94040"/>
+  <circle cx="410" cy="440" r="9" fill="#c94040"/>
+  <rect x="470" y="230" width="110" height="110" rx="8" fill="#3a444a"/>
+  <rect x="484" y="244" width="82" height="52" rx="4" fill="#0e1214"/>
+  <circle cx="500" cy="322" r="9" fill="#4fd08a"/>
+  <circle cx="524" cy="322" r="9" fill="#c9a227"/>
+  <path d="M580 300 H600 V420" stroke="#8a3f3f" stroke-width="12" fill="none"/>
+  <path d="M470 285 H400" stroke="#8a3f3f" stroke-width="12" fill="none"/>
+  <g>
+    <rect x="600" y="150" width="180" height="240" rx="10" fill="#2b3238"/>
+    <circle cx="690" cy="240" r="62" fill="#e9eef0"/>
+    <circle cx="668" cy="216" r="20" fill="#ffffff"/>
+    <circle cx="690" cy="330" r="18" fill="#4fd08a" opacity=".8"/>
+    <circle cx="730" cy="330" r="18" fill="#4fd08a" opacity=".4"/>
+  </g>
+</svg>`;
+
+const ART_DOME = `
+<svg viewBox="0 0 800 500" preserveAspectRatio="none">
+  <rect width="800" height="500" fill="#171d20"/>
+  <path d="M0 0 h800 v270 Q400 330 0 270 Z" fill="#0d1214"/>
+  ${(()=>{ let s='';
+    for(let r=0;r<2;r++) for(let c=0;c<6;c++){
+      const x=52+c*118, y=34+r*92;
+      s+='<rect x="'+x+'" y="'+y+'" width="98" height="68" rx="4" fill="#2e6f8f" stroke="#080b0c" stroke-width="3"/>';
+      s+='<rect x="'+(x+8)+'" y="'+(y+8)+'" width="82" height="52" fill="#8fd0e6" opacity=".5"/>';
+      s+='<rect x="'+(x+14)+'" y="'+(y+30)+'" width="18" height="24" fill="#4a7d6e" opacity=".8"/>';
+      s+='<rect x="'+(x+42)+'" y="'+(y+22)+'" width="20" height="32" fill="#c98fa8" opacity=".8"/>';
+    }
+    return s; })()}
+  <ellipse cx="400" cy="430" rx="360" ry="70" fill="#232b2e"/>
+  <ellipse cx="400" cy="416" rx="330" ry="60" fill="#2c3639"/>
+  <g>
+    <path d="M340 380 L340 250 q60 -70 120 0 L460 380 Z" fill="#3a2f2a"/>
+    <path d="M352 380 L352 260 q48 -56 96 0 L448 380 Z" fill="#4d3f37"/>
+    <rect x="330" y="368" width="140" height="26" rx="8" fill="#3a2f2a"/>
+    <ellipse cx="400" cy="250" rx="52" ry="20" fill="#4d3f37"/>
+  </g>
+  <g>
+    <circle cx="600" cy="240" r="25" fill="#e8c9a8"/>
+    <path d="M575 234 a25 25 0 0 1 50 0 z" fill="#2b3238"/>
+    <rect x="572" y="264" width="56" height="110" rx="10" fill="#20272a"/>
+    <rect x="586" y="268" width="10" height="96" fill="#f2ede0"/>
+    <rect x="606" y="268" width="10" height="96" fill="#f2ede0"/>
+    <rect x="592" y="286" width="20" height="16" fill="#8a3f3f"/>
+    <circle cx="592" cy="240" r="3" fill="#20272a"/>
+    <circle cx="610" cy="240" r="3" fill="#20272a"/>
+  </g>
+  <g>
+    <rect x="60" y="392" width="680" height="24" rx="8" fill="#3f4a50"/>
+    <rect x="80" y="416" width="640" height="84" fill="#2b3238"/>
+    <rect x="130" y="348" width="128" height="46" rx="6" fill="#3a444a"/>
+    <rect x="142" y="358" width="60" height="26" rx="3" fill="#4fd08a" opacity=".55"/>
+    <circle cx="224" cy="371" r="7" fill="#c9a227"/>
+    <rect x="270" y="356" width="12" height="38" fill="#5b666d"/>
+  </g>
+</svg>`;
+
+/* =========================================================
+   ENGINE
+   ========================================================= */
+function go(id){
+  state.scene=id; state.hs=null;
+  const sc=SCENES[id];
+  artEl.innerHTML = sc.art;
+  buildHotspots(sc);
+  const t = sc.enter ? sc.enter() : null;
+  if(state.scene!==id) return;
+  setActions([]);
+  say(t || sc.desc || '');
+}
+
+function buildHotspots(sc){
+  hsEl.innerHTML='';
+  (sc.hotspots||[]).forEach(hs=>{
+    const d=document.createElement('div');
+    d.className='hs';
+    d.style.left=hs.x+'%'; d.style.top=hs.y+'%';
+    d.style.width=hs.w+'%'; d.style.height=hs.h+'%';
+    d.addEventListener('click', ev=>{ ev.stopPropagation(); tapHotspot(hs); });
+    hsEl.appendChild(d);
+    hs._el = d;
+  });
+}
+
+function tapHotspot(hs){
+  state.hs = hs;
+
+  if(state.sel){
+    const item = state.sel;
+    clearSel();
+    let handled = false;
+    try { handled = hs.use ? hs.use(item) : false; } catch(e){ handled = false; }
+    if(!handled){
+      say('The '+ITEMS[item].n.toLowerCase()+' is no use on '+hs.label+'.');
+    }
+    if(state.hs===hs) setActions(hs.acts?hs.acts():[]);
+    return;
+  }
+
+  say(hs.look ? hs.look() : 'You look at '+hs.label+'.');
+  setActions(hs.acts ? hs.acts() : []);
+}
+
+/* ---------- overlays ---------- */
+function showOverlay(html, btnLabel, cb){
+  overlay.innerHTML = '<div class="card">'+html+
+    '<button id="ovBtn">'+btnLabel+'</button></div>';
+  overlay.classList.add('show');
+  $('ovBtn').onclick = ()=>{ overlay.classList.remove('show'); cb(); };
+}
+
+function ending(title, body){
+  showOverlay('<h1>'+title+'</h1><p>'+body+'</p>',
+    'Begin again', ()=> reset());
+}
+
+function caught(reason){
+  showOverlay('<h1>CAUGHT</h1><p>'+reason+'</p>'+
+    '<p class="small">You wake in the flat. Your things are still with you \u2014 '+
+    'they are not cruel here, only thorough.</p>',
+    'Return to the flat', ()=> go('flat'));
+}
+
+function reset(){
+  state.inv=[]; state.sel=null; state.hs=null;
+  Object.keys(F).forEach(k=>delete F[k]);
+  renderInv();
+  go('flat');
+}
+
+/* =========================================================
+   SCENES
+   ========================================================= */
+
+/* ---------- 1. THE FLAT ---------- */
+const SCENES = {};
+
+SCENES.flat = {
+  art: ART_FLAT,
+  hotspots: [
+    {
+      id:'door', label:'the door', x:6.25, y:18, w:16.25, h:62,
+      look: ()=> F.doorUnlocked
+        ? 'The door stands open onto a white corridor.'
+        : 'Heavy, glossy green, and shut. There is no handle on this side \u2014 only a '+
+          'keyhole, and a small brass slot marked <b>TRAY</b>.',
+      acts: ()=>{
+        const a=[];
+        if(F.doorUnlocked) a.push({t:'Step out', run:()=> go('corridor')});
+        else {
+          a.push({t:'Try the handle', run:()=> say('There is no handle. Whoever built this '+
+            'door wanted you to notice that.')});
+          if(has('key')) a.push({t:'Unlock it with the small key', run:()=>{
+            F.doorUnlocked=true;
+            say('The key turns. The door swings outward, into a white corridor that smells '+
+                'of chlorine and cut grass.');
+          }});
+        }
+        return a;
+      },
+      use:(item)=>{
+        if(item==='key'){
+          if(!F.doorUnlocked){
+            F.doorUnlocked=true;
+            say('The key turns. The door swings outward, into a white corridor.');
+          } else say('It is already unlocked.');
+          return true;
+        }
+        return false;
+      }
+    },
+    {
+      id:'notice', label:'the framed notice', x:24.5, y:22, w:7.75, h:16,
+      look: ()=> '<b>THE VILLAGE \u2014 RULES.</b><br>'+
+        '1. Questions are discouraged.<br>2. Requests are considered.<br>'+
+        '3. Information is a privilege.<br>4. You are Number 12.',
+      acts: ()=>[]
+    },
+    {
+      id:'mirror', label:'the mirror', x:32.7, y:18.8, w:14.6, h:30.4,
+      look: ()=> F.mirrorMoved
+        ? 'The mirror hangs crooked now. Behind it, scratched into the plaster: '+
+          '<i>LOW WATER. THE DOOR IN THE CLIFF. DON\u2019T DRINK THE TEA.</i>'
+        : 'An oval mirror in a gilt frame. It is hanging very slightly crooked. '+
+          'You look like a man who has been travelling.',
+      acts: ()=>{
+        if(!F.mirrorMoved) return [{t:'Straighten it', run:()=>{
+          F.mirrorMoved=true;
+          say('You lift the frame to straighten it \u2014 and find the wall behind it '+
+              'covered in scratches. Somebody wrote here, in a hurry, with something sharp:'+
+              '<br><br><i>LOW WATER. THE DOOR IN THE CLIFF. DON\u2019T DRINK THE TEA.</i>');
+        }}];
+        return [{t:'Look behind it again', run:()=> say(
+          '<i>LOW WATER. THE DOOR IN THE CLIFF. DON\u2019T DRINK THE TEA.</i>')}];
+      }
+    },
+    {
+      id:'window', label:'the window', x:52.5, y:9, w:42.5, h:60,
+      look: ()=> 'Painted shut, and painted over twice. Three floors up. Below: a flowerbed, '+
+        'immaculate; a striped awning; and a man in a straw boater who is watching this window '+
+        'without appearing to.',
+      acts: ()=>[{t:'Force it', run:()=> say(
+        'You put your shoulder to it. The glass is thick. The frame does not move, and '+
+        'somewhere below, a dog begins to bark.')}]
+    },
+    {
+      id:'sofa', label:'the sofa', x:23.75, y:66, w:35, h:26,
+      look: ()=> 'A sofa almost like yours. The cushions have been put back the wrong way round.',
+      acts: ()=>[{t:'Search the cushions', run:()=> say(
+        'Loose change in a currency you do not recognise. A hairgrip. A cinema ticket for a '+
+        'film that has not been made yet.')}]
+    },
+    {
+      id:'tray', label:'the breakfast tray', x:59.75, y:69, w:17.5, h:23,
+      look: ()=> 'A tray: a pot of tea, one cup, one covered dish, one teaspoon. '+
+        'The pot is still hot. Somebody was here a moment ago.',
+      acts: ()=>{
+        const a=[];
+        a.push({t:'Lift the cover', run:()=>{
+          if(!F.keyTaken){
+            F.keyTaken=true; add('key');
+            say('Under the cover: a plate, a small silver key, and a printed card.'+
+                '<br><br><i>WELCOME TO THE VILLAGE. BREAKFAST IS AT EIGHT. '+
+                'YOU ARE NUMBER 12.</i>');
+          } else say('Nothing but a plate, wiped clean.');
+        }});
+        if(!has('spoon')) a.push({t:'Take the teaspoon', run:()=>{
+          add('spoon');
+          say('You pocket the teaspoon. Village silver \u2014 the monogram is a number, '+
+              'not a letter.');
+        }});
+        a.push({t:'Read the Tally Ho', run:()=>{
+          F.readPaper=true; add('paper');
+          say('<b>THE TALLY HO.</b> Page one: a photograph of Number Two, smiling. '+
+              'Page four: births, deaths, and a crossword nobody has finished. '+
+              'Page six: the tide table \u2014 <b>LOW WATER 18:04</b>.'+
+              '<br><br>And at the foot of page six, in the small ads, in a typeface that '+
+              'does not match the others:<br><br>'+
+              '<i>TO THE ONE WHO IS NOT A NUMBER. WE ARE ON 6-2-6. WE ARE LISTENING.</i>');
+        }});
+        a.push({t:'Drink the tea', run:()=>{
+          say('The tea is very good. The room does something slow and sideways. '+
+              'When you open your eyes, the tray has been taken away and put back, '+
+              'the sun has moved, and your shoes are on the wrong feet.');
+        }});
+        return a;
+      }
+    },
+    {
+      id:'phone', label:'the telephone', x:80, y:70, w:15, h:22,
+      look: ()=> 'A white telephone. There is no dial. There are no buttons. '+
+        'There is, all the same, a dialling tone.',
+      acts: ()=>[{t:'Pick it up', run:()=>{
+        if(!F.rang){
+          F.rang=true;
+          say('A woman\u2019s voice, very close and very calm: <i>"Good morning, Number Twelve. '+
+              'Number Two will see you at eleven. Please do not be late. '+
+              'Please do not be early."</i><br><br>A click. Then the tone again.');
+        } else {
+          say('<i>"Good morning, Number Twelve,"</i> says the voice, before you have said '+
+              'anything at all.');
+        }
+      }}]
+    }
+  ],
+  desc: 'You wake on a sofa that is almost yours. The pattern is wrong. So is the window.'
+};
+
+/* ---------- 2. THE CORRIDOR ---------- */
+SCENES.corridor = {
+  art: ART_CORRIDOR,
+  desc: 'A white corridor, curving gently, as if the building were apologising for something.',
+  hotspots: [
+    {
+      id:'flatDoor', label:'your door', x:2.5, y:26, w:12.5, h:54,
+      look: ()=> 'Number 12. The number is stencilled, not fixed. It could be changed '+
+        'in a moment.',
+      acts: ()=>[{t:'Go back inside', run:()=> go('flat')}]
+    },
+    {
+      id:'arches', label:'the arcade', x:17.5, y:18, w:55, h:54,
+      look: ()=> 'Between the arches you can see the square three floors below: the fountain, '+
+        'the bandstand, the striped awning of the shop. Everyone down there is walking '+
+        'at exactly the same speed.',
+      acts: ()=>[{t:'Go down to the square', run:()=> go('square')}]
+    },
+    {
+      id:'neighbour', label:'the woman', x:41, y:50, w:9, h:26,
+      look: ()=> '"Good morning, Number Twelve." She does not look up. She is watering '+
+        'a plastic plant.',
+      acts: ()=>[{t:'Talk to her', run:()=> say(
+        '"You\u2019ll want the man on the bandstand," she says. "He remembers things. '+
+        'He likes to be paid for it."<br><br>A pause.<br><br>'+
+        '"You didn\u2019t hear that from me. Nobody hears anything from me."')}]
+    },
+    {
+      id:'lift', label:'the lift', x:77.5, y:24, w:17.5, h:56,
+      look: ()=> 'A lift with one button. The button has no label.',
+      acts: ()=>[{t:'Press the button', run:()=>{
+        say('The lift hums, considers the request, and opens its doors on the square. '+
+            'It goes where it is required to go.');
+        go('square');
+      }}]
+    }
+  ]
+};
+
+/* ---------- 3. THE VILLAGE SQUARE ---------- */
+SCENES.square = {
+  art: ART_SQUARE,
+  enter: ()=>{
+    if(F.cut) return 'The square, in sunshine. The fountain plays. The bandstand is empty. '+
+      'And every white thing in the Village is lying on the ground, not moving, '+
+      'like punctured lungs.';
+    return 'The square: the fountain, the bandstand, the shop with its striped awning, '+
+      'and the sea beyond the houses. Everyone is smiling. Nobody is talking.';
+  },
+  hotspots: [
+    {
+      id:'fountain', label:'the fountain', x:45, y:60, w:22, h:26,
+      look: ()=> 'A fountain. Water, a dolphin, a great deal of concrete. '+
+        'Something glints at the bottom of the basin.',
+      acts: ()=>{
+        if(!has('coin')) return [{t:'Reach in', run:()=>{
+          add('coin');
+          say('Cold water to the elbow. You come up with a single coin \u2014 one credit, '+
+              'stamped with somebody else\u2019s number. Across the square, a white shape '+
+              'pauses, considers you, and drifts on.');
+        }}];
+        return [];
+      }
+    },
+    {
+      id:'bandstand', label:'the bandstand', x:26, y:50, w:20, h:32,
+      look: ()=> 'A bandstand, empty except for a man in a striped blazer and a straw boater, '+
+        'sitting on the steps and feeding crumbs to nothing in particular.',
+      acts: ()=>[{t:'Talk to him', run:()=> talkBandstand()}],
+      use:(item)=>{
+        if(item==='coin'){ talkBandstand(); return true; }
+        return false;
+      }
+    },
+    {
+      id:'shop', label:'the shop', x:75, y:46, w:23, h:38,
+      look: ()=> 'A shop. The awning is striped green and cream. Over the door, '+
+        'in gold letters: <i>EVERYTHING YOU WANT</i>.',
+      acts: ()=>[{t:'Go in', run:()=> go('shop')}]
+    },
+    {
+      id:'beachPath', label:'the path', x:0, y:80, w:19, h:20,
+      look: ()=> 'A path of white stones winding down between the houses, towards '+
+        'the sound of the sea.',
+      acts: ()=>[{t:'Go down to the beach', run:()=>{
+        if(!has('boater') && !F.cut){
+          go('beach');
+          caught('You step onto the sand. Something white rises out of the water and comes '+
+            'towards you very quickly, and the last thing you see is the sky.');
+        } else {
+          go('beach');
+        }
+      }}]
+    },
+    {
+      id:'dome', label:'the green dome', x:8, y:28, w:20, h:16,
+      look: ()=> 'On the hill above the houses, a great green dome. It has no windows. '+
+        'It has never had windows.',
+      acts: ()=>[]
+    },
+    {
+      id:'rover', label:'the white sphere', x:77, y:20, w:9, h:12,
+      look: ()=> F.cut
+        ? 'It is lying in the road, deflated, twitching very slightly.'
+        : 'A white sphere, drifting at head height. It has no face. It does not need one.',
+      acts: ()=> F.cut ? [] : [{t:'Touch it', run:()=> say(
+        'You raise a hand. It rises, unhurried, until it is level with your eyes, '+
+        'and stays there. You put your hand down. So does it.')}]
+    }
+  ]
+};
+
+function talkBandstand(){
+  if(F.gaveCoin){
+    say('"Low water," he says, without being asked. "The door in the cliff. Six o\u2019clock. '+
+        'That\u2019s all I know and all I\u2019ll say."');
+    return;
+  }
+  if(has('coin')){
+    remove('coin'); add('boater'); F.gaveCoin=true;
+    say('He looks at the coin in your hand. "For that," he says, "I\u2019ll tell you a thing '+
+        'and give you a thing."<br><br>He takes the coin. He gives you his straw boater.'+
+        '<br><br>"Low water at six," he says. "There\u2019s a door in the cliff. The sea leaves '+
+        'it open twice a day. And the Rovers don\u2019t bother a man who looks like he belongs '+
+        'here."<br><br>He settles back on the steps. "That\u2019s my whole life, that is. Spent."');
+    return;
+  }
+  say('"I remember things," he says. "Things I\u2019ve seen. Things I\u2019ve been. '+
+      'But I don\u2019t remember anything for free."');
+}
+
+/* ---------- 4. THE SHOP ---------- */
+SCENES.shop = {
+  art: ART_SHOP,
+  desc: 'Inside: the smell of new paint and old cardboard. A small man in a white coat '+
+        'stands behind the counter, smiling the way a man smiles when he has been told to.',
+  hotspots: [
+    {
+      id:'shopkeeper', label:'the shopkeeper', x:50, y:40, w:14, h:30,
+      look: ()=> 'A small man in a white coat. His smile has been in place for some time.',
+      acts: ()=>[{t:'Talk to him', run:()=> say(
+        '"Good morning, Number Twelve. Everything you want, nothing you need." '+
+        'He spreads his hands. "Everything is charged to your number. '+
+        'That is the beauty of the system."')}]
+    },
+    {
+      id:'shelfLeft', label:'the left-hand shelf', x:20, y:20, w:22, h:40,
+      look: ()=> has('radio')
+        ? 'A gap on the shelf where the transistor was.'
+        : 'Tins, tins, and a transistor radio. The radio has a price ticket: '+
+          '<b>CHARGED TO YOUR NUMBER</b>.',
+      acts: ()=>{
+        if(has('radio')) return [];
+        return [{t:'Take the transistor', run:()=>{
+          add('radio');
+          say('You pick up the transistor. The shopkeeper does not look up. '+
+              '"Charged to Number Twelve," he says, to the air. "Everything is."');
+        }}];
+      }
+    },
+    {
+      id:'shelfRight', label:'the right-hand shelf', x:70, y:20, w:25, h:40,
+      look: ()=> 'Sun cream, postcards of the Village, model Rovers in three sizes, '+
+        'and a rolled map with a rubber band round it.',
+      acts: ()=>[{t:'Ask about the map', run:()=> say(
+        '"Maps," says the shopkeeper, "are not sold. Maps are <i>issued</i>." '+
+        'He says it the way a man says a thing he has been told to say.')}]
+    },
+    {
+      id:'shopDoor', label:'the door', x:2.5, y:38, w:14, h:56,
+      look: ()=> 'The door back to the square. It has a bell on it that rings '+
+        'when you leave, and also when you arrive.',
+      acts: ()=>[{t:'Leave', run:()=> go('square')}]
+    }
+  ]
+};
+
+/* ---------- 5. THE BEACH ---------- */
+SCENES.beach = {
+  art: ART_BEACH,
+  desc: 'The sea, the sand, and a wind that smells of nothing you can name.',
+  hotspots: [
+    {
+      id:'boat', label:'the boat', x:12, y:62, w:30, h:22,
+      look: ()=> F.fuelled
+        ? 'The boat, fuelled and ready. The chain through the bow ring is a formality now.'
+        : 'A small boat at the jetty, outboard motor tilted up, a chain through the bow ring. '+
+          'The fuel tank is empty and has been left open.',
+      acts: ()=>{
+        const a=[];
+        if(!F.fuelled) a.push({t:'Examine the motor', run:()=> say(
+          'An outboard. Empty. Somebody has taken the fuel and left the can behind, '+
+          'which is either carelessness or a joke.')});
+        if(F.fuelled) a.push({t:'Cast off', run:()=> ending('THE SEA',
+          'The motor catches on the second pull. You slip the chain, and the Village begins '+
+          'to slide away \u2014 the awning, the fountain, the bandstand, the green dome on its '+
+          'hill, all of it getting smaller and no less perfect.'+
+          '<br><br>Behind you, a light comes on. It is not the sun. It follows you for an '+
+          'hour and then stops, all at once, as if it had been called back.'+
+          '<br><br>Ahead: nothing. Open, grey, ordinary nothing, with weather in it. '+
+          'You have never been so glad to see weather.<br><br>'+
+          'You are a free man. You are almost certain of it.')});
+        return a;
+      },
+      use:(item)=>{
+        if(item==='fuel'){
+          if(!F.fuelled){
+            F.fuelled=true;
+            say('You pour the fuel in. The motor turns over and settles into a putter. '+
+                'The chain is a formality now.');
+          } else say('It is already full.');
+          return true;
+        }
+        return false;
+      }
+    },
+    {
+      id:'cliffDoor', label:'the iron door', x:83, y:48, w:14, h:24,
+      look: ()=> 'A low iron door set into the base of the cliff, painted the same green '+
+        'as everything else. It is rusted into its frame. Above it, chalked, a downward '+
+        'arrow and the number <b>6</b>.',
+      acts: ()=>{
+        if(F.doorPried) return [{t:'Go in', run:()=> go('tunnels')}];
+        return [{t:'Pull it', run:()=> say(
+          'It does not move. It has not moved for a very long time.')}];
+      },
+      use:(item)=>{
+        if(item==='spoon'){
+          if(!F.doorPried){
+            F.doorPried=true;
+            say('You work the handle of the teaspoon into the rusted gap and worry the latch '+
+                'pin loose. The door gives with a sound like a cough. The dark inside smells '+
+                'of the sea and of electricity.');
+          } else say('It is already open.');
+          return true;
+        }
+        return false;
+      }
+    },
+    {
+      id:'sea', label:'the sea', x:0, y:34, w:60, h:30,
+      look: ()=> 'Grey, patient, and enormous. Somewhere out there is a country you used to '+
+        'live in, and a job, and a name.',
+      acts: ()=>[]
+    },
+    {
+      id:'backPath', label:'the path up', x:0, y:80, w:22, h:20,
+      look: ()=> 'White stones, going back up between the houses.',
+      acts: ()=>[{t:'Go back up to the square', run:()=> go('square')}]
+    }
+  ]
+};
+
+/* ---------- 6. THE TUNNELS ---------- */
+SCENES.tunnels = {
+  art: ART_TUNNELS,
+  desc: 'Rock, cables, and the hum of something that has been running for a very long time. '+
+        'Light comes down through a hatch above your head.',
+  hotspots: [
+    {
+      id:'fuelCan', label:'the jerry can', x:25, y:76, w:12, h:18,
+      look: ()=> 'A jerry can, half full, standing in the water.',
+      acts: ()=>{
+        if(has('fuel')) return [];
+        return [{t:'Take it', run:()=>{
+          add('fuel');
+          say('You take the can. It is heavier than it looks, which is the best thing '+
+              'anyone has said about this place so far.');
+        }}];
+      }
+    },
+    {
+      id:'crate', label:'the crate', x:41, y:74, w:15, h:20,
+      look: ()=> 'A crate of tools. Most of them have been taken. One pair of pliers remains, '+
+        'insulation intact.',
+      acts: ()=>{
+        if(has('pliers')) return [];
+        return [{t:'Take the pliers', run:()=>{
+          add('pliers');
+          say('Pliers. Insulated. Somebody here expected to need them, and then didn\u2019t.');
+        }}];
+      }
+    },
+    {
+      id:'controlBox', label:'the grey box', x:58.75, y:46, w:13.75, h:22,
+      look: ()=> F.cut
+        ? 'The Rover control box. The cable hangs severed. Every screen in the Village is, '+
+          'at this moment, showing nothing at all.'
+        : 'A grey box. A thick armoured cable runs out of it, through the rock, '+
+          'towards the sea. The cable hums.',
+      acts: ()=>{
+        if(F.cut) return [];
+        if(has('pliers')) return [{t:'Cut the cable', run:()=>{
+          F.cut=true;
+          say('You close the pliers on the cable. There is a bang, a smell of hot metal, '+
+              'and then a silence so complete that you can hear the sea through the rock.'+
+              '<br><br>Somewhere above you, a great many white things fall out of the sky.');
+        }}];
+        return [{t:'Pull the cable', run:()=> say(
+          'It is armoured, and it is live. You would need something insulated, and you '+
+          'would need to be less tired.')}];
+      }
+    },
+    {
+      id:'roverBay', label:'the rack', x:75, y:28, w:22, h:48,
+      look: ()=> F.cut
+        ? 'A rack of white spheres, dark and still.'
+        : 'A rack of white spheres, each one the size of a man, each one faintly breathing.',
+      acts: ()=>{
+        if(F.cut) return [{t:'Touch one', run:()=> say(
+          'Cold. Inert. Like a burst balloon, but heavier.')}];
+        return [{t:'Touch one', run:()=> say(
+          'It turns, slowly, to face you. You take your hand away. It does not.')}];
+      }
+    },
+    {
+      id:'ladder', label:'the ladder', x:7.5, y:12, w:15, h:40,
+      look: ()=> 'A steel ladder bolted to the rock, going up to a hatch. Light comes through '+
+        'the hatch, and a voice, and the sound of many small screens.',
+      acts: ()=>[{t:'Climb up', run:()=> go('dome')}]
+    }
+  ]
+};
+
+/* ---------- 7. THE GREEN DOME ---------- */
+SCENES.dome = {
+  art: ART_DOME,
+  desc: 'A round room, and a wall of screens, and every screen is showing the Village.',
+  hotspots: [
+    {
+      id:'chair', label:'the chair', x:42.5, y:34, w:17.5, h:42,
+      look: ()=> 'A chair. Leather, worn shiny at the arms, facing the wall of screens. '+
+        'It is the only comfortable thing in the Village.',
+      acts: ()=>[{t:'Sit in it', run:()=> ending('NUMBER TWO',
+        'You sit. The leather is warm \u2014 somebody was sitting here a moment ago, '+
+        'and got up, and did not come back.'+
+        '<br><br>The screens light one by one. Every one of them shows the Village: '+
+        'the square, the fountain, the bandstand, the beach. And one of them shows a man '+
+        'on a jetty, untying a boat.'+
+        '<br><br>You say the word, and the white thing comes out of the water. The word is '+
+        'easy to say. It is the first thing you have said in days that everyone agrees with.'+
+        '<br><br><i>"You are Number Two,"</i> says the voice.<br><br>And you are.')}]
+    },
+    {
+      id:'two', label:'the man in the dark suit', x:71, y:42, w:11, h:38,
+      look: ()=> 'A man in a dark suit, standing beside the chair with his hands behind '+
+        'his back. He is smiling in a way that suggests he has been rehearsing.',
+      acts: ()=>[{t:'Talk to him', run:()=> say(
+        '"Number Twelve," he says. "You have been extremely busy. I approve. We approve."'+
+        '<br><br>"You want to know who Number One is. Everyone does. The answer is that '+
+        'Number One is a chair, and the chair is empty, and it is always about to be filled."'+
+        '<br><br>He steps aside, and gestures to it. "Sit down. Or don\u2019t. '+
+        'Both are answers."')}]
+    },
+    {
+      id:'radio', label:'the transmitter', x:16, y:68, w:16, h:12,
+      look: ()=> F.readPaper
+        ? 'A transmitter. The dial goes up past every station you know, and stops at a '+
+          'number you have seen before, in the small ads.'
+        : 'A transmitter, and a wall of dials. You would not know where to begin.',
+      acts: ()=>{
+        if(F.usedRadio) return [];
+        if(!F.readPaper) return [{t:'Fiddle with the dial', run:()=> say(
+          'Static, and a voice reading numbers, and more static. You have no idea which '+
+          'number is yours.')}];
+        return [{t:'Transmit on 6-2-6', run:()=>{
+          F.usedRadio=true;
+          ending('WE ARE LISTENING',
+            'You key the transmitter and send your name, your service number, and the only '+
+            'frequency you have ever trusted.'+
+            '<br><br>The answer comes back at once \u2014 which means they were listening, '+
+            'which means they have always been listening.'+
+            '<br><br><i>"We have you,"</i> says the voice. <i>"Hold on."</i>'+
+            '<br><br>You hold on. You are still holding on. The screens show the Village. '+
+            'The Village is unchanged.'+
+            '<br><br>In the morning, a tray arrives, and the tea is very good, and the room '+
+            'does something slow and sideways.');
+        }}];
+      }
+    },
+    {
+      id:'console', label:'the console', x:20, y:78, w:60, h:18,
+      look: ()=> 'Rows of switches, all of them labelled with numbers, none of them labelled '+
+        'with what they do.',
+      acts: ()=>[]
+    },
+    {
+      id:'back', label:'the hatch', x:0, y:84, w:12, h:16,
+      look: ()=> 'The open hatch, and the ladder going back down into the rock.',
+      acts: ()=>[{t:'Climb down', run:()=> go('tunnels')}]
+    }
+  ]
+};
+
+/* =========================================================
+   LAYOUT + BOOT
+   ========================================================= */
+function layout(){
+  const wrap = document.getElementById('stageWrap');
+  const w = wrap.clientWidth - 16;
+  const h = wrap.clientHeight - 8;
+  if(w < 10 || h < 10) return;
+  let W = w, H = W * 5/8;
+  if(H > h){ H = h; W = H * 8/5; }
+  stage.style.width  = Math.floor(W) + 'px';
+  stage.style.height = Math.floor(H) + 'px';
+}
+window.addEventListener('resize', layout);
+window.addEventListener('orientationchange', ()=> setTimeout(layout,120));
+if(window.ResizeObserver) new ResizeObserver(layout).observe(document.getElementById('stageWrap'));
+
+$('hint').addEventListener('click', ()=>{
+  hsEl.querySelectorAll('.hs').forEach(el=>{
+    el.classList.remove('flash');
+    void el.offsetWidth;
+    el.classList.add('flash');
+    setTimeout(()=> el.classList.remove('flash'), 1800);
+  });
+});
+
+/* prevent double-tap zoom on iOS */
+let lastTouch = 0;
+document.addEventListener('touchend', e=>{
+  const now = Date.now();
+  if(now - lastTouch < 320) e.preventDefault();
+  lastTouch = now;
+}, {passive:false});
+
+/* ---------- title ---------- */
+function titleScreen(){
+  overlay.innerHTML =
+    '<div class="card">'+
+      '<p class="kicker">A point-and-click escape</p>'+
+      '<h1>THE VILLAGE</h1>'+
+      '<p>You wake in a flat that is almost yours. Outside the window there is no street '+
+        'you recognise \u2014 only a village, and a sea, and everyone smiling.</p>'+
+      '<p class="small">You are Number 12.</p>'+
+      '<button id="ovBtn">Begin</button>'+
+    '</div>';
+  overlay.classList.add('show');
+  $('ovBtn').onclick = ()=>{ overlay.classList.remove('show'); reset(); };
+}
+
+layout();
+renderInv();
+titleScreen();
+</script>
+</body>
+</html>

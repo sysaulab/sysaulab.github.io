@@ -805,7 +805,7 @@ function genWorld(){
   }
   const tx=Math.floor(cx)-2, ty=Math.floor(cy)-2;
   townCenter={ kind:'bld', type:'town', tx, ty, w:4, h:4,
-               x:tx*TS, y:ty*TS, ySort:(ty+4)*TS, cd:14,
+               x:tx*TS, y:ty*TS, ySort:(ty+4)*TS, cd:5,
                hp:TOWN_DEF.hp, maxHp:TOWN_DEF.hp, flash:0,
                lastDamageT:-999, regenAccum:0 };
   buildings.push(townCenter);
@@ -862,6 +862,41 @@ function unstickPlayer(){
       const ny=player.y+Math.sin(ang)*rad;
       if(!collideAt(nx,ny,player.r,false)){ player.x=nx; player.y=ny; return; }
     }
+  }
+}
+
+/* ---- Path invalidation & relocation helpers ---- */
+function invalidateVillagerPaths(){
+  for(const v of villagers){ v.path = null; v.pathIdx = 0; }
+}
+function findWalkableSpotNear(cx, cy, radius){
+  for(let tries=0; tries<40; tries++){
+    const a=Math.random()*TAU;
+    const r=Math.random()*radius;
+    const x=clamp(cx+Math.cos(a)*r, 16, WPX-16);
+    const y=clamp(cy+Math.sin(a)*r, 16, WPX-16);
+    if(!collideAt(x, y, 10, false)) return {x, y};
+  }
+  return null;
+}
+function evacuateVillagersFrom(tx, ty, w, h){
+  const x0=tx*TS, y0=ty*TS, x1=(tx+w)*TS, y1=(ty+h)*TS;
+  for(const v of villagers){
+    if(v.x + v.r <= x0 || v.x - v.r >= x1 ||
+       v.y + v.r <= y0 || v.y - v.r >= y1) continue;
+    let found=false;
+    for(let rad=8; rad<=220 && !found; rad+=6){
+      for(let a=0; a<16; a++){
+        const ang=a*TAU/16;
+        const nx=v.x+Math.cos(ang)*rad;
+        const ny=v.y+Math.sin(ang)*rad;
+        if(nx + v.r > x0 && nx - v.r < x1 &&
+           ny + v.r > y0 && ny - v.r < y1) continue;
+        if(collideAt(nx, ny, v.r, false)) continue;
+        v.x=nx; v.y=ny; found=true; break;
+      }
+    }
+    v.path=null;
   }
 }
 
@@ -1084,8 +1119,8 @@ function villagerPathMove(v, targetX, targetY, dt, speedMul){
   const noPath = !v.path || v.path.length===0 || v.pathIdx>=v.path.length;
 
   if(targetChanged || noPath){
-    /* ---- Bigger A* budget so long paths across the map succeed ---- */
-    v.path = findTilePath(vtx, vty, gtx, gty, 700, false);
+    /* ---- Bigger A* budget so long paths across a dense village succeed ---- */
+    v.path = findTilePath(vtx, vty, gtx, gty, 2200, false);
     v.pathIdx = 1;
     v.pathTargetX = gtx;
     v.pathTargetY = gty;
@@ -1296,6 +1331,7 @@ function sellBuilding(b){
   for(let y=b.ty;y<b.ty+b.h;y++)
     for(let x=b.tx;x<b.tx+b.w;x++)
       if(bldAt[y*WN+x]===b) bldAt[y*WN+x]=null;
+  invalidateVillagerPaths();
   computeDeliveryPoint();
   recomputeTowerBuffs();
   const cx=b.x+b.w*TS/2, cy=b.y+b.h*TS/2;
@@ -1467,6 +1503,8 @@ function tryPlace(){
   }
   buildings.push(b);
   occupy(b);
+  evacuateVillagersFrom(tx, ty, def.w, def.h);
+  invalidateVillagerPaths();
   computeDeliveryPoint();
   recomputeTowerBuffs();
   addFloat(b.x+def.w*TS/2, b.y+def.h*TS/2, def.name+' built!', '#c8f0a8');
@@ -1510,19 +1548,26 @@ function spawnVillager(){
     hp:36, maxHp:36, dead:false, flash:0,
     atkCd:0, swingT:0,
     path:null, pathIdx:0, pathTargetX:-1, pathTargetY:-1,
-    _lastX:sx, _lastY:sy, _stuckT:0, _stuckCD:0,
+    _lastX:sx, _lastY:sy, _stuckT:0, _stuckCD:0, _hardStuckT:0,
+    badNodes:null,
     colors:VILLAGER_COLORS[villagers.length%VILLAGER_COLORS.length] };
   villagers.push(v);
   addFloat(v.x,v.y,'A villager arrived!','#8ee06a');
 }
 
 /* ---- Bigger search range: find resources from farther away ---- */
+function nodeBadForVillager(v, n){
+  if(!v.badNodes) return false;
+  const t = v.badNodes.get(n);
+  return t !== undefined && t > state.t;
+}
 function findBestNodeFor(v, filterNodeType){
   let best=null, bestD=1e9;
   for(const n of nodes){
     if(!n.alive) continue;
     if(n.claimed && n.claimed!==v) continue;
     if(filterNodeType && n.type!==filterNodeType) continue;
+    if(nodeBadForVillager(v, n)) continue;
     const d=Math.hypot(n.x-v.x,n.y-v.y);
     if(d<1400 && d<bestD){ bestD=d; best=n; }
   }
@@ -1535,6 +1580,7 @@ function findBlockingNode(v){
     if(!n.alive) continue;
     if(!NODE_DEFS[n.type].solid) continue;
     if(n.claimed && n.claimed!==v) continue;
+    if(nodeBadForVillager(v, n)) continue;
     const d=Math.hypot(n.x-v.x,n.y-v.y);
     if(d<220 && d<bestD){ bestD=d; best=n; }
   }
@@ -1590,19 +1636,19 @@ function updateVillager(v,dt){
     }
   }
 
-  /* --- Stuck detection --- */
-  /* --- Stuck detection --- (skip while gathering — standing still is expected) --- */
+  /* --- Stuck detection (skip while gathering — standing still is expected) --- */
   v._stuckCD-=dt;
   if(v._stuckCD<=0){
     v._stuckCD=0.5;
     if(v.state==='gather'){
-      // Mining looks like "not moving" — don't flag it as stuck.
       v._lastX=v.x; v._lastY=v.y;
-      v._stuckT=0;
+      v._stuckT=0; v._hardStuckT=0;
     } else {
       const moved=Math.hypot(v.x-v._lastX, v.y-v._lastY);
       if(moved<8 && v.state!=='flee'){
-        v._stuckT += 0.5;
+        v._stuckT     += 0.5;
+        v._hardStuckT  = (v._hardStuckT||0) + 0.5;
+
         if(v._stuckT >= 1.0){
           let goalX=null, goalY=null;
           if(v.state==='seek' && v.target){ goalX=v.target.x; goalY=v.target.y; }
@@ -1613,24 +1659,40 @@ function updateVillager(v,dt){
             const blocker = nodeBlockingDirection(v, goalX, goalY);
             if(blocker && blocker.alive){
               if(v.target && v.target.claimed===v) v.target.claimed=null;
-              v.target = blocker;
-              v.state = 'seek';
-              v.path = null;
+              v.target  = blocker;
+              v.state   = 'seek';
+              v.path    = null;
               v.pathIdx = 0;
-              v.retarget = 2.0;
-              handled = true;
+              v.retarget= 2.0;
+              handled   = true;
             }
           }
           if(!handled){
-            if(v.target && v.target.claimed===v) v.target.claimed=null;
-            v.target=null;
-            v.path=null;
-            v.retarget=0;
+            if(v.target){
+              if(v.target.claimed===v) v.target.claimed=null;
+              if(!v.badNodes) v.badNodes = new Map();
+              v.badNodes.set(v.target, state.t + 15);
+            }
+            v.target  = null;
+            v.path    = null;
+            v.pathIdx = 0;
+            v.retarget= 0;
           }
-          v._stuckT=0;
+          v._stuckT = 0;
+        }
+
+        if(v._hardStuckT >= 6.0){
+          const spot = findWalkableSpotNear(deliveryPt.x, deliveryPt.y, 180);
+          if(spot){ v.x=spot.x; v.y=spot.y; }
+          v.path    = null;
+          v.pathIdx = 0;
+          v.target  = null;
+          if(v.state!=='return') v.state='seek';
+          v._hardStuckT = 0;
         }
       } else {
         v._stuckT=0;
+        v._hardStuckT=0;
       }
       v._lastX=v.x; v._lastY=v.y;
     }
@@ -1701,9 +1763,13 @@ function updateVillager(v,dt){
     }
     if(!v.target || v.retarget<=0){
       if(v.target && v.target.claimed===v) v.target.claimed=null;
-      v.target = pickVillagerTarget(v);
+      const newTarget = pickVillagerTarget(v);
+      if(newTarget !== v.target){
+        v.target  = newTarget;
+        v.path    = null;
+        v.pathIdx = 0;
+      }
       v.retarget = 1.6;
-      v.path = null;
     }
 
     if(!v.target){
@@ -1774,9 +1840,6 @@ function updateVillager(v,dt){
       v.state='seek'; v.retarget=0;
       v.path=null;
     } else {
-      /* If we've been stuck for a moment, soft-move through obstacles.
-         Buildings and water still block, but trees get phased past —
-         better than a permanent jam. */
       if(v._stuckT >= 0.5){
         moveToward(v, tx, ty, dt, true, roadMul);
       } else {
@@ -1811,8 +1874,6 @@ function damageNode(n){
     const i=n.ty*WN+n.tx;
     if(nodeAt[i]===n) nodeAt[i]=null;
     if(n.claimed){
-      // Only release the claim — do NOT null the villager's own target
-      // reference, they need it to detect `!v.target.alive` on this same tick.
       n.claimed=null;
     }
   }
@@ -2004,6 +2065,7 @@ function damageBuilding(b, dmg){
     for(let y=b.ty;y<b.ty+b.h;y++)
       for(let x=b.tx;x<b.tx+b.w;x++)
         if(bldAt[y*WN+x]===b) bldAt[y*WN+x]=null;
+    invalidateVillagerPaths();
     computeDeliveryPoint();
     recomputeTowerBuffs();
     addFloat(b.x+b.w*TS/2, b.y+b.h*TS/2, 'Destroyed!', '#ff6a6a');
@@ -2408,7 +2470,7 @@ function update(dt){
         if(pop()<popCap() && getFood()>=10){
           foodFloat-=10;
           spawnVillager();
-          b.cd=18;
+          b.cd=8;
         } else b.cd=0;
       }
     }
@@ -2433,7 +2495,6 @@ function update(dt){
         `[wave] difficulty=${difficulty} · first=${firstWaveDelaySeconds()}s · interval=${waveIntervalSeconds()}s`
       );
     }
-    /* Autosave just after the wave begins so we never lose a whole run */
     saveGame(true);
   }
 
@@ -3355,9 +3416,6 @@ function refreshForgeAndTowerPanels(){
 
 /* ============================================================
    SAVE / LOAD
-   ------------------------------------------------------------
-   Persists the full mutable game to localStorage.
-   Tiles are deterministic, so we only save what can change.
    ============================================================ */
 const SAVE_KEY = 'wildwood_village_save_v1';
 const SAVE_VERSION = 1;
@@ -3471,7 +3529,6 @@ function loadGame(){
       btn.classList.toggle('selected', btn.dataset.diff === difficulty);
     });
 
-    /* Wipe everything */
     nodes.length=0;
     buildings.length=0;
     villagers.length=0;
@@ -3479,7 +3536,6 @@ function loadGame(){
     enemies.length=0;
     projectiles.length=0;
 
-    /* Regenerate tiles deterministically, then clear what genWorld seeded */
     genWorld();
     nodes.length=0;
     buildings.length=0;
@@ -3488,11 +3544,9 @@ function loadGame(){
     roadAt.fill(0);
     townCenter = null;
 
-    /* Restore roads */
     const roads = fromBase64(save.roadAt, WN*WN);
     for(let i=0;i<WN*WN;i++) roadAt[i] = roads[i];
 
-    /* Restore top-level state */
     state.wood  = save.state.wood;
     state.stone = save.state.stone;
     state.food  = save.state.food;
@@ -3505,7 +3559,6 @@ function loadGame(){
     waveNum     = save.waveNum;
     nextWaveT   = save.nextWaveT;
 
-    /* Restore player */
     player.x = save.player.x;
     player.y = save.player.y;
     player.hp = save.player.hp;
@@ -3517,8 +3570,7 @@ function loadGame(){
     player.bob=0; player.moving=false; player.dir=1;
     player.lastDamageT=-999; player.regenAccum=0;
 
-    /* Restore nodes */
-    const claimMap = [];   // nodeIdx -> villagerIdx (filled after villagers load)
+    const claimMap = [];
     for(const n of save.nodes){
       const def = NODE_DEFS[n.t];
       if(!def) continue;
@@ -3534,7 +3586,6 @@ function loadGame(){
       claimMap.push(n.ci);
     }
 
-    /* Restore buildings */
     for(const b of save.buildings){
       const def = (b.t === 'town') ? TOWN_DEF : BUILD_DEFS[b.t];
       if(!def) continue;
@@ -3556,17 +3607,15 @@ function loadGame(){
       if(b.t === 'town') townCenter = bld;
     }
     if(!townCenter){
-      /* Fallback — recreate a placeholder town center at map middle */
       const tx = Math.floor(WN/2)-2, ty = Math.floor(WN/2)-2;
       townCenter = { kind:'bld', type:'town', tx, ty, w:4, h:4,
-                     x:tx*TS, y:ty*TS, ySort:(ty+4)*TS, cd:14,
+                     x:tx*TS, y:ty*TS, ySort:(ty+4)*TS, cd:5,
                      hp:TOWN_DEF.hp, maxHp:TOWN_DEF.hp, flash:0,
                      lastDamageT:-999, regenAccum:0 };
       buildings.push(townCenter);
       occupy(townCenter);
     }
 
-    /* Restore villagers, then re-link node claims */
     for(const v of save.villagers){
       const vill = {
         kind:'vill', x:v.x, y:v.y,
@@ -3577,12 +3626,12 @@ function loadGame(){
         hp: v.hp, maxHp:36, dead:false, flash:0,
         atkCd:0, swingT:0,
         path:null, pathIdx:0, pathTargetX:-1, pathTargetY:-1,
-        _lastX:v.x, _lastY:v.y, _stuckT:0, _stuckCD:0,
+        _lastX:v.x, _lastY:v.y, _stuckT:0, _stuckCD:0, _hardStuckT:0,
+        badNodes:null,
         colors: VILLAGER_COLORS[villagers.length % VILLAGER_COLORS.length],
       };
       villagers.push(vill);
     }
-    /* Second pass — link targets and claims */
     for(let i=0; i<claimMap.length; i++){
       const villIdx = claimMap[i];
       if(villIdx < 0 || villIdx >= villagers.length) continue;
@@ -3594,7 +3643,6 @@ function loadGame(){
       }
     }
 
-    /* Restore enemies (they'll re-acquire targets on first update) */
     for(const e of save.enemies){
       const def = ENEMY_DEFS[e.t];
       if(!def) continue;
@@ -3609,11 +3657,9 @@ function loadGame(){
       });
     }
 
-    /* Rebuild derived data */
     computeDeliveryPoint();
     recomputeTowerBuffs();
 
-    /* Refresh UI */
     buildbar.innerHTML='';
     buildBar();
     document.getElementById('foodChip').classList.toggle('active', healEnabled);
@@ -3624,7 +3670,6 @@ function loadGame(){
     updateUI();
     refreshForgeAndTowerPanels();
 
-    /* Enter the game */
     getAC();
     startMusic();
     gameState='playing';

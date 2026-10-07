@@ -1,0 +1,1351 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Delza</title>
+<style>
+  html,body{
+    margin:0;height:100%;background:#0a0a0c;overflow:hidden;
+    display:flex;align-items:center;justify-content:center;
+    font-family:ui-monospace,monospace;
+  }
+  canvas{
+    image-rendering:pixelated;
+    image-rendering:crisp-edges;
+    width:min(96vw, calc(92vh * 256 / 224));
+    height:auto;
+    border:2px solid #1c1c22;
+    box-shadow:0 0 50px #000, 0 0 100px rgba(0,255,120,.05);
+    background:#000;
+  }
+</style>
+</head>
+<body>
+<canvas id="c" width="256" height="224"></canvas>
+<script>
+(() => {
+'use strict';
+
+/* ======================================================================
+   CONSTANTS
+   ====================================================================== */
+const TILE = 16, RW = 16, RH = 12;
+const PW = RW * TILE, PH = RH * TILE;
+const HUD_H = 32, CW = PW, CH = HUD_H + PH;
+
+const FLOOR = 0, ROCK = 1, WATER = 2, TREE = 3, SAND = 4, BRICK = 5, BUSH = 6, LADDER = 7;
+const WALKABLE = [true, false, false, false, true, false, false, true];
+const BURNABLE = [false, false, false, true, false, false, true, false];
+
+const WORLD_W = 16, WORLD_H = 12;
+const START = { x: 8, y: 6 };
+
+const SPEED = 82;
+const DIRV = { up:[0,-1], down:[0,1], left:[-1,0], right:[1,0] };
+
+const ENEMY_MUL = 0.75;    // 25% slower enemies
+const NUDGE_MAX = 5;       // max pixels of perpendicular corner-slip
+const LADDER_MAX = 6;      // max tiles the ladder can span
+
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+ctx.imageSmoothingEnabled = false;
+
+/* ======================================================================
+   HASH / RNG / NOISE
+   ====================================================================== */
+function hash(x, y, s) {
+  let h = Math.imul(x | 0, 0x27d4eb2d) ^ Math.imul(y | 0, 0x165667b1) ^ Math.imul(s | 0, 0x9e3779b1);
+  h = Math.imul(h ^ (h >>> 15), 0x85ebca6b);
+  h = Math.imul(h ^ (h >>> 13), 0xc2b2ae35);
+  return (h ^ (h >>> 16)) >>> 0;
+}
+function mulberry32(a) {
+  return function () {
+    a = (a + 0x6D2B79F5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+function valueNoise(x, y, s) {
+  const x0 = Math.floor(x), y0 = Math.floor(y);
+  const fx = x - x0, fy = y - y0;
+  const sx = fx * fx * (3 - 2 * fx), sy = fy * fy * (3 - 2 * fy);
+  const h = (a, b) => hash(a, b, s) / 4294967296;
+  const n00 = h(x0, y0), n10 = h(x0 + 1, y0), n01 = h(x0, y0 + 1), n11 = h(x0 + 1, y0 + 1);
+  return (n00 * (1 - sx) + n10 * sx) * (1 - sy) + (n01 * (1 - sx) + n11 * sx) * sy;
+}
+
+/* ======================================================================
+   TRIFORCE ROOMS
+   ====================================================================== */
+const TRIFORCE_ROOMS = (() => {
+  const cand = [];
+  for (let y = 0; y < WORLD_H; y++)
+    for (let x = 0; x < WORLD_W; x++) {
+      const d = Math.abs(x - START.x) + Math.abs(y - START.y);
+      if (d < 5) continue;
+      cand.push({ k: x + ',' + y, h: hash(x, y, 4242) });
+    }
+  cand.sort((a, b) => a.h - b.h);
+  return new Set(cand.slice(0, 3).map(c => c.k));
+})();
+
+/* ======================================================================
+   XOR PATTERNS
+   ====================================================================== */
+const PATTERN_STRINGS = [
+  ["##............##","##............##","................","................","................","................","................","................","................","................","##............##","##............##"],
+  ["................","................","......####......","......####......","......####......","..############..","..############..","......####......","......####......","......####......","................","................"],
+  ["#...............","##..............",".##.............","..##............","...##...........","....##..........",".....##.........","......##........",".......##.......","........##......",".........##.....","..........##...."],
+  ["...............#","..............##",".............##.","............##..","...........##...","..........##....",".........##.....","........##......",".......##.......","......##........",".....##.........","....##.........."],
+  ["##..##..##..##..","##..##..##..##..","..##..##..##..##","..##..##..##..##","##..##..##..##..","##..##..##..##..","..##..##..##..##","..##..##..##..##","##..##..##..##..","##..##..##..##..","..##..##..##..##","..##..##..##..##"],
+  ["................","................","................","................","....########....","....########....","....########....","....########....","................","................","................","................"],
+  ["................","................","..####....####..","..####....####..","..####....####..","................","................","..####....####..","..####....####..","..####....####..","................","................"],
+  ["................","................","................","..############..","................","................","................","................","..############..","................","................","................"],
+  ["..##........##..","..##........##..","..##........##..","..##........##..","..##........##..","..##........##..","..##........##..","..##........##..","..##........##..","..##........##..","..##........##..","..##........##.."],
+  ["................","................","..############..","..##........##..","..##........##..","..##........##..","..##........##..","..##........##..","..##........##..","..############..","................","................"],
+  ["#..............#",".#............#.","..#..........#..","...#........#...","....#......#....",".....#....#.....",".....#....#.....","....#......#....","...#........#...","..#..........#..",".#............#.","#..............#"],
+  ["................","................","................","................","......####......",".....######.....","....########....","...##########...","..############..",".##############.","################","................"],
+  ["................","..##......##....","..##......##....","................","......####......","......####......","......####......","......####......","................","..##......##....","..##......##....","................"]
+];
+const PATTERN_GRIDS = PATTERN_STRINGS.map(p => p.map(row => row.split('').map(ch => ch === '#')));
+
+/* ======================================================================
+   ROOM GENERATION
+   ====================================================================== */
+function flood(tiles, sx, sy) {
+  const seen = new Uint8Array(RW * RH);
+  if (!WALKABLE[tiles[sy * RW + sx]]) return seen;
+  const stack = [[sx, sy]];
+  seen[sy * RW + sx] = 1;
+  while (stack.length) {
+    const [x, y] = stack.pop();
+    const nb = [[1,0],[-1,0],[0,1],[0,-1]];
+    for (let i = 0; i < 4; i++) {
+      const nx = x + nb[i][0], ny = y + nb[i][1];
+      if (nx < 0 || nx >= RW || ny < 0 || ny >= RH) continue;
+      const idx = ny * RW + nx;
+      if (seen[idx] || !WALKABLE[tiles[idx]]) continue;
+      seen[idx] = 1;
+      stack.push([nx, ny]);
+    }
+  }
+  return seen;
+}
+
+function carvePath(tiles, x0, y0, x1, y1, v) {
+  let x = x0, y = y0;
+  tiles[y * RW + x] = v;
+  while (x !== x1) { x += Math.sign(x1 - x); tiles[y * RW + x] = v; }
+  while (y !== y1) { y += Math.sign(y1 - y); tiles[y * RW + x] = v; }
+}
+
+function genRoom(rx, ry) {
+  const rnd = mulberry32(hash(rx, ry, 777));
+  const tiles = new Uint8Array(RW * RH);
+  const idx = (x, y) => y * RW + x;
+
+  const n = valueNoise(rx * 0.45 + 13.7, ry * 0.45 + 71.3, 555);
+  let theme = Math.floor(n * 5);
+  theme = Math.max(0, Math.min(4, theme));
+
+  const baseTile = (theme === 3 || theme === 4) ? SAND : FLOOR;
+  tiles.fill(baseTile);
+
+  // ---- XOR patterns ----
+  const solid = new Uint8Array(RW * RH);
+  const patternCount = 2 + (hash(rx, ry, 909) % 2);
+  const chosen = [];
+  let guard = 0;
+  while (chosen.length < patternCount && guard < 100) {
+    guard++;
+    const pi = hash(rx, ry, 1000 + chosen.length * 17) % PATTERN_GRIDS.length;
+    if (chosen.includes(pi)) continue;
+    chosen.push(pi);
+  }
+  for (const pi of chosen) {
+    const g = PATTERN_GRIDS[pi];
+    for (let y = 0; y < RH; y++)
+      for (let x = 0; x < RW; x++)
+        if (g[y][x]) solid[idx(x, y)] ^= 1;
+  }
+
+  const obstacleTile = theme === 2 ? TREE : theme === 3 ? WATER : ROCK;
+  for (let i = 0; i < RW * RH; i++)
+    if (solid[i]) tiles[i] = obstacleTile;
+
+  // ---- carve doorways ----
+  const carve = (x, y) => { if (x >= 0 && x < RW && y >= 0 && y < RH) tiles[idx(x, y)] = baseTile; };
+  for (let y = 5; y <= 6; y++) for (let x = 0; x <= 2; x++) carve(x, y);
+  for (let y = 5; y <= 6; y++) for (let x = RW - 3; x <= RW - 1; x++) carve(x, y);
+  for (let x = 7; x <= 8; x++) for (let y = 0; y <= 2; y++) carve(x, y);
+  for (let x = 7; x <= 8; x++) for (let y = RH - 3; y <= RH - 1; y++) carve(x, y);
+  carve(7, 5); carve(8, 5); carve(7, 6); carve(8, 6);
+
+  const targets = [[1, 5], [14, 5], [7, 1], [7, 10]];
+  for (let i = 0; i < targets.length; i++) {
+    const seen = flood(tiles, 1, 5);
+    const t = targets[i];
+    if (!seen[t[1] * RW + t[0]]) carvePath(tiles, 1, 5, t[0], t[1], baseTile);
+  }
+
+  // ---- scatter bushes (burnable) ----
+  const bushCount = 2 + (hash(rx, ry, 2222) % 5);
+  let placedBush = 0;
+  for (let attempt = 0; attempt < 60 && placedBush < bushCount; attempt++) {
+    const x = 2 + Math.floor(rnd() * (RW - 4));
+    const y = 2 + Math.floor(rnd() * (RH - 4));
+    const id = idx(x, y);
+    if (tiles[id] !== baseTile) continue;
+    if (!WALKABLE[tiles[idx(x+1,y)]]) continue;
+    if (!WALKABLE[tiles[idx(x-1,y)]]) continue;
+    if (!WALKABLE[tiles[idx(x,y+1)]]) continue;
+    if (!WALKABLE[tiles[idx(x,y-1)]]) continue;
+    tiles[id] = BUSH;
+    placedBush++;
+  }
+
+  // ---- border walls ----
+  if (rx === 0) for (let y = 0; y < RH; y++) tiles[idx(0, y)] = ROCK;
+  if (rx === WORLD_W - 1) for (let y = 0; y < RH; y++) tiles[idx(RW - 1, y)] = ROCK;
+  if (ry === 0) for (let x = 0; x < RW; x++) tiles[idx(x, 0)] = ROCK;
+  if (ry === WORLD_H - 1) for (let x = 0; x < RW; x++) tiles[idx(x, RH - 1)] = ROCK;
+
+  // ---- enemy spawns ----
+  const spawns = [];
+  const roll = hash(rx, ry, 31) % 100;
+  let ec = 0;
+  if (roll >= 25) ec = 1;
+  if (roll >= 55) ec = 2;
+  if (roll >= 80) ec = 3;
+  if (roll >= 95) ec = 4;
+  if (rx === START.x && ry === START.y) ec = 0;
+
+  const types = ['octorok', 'moblin', 'keese'];
+  for (let i = 0; i < ec; i++) {
+    for (let t = 0; t < 60; t++) {
+      const x = 1 + Math.floor(rnd() * (RW - 2));
+      const y = 1 + Math.floor(rnd() * (RH - 2));
+      if (!WALKABLE[tiles[idx(x, y)]]) continue;
+      if (x < 4 && y >= 4 && y <= 7) continue;
+      if (x > 11 && y >= 4 && y <= 7) continue;
+      if (y < 4 && x >= 6 && x <= 9) continue;
+      if (y > 8 && x >= 6 && x <= 9) continue;
+      const wx = x * 16 + 8, wy = y * 16 + 8;
+      if (spawns.some(s => Math.abs(s.x - wx) < 26 && Math.abs(s.y - wy) < 26)) continue;
+      spawns.push({ x: wx, y: wy, type: types[hash(rx * 31 + ry * 17 + i, i, 9) % 3] });
+      break;
+    }
+  }
+
+  return {
+    rx, ry, tiles, theme, spawns, baseTile,
+    hasTriforce: TRIFORCE_ROOMS.has(rx + ',' + ry),
+    hasHeart: hash(rx, ry, 88) % 11 === 0
+  };
+}
+
+const roomCache = new Map();
+function getRoom(rx, ry) {
+  const k = rx + ',' + ry;
+  let r = roomCache.get(k);
+  if (!r) { r = genRoom(rx, ry); roomCache.set(k, r); }
+  return r;
+}
+
+/* ======================================================================
+   GAME STATE
+   ====================================================================== */
+let game, room, player, collected, time = 0;
+
+function makeEnemy(type, cx, cy) {
+  const w = 12, h = 12;
+  return {
+    type, x: cx - w / 2, y: cy - h / 2, w, h,
+    hp: type === 'moblin' ? 2 : 1,
+    dir: 'down', timer: 0, shoot: 0.8 + Math.random() * 1.6,
+    vx: 0, vy: 0, hurt: 0, t: Math.random() * 10
+  };
+}
+
+function enterRoom(rx, ry) {
+  const data = getRoom(rx, ry);
+  room = { rx, ry, data, enemies: [], items: [], projectiles: [], flames: [] };
+
+  for (const s of data.spawns) room.enemies.push(makeEnemy(s.type, s.x, s.y));
+
+  const key = rx + ',' + ry;
+  if (data.hasTriforce && !collected.has('tri:' + key)) {
+    room.items.push({ type: 'triforce', x: PW / 2 - 9, y: PH / 2 - 12, w: 18, h: 18, key: 'tri:' + key });
+  }
+  if (data.hasHeart && !collected.has('heart:' + key)) {
+    room.items.push({ type: 'heart', x: PW / 2 - 8, y: PH / 2 - 8, w: 16, h: 16, key: 'heart:' + key });
+  }
+}
+
+function init() {
+  roomCache.clear();
+  collected = new Set();
+  time = 0;
+  game = { state: 'play', transition: null, triforce: 0, msg: 0, msgText: '', intro: 5 };
+  player = {
+    x: 0, y: 0, w: 12, h: 12, dir: 'down',
+    hp: 6, maxHp: 6, iframes: 0, sword: 0, swordDir: 'down',
+    candleCd: 0, shieldFlash: 0, ladderCd: 0, ladderFlash: 0
+  };
+  enterRoom(START.x, START.y);
+  player.x = PW / 2 - player.w / 2;
+  player.y = PH / 2 - player.h / 2;
+}
+
+/* ======================================================================
+   INPUT
+   ====================================================================== */
+const keys = {};
+const SWORD_KEYS  = ['z', ' ', 'j', 'x'];
+const CANDLE_KEYS = ['c', 'k'];
+const LADDER_KEYS = ['l', 'e'];
+
+window.addEventListener('keydown', e => {
+  const k = e.key.length === 1 ? e.key.toLowerCase() : e.key.toLowerCase();
+  if (['arrowup','arrowdown','arrowleft','arrowright',' '].includes(k)) e.preventDefault();
+  const wasDown = !!keys[k];
+  keys[k] = true;
+  if ((game.state === 'dead' || game.state === 'win') && (k === ' ' || k === 'enter') && !wasDown) init();
+});
+window.addEventListener('keyup', e => {
+  const k = e.key.length === 1 ? e.key.toLowerCase() : e.key.toLowerCase();
+  keys[k] = false;
+});
+function down(...names) { return names.some(n => keys[n]); }
+
+/* ======================================================================
+   COLLISION — with corner nudge
+   ====================================================================== */
+function hitsSolid(ent, tiles) {
+  const x0 = Math.floor(ent.x / TILE), x1 = Math.floor((ent.x + ent.w - 1) / TILE);
+  const y0 = Math.floor(ent.y / TILE), y1 = Math.floor((ent.y + ent.h - 1) / TILE);
+  for (let y = y0; y <= y1; y++)
+    for (let x = x0; x <= x1; x++) {
+      if (x < 0 || x >= RW || y < 0 || y >= RH) continue;
+      if (!WALKABLE[tiles[y * RW + x]]) return true;
+    }
+  return false;
+}
+
+function moveEnt(ent, dx, dy, clamp) {
+  const tiles = room.data.tiles;
+  let blocked = false;
+
+  if (dx !== 0) {
+    const startX = ent.x, startY = ent.y;
+    ent.x = startX + dx;
+    if (hitsSolid(ent, tiles)) {
+      let nudged = false;
+      for (let n = 1; n <= NUDGE_MAX && !nudged; n++) {
+        for (let s = -1; s <= 1 && !nudged; s += 2) {
+          ent.x = startX + dx;
+          ent.y = startY + n * s;
+          if (!hitsSolid(ent, tiles)) { nudged = true; }
+        }
+      }
+      if (!nudged) {
+        ent.x = startX; ent.y = startY;
+        blocked = true;
+      }
+    }
+  }
+
+  if (dy !== 0) {
+    const startX = ent.x, startY = ent.y;
+    ent.y = startY + dy;
+    if (hitsSolid(ent, tiles)) {
+      let nudged = false;
+      for (let n = 1; n <= NUDGE_MAX && !nudged; n++) {
+        for (let s = -1; s <= 1 && !nudged; s += 2) {
+          ent.y = startY + dy;
+          ent.x = startX + n * s;
+          if (!hitsSolid(ent, tiles)) { nudged = true; }
+        }
+      }
+      if (!nudged) {
+        ent.x = startX; ent.y = startY;
+        blocked = true;
+      }
+    }
+  }
+
+  if (clamp) {
+    ent.x = Math.max(0, Math.min(PW - ent.w, ent.x));
+    ent.y = Math.max(0, Math.min(PH - ent.h, ent.y));
+  }
+  return blocked;
+}
+
+function overlap(a, b) {
+  return a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
+}
+
+/* ======================================================================
+   SWORD / SHIELD HITBOXES
+   ====================================================================== */
+function swordHitbox() {
+  const cx = player.x + player.w / 2, cy = player.y + player.h / 2;
+  const off = 15;
+  let bx = cx, by = cy;
+  if (player.swordDir === 'up') by = cy - off;
+  else if (player.swordDir === 'down') by = cy + off;
+  else if (player.swordDir === 'left') bx = cx - off;
+  else bx = cx + off;
+  return { x: bx - 8, y: by - 8, w: 16, h: 16 };
+}
+
+function shieldHitbox() {
+  if (player.sword > 0) return null;
+  const cx = player.x + player.w / 2, cy = player.y + player.h / 2;
+  const v = DIRV[player.dir];
+  const off = 8;
+  const sx = cx + v[0] * off, sy = cy + v[1] * off;
+  return { x: sx - 7, y: sy - 7, w: 14, h: 14 };
+}
+
+/* ======================================================================
+   CANDLE
+   ====================================================================== */
+function useCandle() {
+  const v = DIRV[player.dir];
+  let fx = player.x + player.w / 2 + v[0] * 12;
+  let fy = player.y + player.h / 2 + v[1] * 12;
+
+  for (let t = 0; t < 4; t++) {
+    const tx = Math.floor(fx / TILE), ty = Math.floor(fy / TILE);
+    const ok = tx >= 0 && tx < RW && ty >= 0 && ty < RH && WALKABLE[room.data.tiles[ty * RW + tx]];
+    if (ok) break;
+    fx -= v[0] * 4; fy -= v[1] * 4;
+  }
+
+  const R = 14;
+
+  const tx0 = Math.max(0, Math.floor((fx - R) / TILE));
+  const tx1 = Math.min(RW - 1, Math.floor((fx + R) / TILE));
+  const ty0 = Math.max(0, Math.floor((fy - R) / TILE));
+  const ty1 = Math.min(RH - 1, Math.floor((fy + R) / TILE));
+  for (let ty = ty0; ty <= ty1; ty++) {
+    for (let tx = tx0; tx <= tx1; tx++) {
+      const tcx = tx * TILE + TILE / 2;
+      const tcy = ty * TILE + TILE / 2;
+      if (Math.hypot(tcx - fx, tcy - fy) > R + 4) continue;
+      const id = ty * RW + tx;
+      if (BURNABLE[room.data.tiles[id]]) {
+        room.data.tiles[id] = room.data.baseTile;
+      }
+    }
+  }
+
+  for (let i = room.enemies.length - 1; i >= 0; i--) {
+    const e = room.enemies[i];
+    const ex = e.x + e.w / 2, ey = e.y + e.h / 2;
+    if (Math.hypot(ex - fx, ey - fy) <= R + 8) {
+      e.hp--;
+      e.hurt = 0.35;
+      if (e.hp <= 0) {
+        room.enemies.splice(i, 1);
+        if (Math.random() < 0.22 && room.items.length < 4) {
+          room.items.push({
+            type: 'heart', x: e.x + e.w / 2 - 8, y: e.y + e.h / 2 - 8,
+            w: 16, h: 16, key: null
+          });
+        }
+      }
+    }
+  }
+
+  room.flames.push({ x: fx, y: fy, life: 0.4, maxLife: 0.4 });
+}
+
+/* ======================================================================
+   LADDER
+   ====================================================================== */
+function useLadder() {
+  const v = DIRV[player.dir];
+  const cx = Math.floor((player.x + player.w / 2) / TILE);
+  const cy = Math.floor((player.y + player.h / 2) / TILE);
+  let tx = cx + v[0];
+  let ty = cy + v[1];
+
+  let placed = 0;
+
+  for (let i = 0; i < LADDER_MAX; i++) {
+    if (tx < 0 || tx >= RW || ty < 0 || ty >= RH) break;
+    const id = ty * RW + tx;
+    const t = room.data.tiles[id];
+    if (t === WATER) {
+      room.data.tiles[id] = LADDER;
+      placed++;
+    } else if (t === LADDER) {
+      // continue across existing ladder segments
+    } else {
+      break;
+    }
+    tx += v[0];
+    ty += v[1];
+  }
+
+  if (placed > 0) player.ladderFlash = 0.25;
+}
+
+/* ======================================================================
+   UPDATE — PLAYER
+   ====================================================================== */
+function updatePlayer(dt) {
+  if (player.iframes > 0) player.iframes -= dt;
+  if (player.sword > 0) player.sword -= dt;
+  if (player.candleCd > 0) player.candleCd -= dt;
+  if (player.shieldFlash > 0) player.shieldFlash -= dt;
+  if (player.ladderCd > 0) player.ladderCd -= dt;
+  if (player.ladderFlash > 0) player.ladderFlash -= dt;
+
+  let dx = 0, dy = 0;
+  if (down('arrowleft', 'a')) dx--;
+  if (down('arrowright', 'd')) dx++;
+  if (down('arrowup', 'w')) dy--;
+  if (down('arrowdown', 's')) dy++;
+
+  if (dx || dy) {
+    const len = Math.hypot(dx, dy);
+    dx /= len; dy /= len;
+    if (Math.abs(dx) > Math.abs(dy)) player.dir = dx < 0 ? 'left' : 'right';
+    else player.dir = dy < 0 ? 'up' : 'down';
+    moveEnt(player, dx * SPEED * dt, dy * SPEED * dt, false);
+  }
+
+  if (down(...SWORD_KEYS) && player.sword <= 0) {
+    player.sword = 0.22;
+    player.swordDir = player.dir;
+  }
+
+  if (down(...CANDLE_KEYS) && player.candleCd <= 0) {
+    player.candleCd = 0.55;
+    useCandle();
+  }
+
+  if (down(...LADDER_KEYS) && player.ladderCd <= 0) {
+    player.ladderCd = 0.3;
+    useLadder();
+  }
+
+  if (player.sword > 0) {
+    const hb = swordHitbox();
+    for (let i = room.enemies.length - 1; i >= 0; i--) {
+      const e = room.enemies[i];
+      if (e.hurt > 0) continue;
+      if (overlap(hb, e)) {
+        e.hp--;
+        e.hurt = 0.35;
+        if (e.hp <= 0) {
+          room.enemies.splice(i, 1);
+          if (Math.random() < 0.22 && room.items.length < 4) {
+            room.items.push({
+              type: 'heart', x: e.x + e.w / 2 - 8, y: e.y + e.h / 2 - 8,
+              w: 16, h: 16, key: null
+            });
+          }
+        }
+      }
+    }
+  }
+}
+
+/* ======================================================================
+   UPDATE — ENEMIES
+   ====================================================================== */
+function randomDir() {
+  return ['up', 'down', 'left', 'right'][(Math.random() * 4) | 0];
+}
+
+function shootRock(e) {
+  const dx = (player.x + 6) - (e.x + 6), dy = (player.y + 6) - (e.y + 6);
+  const a = Math.atan2(dy, dx), sp = 78;
+  room.projectiles.push({
+    x: e.x + 6, y: e.y + 6, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp,
+    life: 3, type: 'rock', w: 8, h: 8
+  });
+}
+function shootArrow(e) {
+  const v = DIRV[e.dir], sp = 118;
+  room.projectiles.push({
+    x: e.x + 6, y: e.y + 6, vx: v[0] * sp, vy: v[1] * sp,
+    life: 3, type: 'arrow', w: 8, h: 8
+  });
+}
+
+function updateEnemies(dt) {
+  for (let i = room.enemies.length - 1; i >= 0; i--) {
+    const e = room.enemies[i];
+    if (e.hurt > 0) e.hurt -= dt;
+    e.t += dt;
+
+    if (e.type === 'octorok') {
+      e.timer -= dt;
+      if (e.timer <= 0) { e.dir = randomDir(); e.timer = 0.7 + Math.random() * 1.0; }
+      const v = DIRV[e.dir];
+      if (moveEnt(e, v[0] * 34 * ENEMY_MUL * dt, v[1] * 34 * ENEMY_MUL * dt, true)) e.timer = 0;
+      e.shoot -= dt;
+      if (e.shoot <= 0) { e.shoot = 1.8 + Math.random() * 1.3; shootRock(e); }
+
+    } else if (e.type === 'moblin') {
+      e.timer -= dt;
+      if (e.timer <= 0) {
+        const dx = (player.x + 6) - (e.x + 6);
+        const dy = (player.y + 6) - (e.y + 6);
+        e.dir = Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? 'right' : 'left') : (dy > 0 ? 'down' : 'up');
+        e.timer = 0.45 + Math.random() * 0.5;
+      }
+      const v = DIRV[e.dir];
+      if (moveEnt(e, v[0] * 30 * ENEMY_MUL * dt, v[1] * 30 * ENEMY_MUL * dt, true)) e.timer = 0;
+      e.shoot -= dt;
+      if (e.shoot <= 0) {
+        const dx = (player.x + 6) - (e.x + 6), dy = (player.y + 6) - (e.y + 6);
+        if (Math.abs(dx) < 140 && Math.abs(dy) < 140) {
+          e.shoot = 1.9 + Math.random() * 1.2;
+          shootArrow(e);
+        } else e.shoot = 0.3;
+      }
+
+    } else {
+      e.timer -= dt;
+      if (e.timer <= 0) {
+        e.timer = 0.35 + Math.random() * 0.4;
+        const dx = (player.x + 6) - (e.x + 6);
+        const dy = (player.y + 6) - (e.y + 6);
+        e.vx = (dx === 0 ? 1 : Math.sign(dx)) * (28 + Math.random() * 40) * ENEMY_MUL;
+        e.vy = (dy === 0 ? 1 : Math.sign(dy)) * (28 + Math.random() * 40) * ENEMY_MUL;
+        if (Math.random() < 0.4) { e.vx = -e.vx; e.vy = -e.vy; }
+      }
+      if (moveEnt(e, e.vx * dt, e.vy * dt, true)) { e.vx *= -1; e.vy *= -1; }
+    }
+  }
+}
+
+/* ======================================================================
+   UPDATE — PROJECTILES / FLAMES / ITEMS
+   ====================================================================== */
+function updateProjectiles(dt) {
+  for (let i = room.projectiles.length - 1; i >= 0; i--) {
+    const p = room.projectiles[i];
+    p.life -= dt;
+    p.x += p.vx * dt;
+    p.y += p.vy * dt;
+    if (p.life <= 0) { room.projectiles.splice(i, 1); continue; }
+
+    const tx = Math.floor((p.x + 4) / TILE), ty = Math.floor((p.y + 4) / TILE);
+    if (tx < 0 || tx >= RW || ty < 0 || ty >= RH ||
+        !WALKABLE[room.data.tiles[ty * RW + tx]]) {
+      room.projectiles.splice(i, 1);
+      continue;
+    }
+
+    const sh = shieldHitbox();
+    if (sh && overlap({ x: p.x, y: p.y, w: 8, h: 8 }, sh)) {
+      player.shieldFlash = 0.16;
+      room.projectiles.splice(i, 1);
+      continue;
+    }
+
+    if (player.iframes <= 0 && overlap({ x: p.x, y: p.y, w: 8, h: 8 }, player)) {
+      room.projectiles.splice(i, 1);
+      damagePlayer(1);
+    }
+  }
+}
+
+function updateFlames(dt) {
+  for (let i = room.flames.length - 1; i >= 0; i--) {
+    room.flames[i].life -= dt;
+    if (room.flames[i].life <= 0) room.flames.splice(i, 1);
+  }
+}
+
+function damagePlayer(n) {
+  if (player.iframes > 0) return;
+  player.hp -= n;
+  player.iframes = 1.3;
+  if (player.hp <= 0) {
+    player.hp = 0;
+    game.state = 'dead';
+  }
+}
+
+function updateItems() {
+  for (let i = room.items.length - 1; i >= 0; i--) {
+    const it = room.items[i];
+    if (!overlap(it, player)) continue;
+
+    if (it.type === 'heart') {
+      if (player.hp < player.maxHp) { player.hp = Math.min(player.maxHp, player.hp + 2); room.items.splice(i, 1); }
+    } else if (it.type === 'triforce') {
+      room.items.splice(i, 1);
+      if (it.key) collected.add(it.key);
+      game.triforce++;
+      game.msg = 2.2;
+      game.msgText = game.triforce >= 3 ? 'ALL THREE! YOU WIN!' : 'TRIFORCE PIECE ' + game.triforce + ' / 3';
+      if (game.triforce >= 3) game.state = 'win';
+    }
+  }
+
+  if (player.iframes <= 0) {
+    for (const e of room.enemies) {
+      if (overlap(e, player)) { damagePlayer(1); break; }
+    }
+  }
+}
+
+/* ======================================================================
+   ROOM TRANSITIONS
+   ====================================================================== */
+function startTransition(dir) {
+  const v = DIRV[dir];
+  const nx = room.rx + v[0], ny = room.ry + v[1];
+  if (nx < 0 || nx >= WORLD_W || ny < 0 || ny >= WORLD_H) {
+    player.x = Math.max(0, Math.min(PW - player.w, player.x));
+    player.y = Math.max(0, Math.min(PH - player.h, player.y));
+    return;
+  }
+  game.transition = {
+    dir, nx, ny, t: 0, dur: 0.34,
+    exitX: player.x, exitY: player.y
+  };
+  game.state = 'transition';
+}
+
+function checkExit() {
+  if (game.transition) return;
+  if (player.x + player.w / 2 < 0) startTransition('left');
+  else if (player.x + player.w / 2 > PW) startTransition('right');
+  else if (player.y + player.h / 2 < 0) startTransition('up');
+  else if (player.y + player.h / 2 > PH) startTransition('down');
+}
+
+function ensureWalkable() {
+  if (!hitsSolid(player, room.data.tiles)) return;
+  const sx = player.x, sy = player.y;
+  for (let d = 4; d <= 96; d += 4) {
+    const offsets = [[0,-d],[0,d],[-d,0],[d,0],[-d,-d],[d,-d],[-d,d],[d,d]];
+    for (const [ox, oy] of offsets) {
+      player.x = sx + ox; player.y = sy + oy;
+      player.x = Math.max(0, Math.min(PW - player.w, player.x));
+      player.y = Math.max(0, Math.min(PH - player.h, player.y));
+      if (!hitsSolid(player, room.data.tiles)) return;
+    }
+  }
+  player.x = sx; player.y = sy;
+  const bt = room.data.baseTile;
+  const x0 = Math.max(0, Math.floor(player.x / TILE));
+  const x1 = Math.min(RW - 1, Math.floor((player.x + player.w - 1) / TILE));
+  const y0 = Math.max(0, Math.floor(player.y / TILE));
+  const y1 = Math.min(RH - 1, Math.floor((player.y + player.h - 1) / TILE));
+  for (let y = y0; y <= y1; y++)
+    for (let x = x0; x <= x1; x++)
+      room.data.tiles[y * RW + x] = bt;
+}
+
+function placePlayerForEntry(dir, exitX, exitY) {
+  if (dir === 'left') {
+    player.x = PW - player.w - 5; player.y = exitY; player.dir = 'left';
+  } else if (dir === 'right') {
+    player.x = 5; player.y = exitY; player.dir = 'right';
+  } else if (dir === 'up') {
+    player.y = PH - player.h - 5; player.x = exitX; player.dir = 'up';
+  } else if (dir === 'down') {
+    player.y = 5; player.x = exitX; player.dir = 'down';
+  }
+  player.x = Math.max(0, Math.min(PW - player.w, player.x));
+  player.y = Math.max(0, Math.min(PH - player.h, player.y));
+  ensureWalkable();
+  player.iframes = Math.max(player.iframes, 0.35);
+}
+
+/* ======================================================================
+   MAIN UPDATE
+   ====================================================================== */
+function update(dt) {
+  time += dt;
+  if (game.msg > 0) game.msg -= dt;
+  if (game.intro > 0) game.intro -= dt;
+
+  if (game.state === 'dead' || game.state === 'win') return;
+
+  if (game.state === 'transition') {
+    const tr = game.transition;
+    tr.t += dt;
+    if (tr.t >= tr.dur) {
+      const finished = game.transition;
+      game.transition = null;
+      game.state = 'play';
+      enterRoom(finished.nx, finished.ny);
+      placePlayerForEntry(finished.dir, finished.exitX, finished.exitY);
+    }
+    return;
+  }
+
+  updatePlayer(dt);
+  updateEnemies(dt);
+  updateProjectiles(dt);
+  updateFlames(dt);
+  updateItems();
+  checkExit();
+}
+
+/* ======================================================================
+   RENDERING
+   ====================================================================== */
+const THEME_BG = ['#4c9a4c', '#6f7a52', '#2f6b39', '#c8b878', '#cbb87c'];
+
+function drawTile(t, theme, px, py, tx, ty, data) {
+  const bg = THEME_BG[theme];
+
+  if (t === FLOOR || t === SAND) {
+    ctx.fillStyle = bg;
+    ctx.fillRect(px, py, TILE, TILE);
+    if (((tx * 7 + ty * 13 + theme * 3) & 3) === 0) {
+      ctx.fillStyle = 'rgba(0,0,0,0.07)';
+      ctx.fillRect(px + 4, py + 5, 3, 3);
+      ctx.fillRect(px + 10, py + 11, 2, 2);
+    }
+  } else if (t === ROCK) {
+    ctx.fillStyle = bg; ctx.fillRect(px, py, TILE, TILE);
+    ctx.fillStyle = '#8f8f86'; ctx.fillRect(px + 1, py + 1, 14, 14);
+    ctx.fillStyle = '#a9a99f'; ctx.fillRect(px + 2, py + 2, 12, 4);
+    ctx.fillStyle = '#63635b'; ctx.fillRect(px + 1, py + 12, 14, 3);
+    ctx.fillStyle = 'rgba(0,0,0,0.18)'; ctx.fillRect(px + 13, py + 5, 2, 7);
+  } else if (t === WATER) {
+    ctx.fillStyle = '#2f5fbf'; ctx.fillRect(px, py, TILE, TILE);
+    ctx.fillStyle = '#3f74d8';
+    const ph = Math.floor(time * 4 + tx * 0.7 + ty * 1.3) % 4;
+    ctx.fillRect(px + 2 + ph, py + 4, 6, 2);
+    ctx.fillRect(px + 8 - ph, py + 10, 5, 2);
+    ctx.fillStyle = 'rgba(255,255,255,0.10)';
+    ctx.fillRect(px, py, TILE, 2);
+  } else if (t === LADDER) {
+    // water below
+    ctx.fillStyle = '#2f5fbf'; ctx.fillRect(px, py, TILE, TILE);
+    ctx.fillStyle = '#3f74d8';
+    const ph = Math.floor(time * 4 + tx * 0.7 + ty * 1.3) % 4;
+    ctx.fillRect(px + 2 + ph, py + 4, 6, 2);
+    ctx.fillRect(px + 8 - ph, py + 10, 5, 2);
+
+    // decide orientation from surrounding water/ladder
+    const g = (x, y) => (x < 0 || x >= RW || y < 0 || y >= RH) ? ROCK : data.tiles[y * RW + x];
+    const nUp    = g(tx, ty - 1), nDown  = g(tx, ty + 1);
+    const nLeft  = g(tx - 1, ty), nRight = g(tx + 1, ty);
+    const vertRun   = (nUp   === WATER || nUp   === LADDER) || (nDown  === WATER || nDown  === LADDER);
+    const horizRun  = (nLeft === WATER || nLeft === LADDER) || (nRight === WATER || nRight === LADDER);
+    const vertical = vertRun && !horizRun;
+
+    // wood colors
+    const railDark  = '#5a3a14';
+    const railLight = '#8a6a2a';
+    const rungColor = '#9a7a3a';
+
+    if (vertical) {
+      ctx.fillStyle = railDark;
+      ctx.fillRect(px + 2, py, 3, TILE);
+      ctx.fillRect(px + 11, py, 3, TILE);
+      ctx.fillStyle = rungColor;
+      for (let r = 2; r < TILE; r += 5) {
+        ctx.fillRect(px + 2, py + r, 12, 2);
+      }
+      ctx.fillStyle = railLight;
+      ctx.fillRect(px + 2, py, 1, TILE);
+      ctx.fillRect(px + 11, py, 1, TILE);
+    } else {
+      ctx.fillStyle = railDark;
+      ctx.fillRect(px, py + 2, TILE, 3);
+      ctx.fillRect(px, py + 11, TILE, 3);
+      ctx.fillStyle = rungColor;
+      for (let c = 2; c < TILE; c += 5) {
+        ctx.fillRect(px + c, py + 2, 2, 12);
+      }
+      ctx.fillStyle = railLight;
+      ctx.fillRect(px, py + 2, TILE, 1);
+      ctx.fillRect(px, py + 11, TILE, 1);
+    }
+  } else if (t === TREE) {
+    ctx.fillStyle = bg; ctx.fillRect(px, py, TILE, TILE);
+    ctx.fillStyle = '#123d1c';
+    ctx.beginPath(); ctx.arc(px + 8, py + 10, 7.5, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#1f6b2e';
+    ctx.beginPath(); ctx.arc(px + 8, py + 8, 6.5, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#2f8a3c';
+    ctx.beginPath(); ctx.arc(px + 6, py + 6, 3.5, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#5a3a1e';
+    ctx.fillRect(px + 7, py + 13, 3, 3);
+  } else if (t === BRICK) {
+    ctx.fillStyle = '#7a5a3a'; ctx.fillRect(px, py, TILE, TILE);
+    ctx.fillStyle = '#5a3f26';
+    ctx.fillRect(px, py + 7, TILE, 2);
+    ctx.fillRect(px + 7, py, 2, 7);
+    ctx.fillRect(px + 3, py + 9, 2, 7);
+  } else if (t === BUSH) {
+    ctx.fillStyle = bg; ctx.fillRect(px, py, TILE, TILE);
+    ctx.fillStyle = 'rgba(0,0,0,0.12)';
+    ctx.fillRect(px + 3, py + 12, 10, 2);
+    ctx.fillStyle = '#2a6a2a';
+    ctx.beginPath(); ctx.arc(px + 8, py + 9, 6.5, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#3a8a3a';
+    ctx.beginPath(); ctx.arc(px + 6, py + 7, 5, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(px + 11, py + 8, 4, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#4aa84a';
+    ctx.beginPath(); ctx.arc(px + 6, py + 6, 2, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(px + 11, py + 7, 1.6, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#1a4a1a';
+    ctx.fillRect(px + 8, py + 13, 2, 2);
+  }
+}
+
+function drawRoomTiles(data, ox, oy) {
+  for (let y = 0; y < RH; y++)
+    for (let x = 0; x < RW; x++) {
+      drawTile(data.tiles[y * RW + x], data.theme, ox + x * TILE, oy + y * TILE, x, y, data);
+    }
+}
+
+function drawPlayer(p, ox, oy) {
+  if (p.iframes > 0 && Math.floor(p.iframes * 22) % 2 === 0) return;
+  const x = Math.round(p.x) + ox - 2;
+  const y = Math.round(p.y) + oy - 3;
+
+  ctx.fillStyle = 'rgba(0,0,0,0.28)';
+  ctx.beginPath(); ctx.ellipse(x + 8, y + 17, 6, 2.5, 0, 0, Math.PI * 2); ctx.fill();
+
+  ctx.fillStyle = '#2e8b3a';
+  ctx.fillRect(x + 3, y + 1, 10, 4);
+  ctx.fillRect(x + 2, y + 3, 12, 3);
+  ctx.fillStyle = '#1d6b28';
+  ctx.fillRect(x + 3, y + 6, 10, 2);
+
+  ctx.fillStyle = '#f2c48a';
+  ctx.fillRect(x + 4, y + 5, 8, 6);
+
+  ctx.fillStyle = '#221a12';
+  if (p.dir === 'down') { ctx.fillRect(x + 5, y + 7, 2, 2); ctx.fillRect(x + 9, y + 7, 2, 2); }
+  else if (p.dir === 'left') { ctx.fillRect(x + 4, y + 7, 2, 2); }
+  else if (p.dir === 'right') { ctx.fillRect(x + 10, y + 7, 2, 2); }
+
+  ctx.fillStyle = '#2e8b3a';
+  ctx.fillRect(x + 3, y + 11, 10, 5);
+  ctx.fillStyle = '#1d6b28';
+  ctx.fillRect(x + 3, y + 15, 10, 2);
+  ctx.fillStyle = '#f2c48a';
+  if (p.dir === 'left') ctx.fillRect(x + 1, y + 12, 3, 3);
+  else if (p.dir === 'right') ctx.fillRect(x + 12, y + 12, 3, 3);
+  else { ctx.fillRect(x + 1, y + 12, 3, 3); ctx.fillRect(x + 12, y + 12, 3, 3); }
+
+  if (p.sword > 0) {
+    const t = 1 - (p.sword / 0.22);
+    const cx = x + 8, cy = y + 9;
+    const d = 10 + t * 8;
+    ctx.fillStyle = '#e8e8f0';
+    if (p.swordDir === 'up') ctx.fillRect(cx - 2, cy - d - 6, 4, 12);
+    else if (p.swordDir === 'down') ctx.fillRect(cx - 2, cy + d - 6, 4, 12);
+    else if (p.swordDir === 'left') ctx.fillRect(cx - d - 6, cy - 2, 12, 4);
+    else ctx.fillRect(cx + d - 6, cy - 2, 12, 4);
+    ctx.fillStyle = '#8ab4ff';
+    if (p.swordDir === 'up') ctx.fillRect(cx - 1, cy - d - 6, 2, 12);
+    else if (p.swordDir === 'down') ctx.fillRect(cx - 1, cy + d - 6, 2, 12);
+    else if (p.swordDir === 'left') ctx.fillRect(cx - d - 6, cy - 1, 12, 2);
+    else ctx.fillRect(cx + d - 6, cy - 1, 12, 2);
+  }
+}
+
+function drawShield(p, ox, oy) {
+  const cx = p.x + p.w / 2 + ox;
+  const cy = p.y + p.h / 2 + oy;
+  const v = DIRV[p.dir];
+  const sx = cx + v[0] * 8;
+  const sy = cy + v[1] * 8;
+  const flash = p.shieldFlash > 0;
+
+  const base  = flash ? '#a8c8ff' : '#4060c0';
+  const edge  = flash ? '#e0ecff' : '#6090e0';
+  const dark  = flash ? '#7ea0e8' : '#2038a0';
+
+  if (p.dir === 'up' || p.dir === 'down') {
+    ctx.fillStyle = dark;
+    ctx.fillRect(sx - 7, sy - 3, 14, 6);
+    ctx.fillStyle = base;
+    ctx.fillRect(sx - 7, sy - 3, 14, 5);
+    ctx.fillStyle = edge;
+    ctx.fillRect(sx - 7, sy - 3, 14, 2);
+  } else {
+    ctx.fillStyle = dark;
+    ctx.fillRect(sx - 3, sy - 7, 6, 14);
+    ctx.fillStyle = base;
+    ctx.fillRect(sx - 3, sy - 7, 5, 14);
+    ctx.fillStyle = edge;
+    ctx.fillRect(sx - 3, sy - 7, 2, 14);
+  }
+}
+
+function drawEnemy(e, ox, oy) {
+  const x = Math.round(e.x) + ox, y = Math.round(e.y) + oy;
+  const flash = e.hurt > 0 && Math.floor(e.hurt * 24) % 2 === 0;
+
+  if (e.type === 'octorok') {
+    ctx.fillStyle = 'rgba(0,0,0,0.25)';
+    ctx.beginPath(); ctx.ellipse(x + 6, y + 12, 6, 2, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = flash ? '#ffffff' : '#c04040';
+    ctx.beginPath(); ctx.ellipse(x + 6, y + 7, 7, 6, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = flash ? '#ffffff' : '#8f2a2a';
+    ctx.beginPath(); ctx.ellipse(x + 6, y + 9, 6, 4, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(x + 2, y + 4, 8, 5);
+    ctx.fillStyle = '#111';
+    ctx.fillRect(x + 3, y + 5, 2, 3);
+    ctx.fillRect(x + 7, y + 5, 2, 3);
+
+  } else if (e.type === 'moblin') {
+    ctx.fillStyle = 'rgba(0,0,0,0.25)';
+    ctx.beginPath(); ctx.ellipse(x + 6, y + 13, 6, 2, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = flash ? '#ffffff' : '#7a5a2e';
+    ctx.fillRect(x + 2, y + 6, 9, 7);
+    ctx.fillStyle = flash ? '#ffffff' : '#8f6a38';
+    ctx.fillRect(x + 2, y + 1, 9, 6);
+    ctx.fillStyle = flash ? '#ffffff' : '#5a4020';
+    ctx.fillRect(x + 9, y + 3, 4, 3);
+    ctx.fillStyle = '#ff4040';
+    ctx.fillRect(x + 4, y + 3, 2, 2);
+    ctx.fillRect(x + 8, y + 3, 2, 2);
+    ctx.fillStyle = '#3a2a12';
+    ctx.fillRect(x + 2, y + 12, 3, 2);
+    ctx.fillRect(x + 8, y + 12, 3, 2);
+
+  } else {
+    const flap = Math.sin(e.t * 18) * 3;
+    ctx.fillStyle = 'rgba(0,0,0,0.2)';
+    ctx.beginPath(); ctx.ellipse(x + 6, y + 12, 5, 2, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = flash ? '#ffffff' : '#6a3f9e';
+    ctx.beginPath(); ctx.moveTo(x + 5, y + 6); ctx.lineTo(x - 2, y + 3 + flap); ctx.lineTo(x + 4, y + 10); ctx.fill();
+    ctx.beginPath(); ctx.moveTo(x + 7, y + 6); ctx.lineTo(x + 14, y + 3 - flap); ctx.lineTo(x + 8, y + 10); ctx.fill();
+    ctx.fillStyle = flash ? '#ffffff' : '#8a5fce';
+    ctx.beginPath(); ctx.ellipse(x + 6, y + 6, 4, 4.5, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#fff';
+    ctx.fillRect(x + 4, y + 5, 2, 2);
+    ctx.fillRect(x + 7, y + 5, 2, 2);
+  }
+}
+
+function drawItems(ox, oy) {
+  for (const it of room.items) {
+    const x = Math.round(it.x) + ox, y = Math.round(it.y) + oy;
+    const bob = Math.sin(time * 4 + it.x) * 1.5;
+    if (it.type === 'heart') {
+      ctx.fillStyle = '#e03030';
+      ctx.beginPath(); ctx.arc(x + 4.5, y + 5.5, 3.5, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath(); ctx.arc(x + 9.5, y + 5.5, 3.5, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath();
+      ctx.moveTo(x + 1, y + 6); ctx.lineTo(x + 13, y + 6); ctx.lineTo(x + 7, y + 14);
+      ctx.closePath(); ctx.fill();
+      ctx.fillStyle = 'rgba(255,255,255,0.6)';
+      ctx.fillRect(x + 3, y + 3, 2, 2);
+    } else {
+      const yy = y + bob;
+      ctx.fillStyle = 'rgba(255,215,60,0.20)';
+      ctx.beginPath(); ctx.arc(x + 9, yy + 9, 13, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = '#f0c020';
+      ctx.beginPath();
+      ctx.moveTo(x + 9, yy); ctx.lineTo(x + 18, yy + 16); ctx.lineTo(x, yy + 16);
+      ctx.closePath(); ctx.fill();
+      ctx.fillStyle = '#fff6b0';
+      ctx.beginPath();
+      ctx.moveTo(x + 9, yy + 1); ctx.lineTo(x + 14, yy + 10); ctx.lineTo(x + 4, yy + 10);
+      ctx.closePath(); ctx.fill();
+      ctx.fillStyle = '#0a0a0c';
+      ctx.beginPath();
+      ctx.moveTo(x + 9, yy + 8); ctx.lineTo(x + 13, yy + 15); ctx.lineTo(x + 5, yy + 15);
+      ctx.closePath(); ctx.fill();
+    }
+  }
+}
+
+function drawProjectiles(ox, oy) {
+  for (const p of room.projectiles) {
+    const x = Math.round(p.x) + ox, y = Math.round(p.y) + oy;
+    if (p.type === 'rock') {
+      ctx.fillStyle = '#6a6a6a';
+      ctx.beginPath(); ctx.arc(x + 4, y + 4, 4, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = '#8f8f8f';
+      ctx.beginPath(); ctx.arc(x + 3, y + 3, 2, 0, Math.PI * 2); ctx.fill();
+    } else {
+      const a = Math.atan2(p.vy, p.vx);
+      ctx.save();
+      ctx.translate(x + 4, y + 4);
+      ctx.rotate(a);
+      ctx.fillStyle = '#8a6a3a';
+      ctx.fillRect(-6, -1, 10, 2);
+      ctx.fillStyle = '#d0d0d0';
+      ctx.beginPath();
+      ctx.moveTo(4, -3); ctx.lineTo(9, 0); ctx.lineTo(4, 3);
+      ctx.closePath(); ctx.fill();
+      ctx.restore();
+    }
+  }
+}
+
+function drawFlames(ox, oy) {
+  for (const f of room.flames) {
+    const a = Math.max(0, f.life / f.maxLife);
+    const x = Math.round(f.x) + ox;
+    const y = Math.round(f.y) + oy;
+    const wobble = Math.sin(time * 30 + f.x) * 1.4;
+    const scale = 0.75 + 0.25 * a;
+
+    ctx.fillStyle = 'rgba(255,120,20,' + (0.22 * a) + ')';
+    ctx.beginPath(); ctx.arc(x, y, 15 * scale, 0, Math.PI * 2); ctx.fill();
+
+    ctx.fillStyle = 'rgba(255,150,30,' + (0.85 * a) + ')';
+    ctx.beginPath(); ctx.ellipse(x, y + wobble * 0.3, 7 * scale, 9 * scale, 0, 0, Math.PI * 2); ctx.fill();
+
+    ctx.fillStyle = 'rgba(255,240,130,' + (0.95 * a) + ')';
+    ctx.beginPath(); ctx.ellipse(x, y + wobble * 0.3 - 1, 3.5 * scale, 5 * scale, 0, 0, Math.PI * 2); ctx.fill();
+  }
+}
+
+function drawEntities(ox, oy) {
+  drawItems(ox, oy);
+  for (const e of room.enemies) drawEnemy(e, ox, oy);
+  drawProjectiles(ox, oy);
+}
+
+/* ======================================================================
+   HUD
+   ====================================================================== */
+function drawHeart(x, y, filled) {
+  ctx.fillStyle = filled ? '#e03030' : '#3a1a1a';
+  ctx.beginPath(); ctx.arc(x + 4, y + 4, 3.4, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.arc(x + 9, y + 4, 3.4, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath();
+  ctx.moveTo(x + 1, y + 4.5); ctx.lineTo(x + 12, y + 4.5); ctx.lineTo(x + 6.5, y + 12);
+  ctx.closePath(); ctx.fill();
+  if (filled) {
+    ctx.fillStyle = 'rgba(255,255,255,0.65)';
+    ctx.fillRect(x + 2, y + 2, 2, 2);
+  }
+}
+
+function drawTriIcon(x, y, filled) {
+  ctx.fillStyle = filled ? '#f0c020' : '#3a3418';
+  ctx.beginPath();
+  ctx.moveTo(x + 7, y); ctx.lineTo(x + 14, y + 12); ctx.lineTo(x, y + 12);
+  ctx.closePath(); ctx.fill();
+  if (filled) {
+    ctx.fillStyle = '#fff6b0';
+    ctx.beginPath();
+    ctx.moveTo(x + 7, y + 1); ctx.lineTo(x + 11, y + 8); ctx.lineTo(x + 3, y + 8);
+    ctx.closePath(); ctx.fill();
+  }
+}
+
+function drawCandleIcon(x, y) {
+  ctx.fillStyle = '#e8d8a0';
+  ctx.fillRect(x + 3, y + 5, 6, 9);
+  ctx.fillStyle = '#c0a870';
+  ctx.fillRect(x + 3, y + 12, 6, 2);
+  ctx.fillStyle = '#a08850';
+  ctx.fillRect(x + 3, y + 5, 6, 1);
+  ctx.fillStyle = '#2a2a2a';
+  ctx.fillRect(x + 5, y + 3, 1, 3);
+  const wobble = Math.sin(time * 8) * 0.4;
+  ctx.fillStyle = '#ff9020';
+  ctx.beginPath(); ctx.ellipse(x + 5.5, y + 2 + wobble, 2.2, 3, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = '#fff0a0';
+  ctx.beginPath(); ctx.ellipse(x + 5.5, y + 2.5 + wobble, 1, 1.6, 0, 0, Math.PI * 2); ctx.fill();
+}
+
+function drawLadderIcon(x, y) {
+  // rails
+  ctx.fillStyle = '#6a4a1a';
+  ctx.fillRect(x + 2, y + 2, 2, 13);
+  ctx.fillRect(x + 11, y + 2, 2, 13);
+  // rungs
+  ctx.fillStyle = '#9a7a3a';
+  for (let r = 4; r <= 13; r += 3) {
+    ctx.fillRect(x + 2, y + r, 11, 2);
+  }
+  // highlight
+  ctx.fillStyle = 'rgba(255,220,150,0.4)';
+  ctx.fillRect(x + 2, y + 2, 1, 13);
+  ctx.fillRect(x + 11, y + 2, 1, 13);
+}
+
+function drawHUD() {
+  ctx.fillStyle = '#0d0d10';
+  ctx.fillRect(0, 0, CW, HUD_H);
+
+  ctx.fillStyle = '#2a2a34';
+  ctx.fillRect(0, HUD_H - 2, CW, 2);
+  ctx.fillStyle = '#16161c';
+  ctx.fillRect(0, HUD_H - 4, CW, 2);
+
+  const hearts = Math.ceil(player.maxHp / 2);
+  for (let i = 0; i < hearts; i++) {
+    const filled = player.hp >= (i + 1) * 2;
+    const half = !filled && player.hp === i * 2 + 1;
+    if (half) {
+      drawHeart(8 + i * 15, 9, false);
+      ctx.save();
+      ctx.beginPath(); ctx.rect(8 + i * 15, 9, 7, 14); ctx.clip();
+      drawHeart(8 + i * 15, 9, true);
+      ctx.restore();
+    } else {
+      drawHeart(8 + i * 15, 9, filled);
+    }
+  }
+
+  // candle icon
+  drawCandleIcon(78, 10);
+
+  // ladder icon
+  const lf = player.ladderFlash > 0 ? 'rgba(255,220,150,' + Math.min(1, player.ladderFlash * 4) + ')' : null;
+  drawLadderIcon(100, 10);
+  if (lf) {
+    ctx.fillStyle = lf;
+    ctx.globalAlpha = Math.min(1, player.ladderFlash * 4) * 0.5;
+    ctx.fillRect(100, 10, 16, 18);
+    ctx.globalAlpha = 1;
+  }
+
+  for (let i = 0; i < 3; i++) {
+    drawTriIcon(CW - 22 - i * 20, 10, i < game.triforce);
+  }
+}
+
+/* ======================================================================
+   RENDER
+   ====================================================================== */
+function render() {
+  ctx.fillStyle = '#000';
+  ctx.fillRect(0, 0, CW, CH);
+
+  drawHUD();
+
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(0, HUD_H, PW, PH);
+  ctx.clip();
+  ctx.translate(0, HUD_H);
+
+  if (game.transition) {
+    const tr = game.transition;
+    const p = Math.min(1, tr.t / tr.dur);
+    const e = p * p * (3 - 2 * p);
+    let ox = 0, oy = 0;
+    if (tr.dir === 'left') ox = -1;
+    else if (tr.dir === 'right') ox = 1;
+    else if (tr.dir === 'up') oy = -1;
+    else oy = 1;
+
+    const fx = -ox * e * PW, fy = -oy * e * PH;
+    drawRoomTiles(room.data, fx, fy);
+    drawEntities(fx, fy);
+    drawShield(player, fx, fy);
+    drawPlayer(player, fx, fy);
+    drawFlames(fx, fy);
+
+    const tx = ox * (1 - e) * PW, ty = oy * (1 - e) * PH;
+    const nd = getRoom(tr.nx, tr.ny);
+    drawRoomTiles(nd, tx, ty);
+  } else {
+    drawRoomTiles(room.data, 0, 0);
+    drawEntities(0, 0);
+    drawShield(player, 0, 0);
+    drawPlayer(player, 0, 0);
+    drawFlames(0, 0);
+  }
+
+  if (game.msg > 0) {
+    const alpha = Math.min(1, game.msg);
+    ctx.fillStyle = 'rgba(0,0,0,' + (0.65 * alpha) + ')';
+    ctx.fillRect(0, PH / 2 - 18, PW, 36);
+    ctx.fillStyle = 'rgba(255,230,120,' + alpha + ')';
+    ctx.font = 'bold 11px monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText(game.msgText, PW / 2, PH / 2 + 4);
+    ctx.textAlign = 'left';
+  }
+
+  if (game.intro > 0 && game.state === 'play' && !game.transition) {
+    const a = Math.min(1, game.intro / 1.5);
+    ctx.fillStyle = 'rgba(0,0,0,' + (0.78 * a) + ')';
+    ctx.fillRect(0, PH / 2 - 78, PW, 156);
+    ctx.fillStyle = 'rgba(255,255,255,' + a + ')';
+    ctx.font = 'bold 15px monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText('D E L Z A', PW / 2, PH / 2 - 56);
+    ctx.font = '10px monospace';
+    ctx.fillStyle = 'rgba(180,255,180,' + a + ')';
+    ctx.fillText('WASD / ARROWS  —  MOVE', PW / 2, PH / 2 - 34);
+    ctx.fillText('Z / SPACE  —  SWORD', PW / 2, PH / 2 - 18);
+    ctx.fillStyle = 'rgba(255,180,120,' + a + ')';
+    ctx.fillText('C / K  —  CANDLE (BURN BUSHES)', PW / 2, PH / 2 - 2);
+    ctx.fillStyle = 'rgba(255,220,150,' + a + ')';
+    ctx.fillText('L / E  —  LADDER (CROSS WATER)', PW / 2, PH / 2 + 14);
+    ctx.fillStyle = 'rgba(160,200,255,' + a + ')';
+    ctx.fillText('SHIELD BLOCKS WHILE IDLE', PW / 2, PH / 2 + 32);
+    ctx.fillStyle = 'rgba(255,220,120,' + a + ')';
+    ctx.fillText('FIND THE 3 TRIFORCE PIECES', PW / 2, PH / 2 + 52);
+    ctx.textAlign = 'left';
+  }
+
+  ctx.restore();
+
+  if (game.state === 'dead') {
+    ctx.fillStyle = 'rgba(0,0,0,0.78)';
+    ctx.fillRect(0, 0, CW, CH);
+    ctx.fillStyle = '#d03030';
+    ctx.font = 'bold 22px monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText('GAME OVER', CW / 2, CH / 2 - 6);
+    ctx.fillStyle = '#c8c8c8';
+    ctx.font = '11px monospace';
+    ctx.fillText('PRESS SPACE TO TRY AGAIN', CW / 2, CH / 2 + 22);
+    ctx.textAlign = 'left';
+  } else if (game.state === 'win') {
+    ctx.fillStyle = 'rgba(0,0,0,0.78)';
+    ctx.fillRect(0, 0, CW, CH);
+    ctx.fillStyle = '#f0c020';
+    ctx.font = 'bold 20px monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText('YOU WIN!', CW / 2, CH / 2 - 14);
+    ctx.fillStyle = '#c8f0c8';
+    ctx.font = '11px monospace';
+    ctx.fillText('THE TRIFORCE IS YOURS', CW / 2, CH / 2 + 8);
+    ctx.fillStyle = '#c8c8c8';
+    ctx.fillText('PRESS SPACE TO PLAY AGAIN', CW / 2, CH / 2 + 30);
+    ctx.textAlign = 'left';
+  }
+}
+
+/* ======================================================================
+   LOOP
+   ====================================================================== */
+let last = performance.now();
+function loop(now) {
+  let dt = (now - last) / 1000;
+  last = now;
+  if (dt > 0.1) dt = 0.1;
+  update(dt);
+  render();
+  requestAnimationFrame(loop);
+}
+
+init();
+requestAnimationFrame(loop);
+
+})();
+</script>
+</body>
+</html>
