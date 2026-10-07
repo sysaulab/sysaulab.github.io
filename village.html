@@ -196,6 +196,12 @@
 
   #perf{position:absolute;bottom:6px;left:6px;font-size:10px;opacity:.35;
     font-variant-numeric:tabular-nums;pointer-events:none;font-family:monospace}
+
+  #saveChip{cursor:pointer;pointer-events:auto;
+    transition:background .15s, border-color .15s, transform .15s}
+  #saveChip:hover{background:rgba(30,45,28,.95)}
+  #saveChip.pulse{background:rgba(96,180,72,.95);
+    border-color:#a8e08a;transform:scale(1.06)}
 </style>
 </head>
 <body>
@@ -215,6 +221,7 @@
       <span class="ic" style="background:#e05a4a"></span>Selling <b>— click a building</b>
     </div>
     <div class="chip"><span class="ic" style="background:#e8b04b"></span>Pop <b id="uiPop">0</b></div>
+    <div class="chip" id="saveChip" title="Save game (Ctrl+S)"><span class="ic" style="background:#7ee06a"></span>💾 Save</div>
     <div class="chip"><span class="ic" style="background:#e05a5a"></span>HP
       <div class="hpbar"><i id="uiHpBar" style="width:100%"></i></div>
       <b id="uiHp">100</b></div>
@@ -225,7 +232,7 @@
     <div class="gr"><span>Wave</span><b id="gWave">0</b></div>
     <div class="gr"><span>Kills</span><b id="gKills">0</b></div>
     <div class="gr"><span>Survived</span><b id="gTime">0:00</b></div>
-    <div class="wave" id="waveRow">Next wave in <b id="uiWaveT">90</b>s</div>
+    <div class="wave" id="waveRow">Next wave in <b id="uiWaveT">120</b>s</div>
     <div class="diff" id="gDiff">Difficulty <b>Normal</b></div>
   </div>
 
@@ -274,30 +281,33 @@
     <h1>Wildwood Village</h1>
     <div class="sub">Endure · Build · Defend</div>
     <div class="menu-btns">
-      <button id="btnPlay" class="mbtn primary">▶ Play</button>
+      <button id="btnPlay" class="mbtn primary">▶ New Game</button>
+      <button id="btnContinue" class="mbtn" style="display:none">⏵ Continue</button>
       <button id="btnSound" class="mbtn">🔊 Sound: On</button>
     </div>
+    <div id="saveInfo" style="display:none; margin-top:12px; font-size:11px;
+      opacity:.55; letter-spacing:.06em"></div>
 
     <div class="diff-row">
       <div class="diff-label">Difficulty</div>
       <div class="diff-btns" id="diffBtns">
         <button class="dbtn easy"   data-diff="easy">
-          <span class="dl">Easy</span><span class="ds">80s between</span>
+          <span class="dl">Easy</span><span class="ds">240s between</span>
         </button>
         <button class="dbtn normal selected" data-diff="normal">
-          <span class="dl">Normal</span><span class="ds">60s between</span>
+          <span class="dl">Normal</span><span class="ds">120s between</span>
         </button>
         <button class="dbtn hard"   data-diff="hard">
-          <span class="dl">Hard</span><span class="ds">40s between</span>
+          <span class="dl">Hard</span><span class="ds">60s between</span>
         </button>
       </div>
     </div>
 
     <div class="menu-help">
       <p><b>WASD</b> move &nbsp;·&nbsp; <b>SPACE</b> gather &nbsp;·&nbsp; <b>1–8</b> build &nbsp;·&nbsp; <b>X</b> sell</p>
-      <p><b>Lumber</b> boosts tower damage · <b>Quarry</b> boosts range · <b>Storage</b> boosts fire rate.</p>
-      <p><b>Farms</b> heal nearby buildings · <b>Forges</b> give global damage · <b>Houses</b> add fighters.</p>
-      <p>Survive as long as you can.</p>
+      <p><b>Lumber</b> boosts tower damage · <b>Quarry</b> boosts range · <b>Storage</b> boosts fire rate &amp; villager carry.</p>
+      <p><b>Farms</b> heal nearby buildings · <b>Forges</b> give global damage to towers &amp; villagers.</p>
+      <p>Villagers clear obstacles in their path — no need to babysit them.</p>
     </div>
     <div class="keyhint">H heal · X sell · M mute · N music · F perf</div>
   </div>
@@ -328,7 +338,6 @@
 const clamp=(v,a,b)=>v<a?a:(v>b?b:v);
 const lerp=(a,b,t)=>a+(b-a)*t;
 const TAU=Math.PI*2;
-/* Safe number — collapses NaN/undefined/Infinity to a fallback. */
 function safe(v, fallback){ return Number.isFinite(v) ? v : (fallback===undefined?0:fallback); }
 
 function hash2(x,y){
@@ -622,9 +631,9 @@ const WPX=WN*TS;
 const T_GRASS=0, T_WATER=1, T_SAND=2;
 
 const NODE_DEFS={
-  tree:{ hp:3, solid:true,  radius:15, yields:'wood',  amount:1, respawn:150, gatherTime:0.95 },
-  rock:{ hp:4, solid:true,  radius:14, yields:'stone', amount:1, respawn:210, gatherTime:1.35 },
-  bush:{ hp:2, solid:false, radius:11, yields:'food',  amount:2, respawn:96,  gatherTime:0.75 },
+  tree:{ hp:3, solid:true,  radius:15, yields:'wood',  amount:1, respawn:480, gatherTime:0.95 },
+  rock:{ hp:4, solid:true,  radius:14, yields:'stone', amount:1, respawn:720, gatherTime:1.35 },
+  bush:{ hp:2, solid:false, radius:11, yields:'food',  amount:2, respawn:240, gatherTime:0.75 },
 };
 
 const BUILD_DEFS={
@@ -642,7 +651,7 @@ const TOWN_DEF={name:'Town Center', w:4,h:4, color:'#c9a45f', roof:'#a07f3e', hp
 const AURA_DEFS={
   lumber:  { radius:170, dmgBonus:0.25,  label:'+25% tower damage' },
   quarry:  { radius:170, rangeBonus:30,  label:'+30 tower range' },
-  storage: { radius:170, rateBonus:0.25, label:'+25% fire rate' },
+  storage: { radius:170, rateBonus:0.25, label:'+25% fire rate · +4 villager carry' },
   farm:    { radius:140, healPerSec:2.0, label:'heals +2 HP/s' },
   forge:   { radius:0,   globalDmg:0.05, label:'+5% global damage' },
 };
@@ -680,13 +689,15 @@ const FARM_HEAL_RATE = 2.0;
 const FOOD_PER_HP = 1.0;
 
 const DIFFICULTIES={
-  easy:   { waveInterval:80, firstWaveDelay:120, label:'Easy'   },
-  normal: { waveInterval:60, firstWaveDelay:90,  label:'Normal' },
-  hard:   { waveInterval:40, firstWaveDelay:60,  label:'Hard'   },
+  easy:   { waveInterval:240, firstWaveDelay:240, label:'Easy'   },
+  normal: { waveInterval:120, firstWaveDelay:120, label:'Normal' },
+  hard:   { waveInterval:60,  firstWaveDelay:60,  label:'Hard'   },
 };
 let difficulty='normal';
 
 function currentDifficulty(){ return DIFFICULTIES[difficulty]; }
+function waveIntervalSeconds(){ return currentDifficulty().waveInterval; }
+function firstWaveDelaySeconds(){ return currentDifficulty().firstWaveDelay; }
 
 const SELL_REFUND_RATIO = 2/3;
 
@@ -738,7 +749,7 @@ const player={
 
 let townCenter=null;
 let waveNum=0;
-let nextWaveT=DIFFICULTIES.normal.firstWaveDelay;
+let nextWaveT=firstWaveDelaySeconds();
 let painting=false, lastPaintTile=-1;
 let nearTower=null;
 let deliveryPt={x:0,y:0};
@@ -931,7 +942,7 @@ function moveToward(e,tx,ty,dt,soft,speedMul){
 }
 
 /* ============================================================
-   PATHFINDING — A* on the tile grid
+   PATHFINDING
    ============================================================ */
 let _pfGen=0;
 const _pfCellGen=new Int32Array(WN*WN);
@@ -1034,6 +1045,31 @@ function hasLineOfSight(x0,y0,x1,y1,r,soft){
   return true;
 }
 
+/* ------------------------------------------------------------
+   Opportunistic mining helper
+   Samples along the ray from the villager toward (tx, ty) and
+   returns the first solid node it finds. Lets villagers mine
+   whatever is standing between them and their goal.
+   ------------------------------------------------------------ */
+function nodeBlockingDirection(v, tx, ty){
+  const dx = tx - v.x, dy = ty - v.y;
+  const d = Math.hypot(dx, dy);
+  if(d < 1) return null;
+  const ux = dx/d, uy = dy/d;
+
+  for(let dist = v.r + 2; dist <= v.r + 48; dist += 4){
+    const px = v.x + ux*dist;
+    const py = v.y + uy*dist;
+    const ttx = Math.floor(px/TS), tty = Math.floor(py/TS);
+    if(ttx<0||tty<0||ttx>=WN||tty>=WN) break;
+    const n = nodeAt[tty*WN+ttx];
+    if(n && n.alive && NODE_DEFS[n.type].solid){
+      return n;
+    }
+  }
+  return null;
+}
+
 function villagerPathMove(v, targetX, targetY, dt, speedMul){
   const vtx=Math.floor(v.x/TS), vty=Math.floor(v.y/TS);
   const gtx=Math.floor(targetX/TS), gty=Math.floor(targetY/TS);
@@ -1048,7 +1084,8 @@ function villagerPathMove(v, targetX, targetY, dt, speedMul){
   const noPath = !v.path || v.path.length===0 || v.pathIdx>=v.path.length;
 
   if(targetChanged || noPath){
-    v.path = findTilePath(vtx, vty, gtx, gty, 260, false);
+    /* ---- Bigger A* budget so long paths across the map succeed ---- */
+    v.path = findTilePath(vtx, vty, gtx, gty, 700, false);
     v.pathIdx = 1;
     v.pathTargetX = gtx;
     v.pathTargetY = gty;
@@ -1104,6 +1141,12 @@ function addFloat(x,y,text,color){
 }
 function harvestMultiplier(){ return 1 + player.weaponLv*0.18; }
 
+const VILLAGER_BASE_CARRY = 6;
+const VILLAGER_CARRY_PER_STORAGE = 4;
+function villagerCarryCap(){
+  return VILLAGER_BASE_CARRY + VILLAGER_CARRY_PER_STORAGE * countType('storage');
+}
+
 function lowestResourceType(){
   const cap=resCap();
   const slack=10;
@@ -1141,7 +1184,6 @@ function recomputeTowerBuffs(){
         if(A.rateBonus)  t.buffRate  += A.rateBonus;
       }
     }
-    /* Sanitize so a NaN can never poison downstream rendering. */
     t.buffDmg   = safe(Math.min(t.buffDmg, 1.00), 0);
     t.buffRange = safe(Math.min(t.buffRange, 90), 0);
     t.buffRate  = safe(Math.min(t.buffRate, 0.75), 0);
@@ -1474,6 +1516,7 @@ function spawnVillager(){
   addFloat(v.x,v.y,'A villager arrived!','#8ee06a');
 }
 
+/* ---- Bigger search range: find resources from farther away ---- */
 function findBestNodeFor(v, filterNodeType){
   let best=null, bestD=1e9;
   for(const n of nodes){
@@ -1481,7 +1524,7 @@ function findBestNodeFor(v, filterNodeType){
     if(n.claimed && n.claimed!==v) continue;
     if(filterNodeType && n.type!==filterNodeType) continue;
     const d=Math.hypot(n.x-v.x,n.y-v.y);
-    if(d<520 && d<bestD){ bestD=d; best=n; }
+    if(d<1400 && d<bestD){ bestD=d; best=n; }
   }
   if(best) best.claimed=v;
   return best;
@@ -1493,7 +1536,7 @@ function findBlockingNode(v){
     if(!NODE_DEFS[n.type].solid) continue;
     if(n.claimed && n.claimed!==v) continue;
     const d=Math.hypot(n.x-v.x,n.y-v.y);
-    if(d<160 && d<bestD){ bestD=d; best=n; }
+    if(d<220 && d<bestD){ bestD=d; best=n; }
   }
   if(best) best.claimed=v;
   return best;
@@ -1533,6 +1576,7 @@ function updateVillager(v,dt){
   if(v.swingT>0) v.swingT-=dt;
   v.retarget-=dt;
 
+  /* --- Nudge out of solid nodes (rare, but possible) --- */
   if(collideAt(v.x, v.y, v.r, false)){
     for(let rad=4; rad<=64; rad+=4){
       let done=false;
@@ -1545,26 +1589,70 @@ function updateVillager(v,dt){
       if(done) break;
     }
   }
+
+  /* --- Stuck detection --- */
+  /* --- Stuck detection --- (skip while gathering — standing still is expected) --- */
   v._stuckCD-=dt;
   if(v._stuckCD<=0){
-    v._stuckCD=0.8;
-    const moved=Math.hypot(v.x-v._lastX, v.y-v._lastY);
-    if(moved<14 && v.state!=='flee'){
-      v._stuckT += 0.8;
-      if(v._stuckT >= 1.6){
-        v.path=null;
-        v.pathIdx=0;
-        if(v.target && v.target.claimed===v) v.target.claimed=null;
-        v.target=null;
-        v.retarget=0;
+    v._stuckCD=0.5;
+    if(v.state==='gather'){
+      // Mining looks like "not moving" — don't flag it as stuck.
+      v._lastX=v.x; v._lastY=v.y;
+      v._stuckT=0;
+    } else {
+      const moved=Math.hypot(v.x-v._lastX, v.y-v._lastY);
+      if(moved<8 && v.state!=='flee'){
+        v._stuckT += 0.5;
+        if(v._stuckT >= 1.0){
+          let goalX=null, goalY=null;
+          if(v.state==='seek' && v.target){ goalX=v.target.x; goalY=v.target.y; }
+          else if(v.state==='return'){ goalX=deliveryPt.x; goalY=deliveryPt.y; }
+
+          let handled=false;
+          if(goalX!==null){
+            const blocker = nodeBlockingDirection(v, goalX, goalY);
+            if(blocker && blocker.alive){
+              if(v.target && v.target.claimed===v) v.target.claimed=null;
+              v.target = blocker;
+              v.state = 'seek';
+              v.path = null;
+              v.pathIdx = 0;
+              v.retarget = 2.0;
+              handled = true;
+            }
+          }
+          if(!handled){
+            if(v.target && v.target.claimed===v) v.target.claimed=null;
+            v.target=null;
+            v.path=null;
+            v.retarget=0;
+          }
+          v._stuckT=0;
+        }
+      } else {
         v._stuckT=0;
       }
-    } else {
-      v._stuckT=0;
+      v._lastX=v.x; v._lastY=v.y;
     }
-    v._lastX=v.x; v._lastY=v.y;
   }
 
+  /* --- Opportunistic mining: if we're blocked while seeking, mine the
+         solid node directly between us and our target --- */
+  if(!v.moving && v.state==='seek' && v.target && v.target.alive){
+    const dTarget = Math.hypot(v.target.x-v.x, v.target.y-v.y);
+    if(dTarget > 32){
+      const blocker = nodeBlockingDirection(v, v.target.x, v.target.y);
+      if(blocker && blocker.alive && blocker !== v.target){
+        if(v.target && v.target.claimed===v) v.target.claimed=null;
+        v.target = blocker;
+        v.path = null;
+        v.pathIdx = 0;
+        v.retarget = 2.0;
+      }
+    }
+  }
+
+  /* --- Threat / flee --- */
   const threat = findNearestEnemy(v.x, v.y, 130);
   if(threat && v.hp < v.maxHp*0.35){
     v.state='flee';
@@ -1587,6 +1675,7 @@ function updateVillager(v,dt){
     }
   }
 
+  /* --- Auto-attack --- */
   if(v.state!=='flee' && v.atkCd<=0){
     const t = findNearestEnemy(v.x, v.y, VILLAGER_ATK_RANGE);
     if(t){
@@ -1602,6 +1691,7 @@ function updateVillager(v,dt){
 
   const roadMul = isOnRoad(v.x,v.y) ? 1.4 : 1;
 
+  /* ---------- SEEK ---------- */
   if(v.state==='seek'){
     if(v.carry>0){ v.state='return'; v.path=null; return; }
 
@@ -1612,7 +1702,7 @@ function updateVillager(v,dt){
     if(!v.target || v.retarget<=0){
       if(v.target && v.target.claimed===v) v.target.claimed=null;
       v.target = pickVillagerTarget(v);
-      v.retarget = 1.2;
+      v.retarget = 1.6;
       v.path = null;
     }
 
@@ -1633,6 +1723,7 @@ function updateVillager(v,dt){
     else villagerPathMove(v, v.target.x, v.target.y, dt, roadMul);
     v.bob+=dt*8;
   }
+  /* ---------- GATHER ---------- */
   else if(v.state==='gather'){
     if(!v.target || !v.target.alive){
       if(v.target && v.target.claimed===v) v.target.claimed=null;
@@ -1642,24 +1733,35 @@ function updateVillager(v,dt){
     }
     const def=NODE_DEFS[v.target.type];
     if(v.carryType===null) v.carryType=def.yields;
-    let rate=1;
-    if(def.yields==='wood' && countType('lumber')) rate=2;
-    if(def.yields==='stone' && countType('quarry')) rate=2;
+
+    let rate = harvestMultiplier();
+    if(def.yields==='wood' && countType('lumber')) rate *= 2;
+    if(def.yields==='stone' && countType('quarry')) rate *= 2;
 
     v.timer += dt*rate/def.gatherTime;
     v.bob += dt*10;
-    if(v.timer>=1){
+        if(v.timer>=1){
       v.timer=0;
       damageNode(v.target);
       v.carry += def.amount;
-      if(v.carry>=6 || !v.target.alive){
+
+      if(v.carry >= villagerCarryCap()){
+        // Carry full — head home.
         if(v.target && v.target.claimed===v) v.target.claimed=null;
         v.target=null;
         v.state='return';
         v.path=null;
+      } else if(!v.target || !v.target.alive){
+        // Node exhausted but we still have carry room — pick another.
+        if(v.target && v.target.claimed===v) v.target.claimed=null;
+        v.target=null;
+        v.state='seek';
+        v.retarget=0;
+        v.path=null;
       }
     }
   }
+  /* ---------- RETURN ---------- */
   else if(v.state==='return'){
     const tx=deliveryPt.x, ty=deliveryPt.y;
     const d=Math.hypot(tx-v.x,ty-v.y);
@@ -1672,7 +1774,14 @@ function updateVillager(v,dt){
       v.state='seek'; v.retarget=0;
       v.path=null;
     } else {
-      villagerPathMove(v, tx, ty, dt, roadMul);
+      /* If we've been stuck for a moment, soft-move through obstacles.
+         Buildings and water still block, but trees get phased past —
+         better than a permanent jam. */
+      if(v._stuckT >= 0.5){
+        moveToward(v, tx, ty, dt, true, roadMul);
+      } else {
+        villagerPathMove(v, tx, ty, dt, roadMul);
+      }
       v.bob+=dt*8;
     }
   }
@@ -1701,7 +1810,11 @@ function damageNode(n){
     n.respawn=NODE_DEFS[n.type].respawn;
     const i=n.ty*WN+n.tx;
     if(nodeAt[i]===n) nodeAt[i]=null;
-    if(n.claimed){ n.claimed.target=null; n.claimed=null; }
+    if(n.claimed){
+      // Only release the claim — do NOT null the villager's own target
+      // reference, they need it to detect `!v.target.alive` on this same tick.
+      n.claimed=null;
+    }
   }
 }
 function findNearestNode(x,y,maxDist){
@@ -1921,7 +2034,6 @@ function updatePlayerCombat(dt){
 /* ============================================================
    TOWERS
    ============================================================ */
-/* Fully sanitized — the inputs to Math.hypot / ctx.arc can never be NaN. */
 function towerEffectiveStats(b){
   let idx = ((b.level|0) || 1) - 1;
   if(idx < 0) idx = 0;
@@ -1938,7 +2050,6 @@ function towerEffectiveStats(b){
   const rateMul = 1 + buffRate;
   const cd = L.cd / rateMul;
 
-  /* Final guard against ever handing NaN to the canvas. */
   return {
     damage: safe(L.damage * dmgMul, L.damage),
     range:  safe(range,  L.range),
@@ -2115,7 +2226,7 @@ function resetGame(){
   painting=false; lastPaintTile=-1;
   nearTower=null;
   waveNum=0;
-  nextWaveT=currentDifficulty().firstWaveDelay;
+  nextWaveT = firstWaveDelaySeconds();
 
   genWorld();
   spawnVillager();
@@ -2145,7 +2256,26 @@ function goToMenu(){
   gameState='menu';
   sellMode=false;
   updateSellChip();
+  refreshMenuSaveState();
   showOverlay('menu');
+}
+function refreshMenuSaveState(){
+  const btn = document.getElementById('btnContinue');
+  const info = document.getElementById('saveInfo');
+  if(hasSave()){
+    const si = getSaveInfo();
+    btn.style.display = '';
+    if(si){
+      const d = new Date(si.savedAt);
+      const hh = d.getHours().toString().padStart(2,'0');
+      const mm = d.getMinutes().toString().padStart(2,'0');
+      info.style.display = '';
+      info.textContent = `Last save: ${si.difficulty[0].toUpperCase()+si.difficulty.slice(1)} · Wave ${si.waveNum} · ${hh}:${mm}`;
+    }
+  } else {
+    btn.style.display = 'none';
+    info.style.display = 'none';
+  }
 }
 function toggleSound(){
   soundOn=!soundOn;
@@ -2180,7 +2310,7 @@ function setDifficulty(key){
     btn.classList.toggle('selected', btn.dataset.diff===key);
   });
   if(gameState!=='playing'){
-    nextWaveT = currentDifficulty().firstWaveDelay;
+    nextWaveT = firstWaveDelaySeconds();
     updateUI();
   }
   sfx('ui');
@@ -2194,11 +2324,34 @@ document.getElementById('diffBtns').addEventListener('click',(e)=>{
   const btn=e.target.closest('.dbtn');
   if(btn) setDifficulty(btn.dataset.diff);
 });
+document.getElementById('saveChip').addEventListener('click', ()=>{
+  sfx('ui');
+  saveGame(false);
+});
+
+document.getElementById('btnContinue').addEventListener('click', ()=>{
+  sfx('ui');
+  if(!loadGame()){
+    showToast('Save could not be loaded', true);
+  }
+});
+
+/* Ctrl+S to save during play */
+window.addEventListener('keydown', (e)=>{
+  if((e.ctrlKey || e.metaKey) && e.code === 'KeyS'){
+    e.preventDefault();
+    if(gameState === 'playing') saveGame(false);
+  }
+}, { capture: true });
+
+/* Autosave whenever a new wave spawns */
+function autosave(){ saveGame(true); }
 
 /* ============================================================
    UPDATE
    ============================================================ */
 let uiTimer=0, panelTimer=0;
+let _lastLoggedInterval = null;
 
 function update(dt){
   state.t+=dt;
@@ -2273,7 +2426,15 @@ function update(dt){
   nextWaveT -= dt;
   if(nextWaveT<=0){
     spawnWave();
-    nextWaveT = currentDifficulty().waveInterval;
+    nextWaveT = waveIntervalSeconds();
+    if(_lastLoggedInterval !== waveIntervalSeconds()){
+      _lastLoggedInterval = waveIntervalSeconds();
+      console.log(
+        `[wave] difficulty=${difficulty} · first=${firstWaveDelaySeconds()}s · interval=${waveIntervalSeconds()}s`
+      );
+    }
+    /* Autosave just after the wave begins so we never lose a whole run */
+    saveGame(true);
   }
 
   if(villagers.length>0) foodFloat -= villagers.length*0.028*dt;
@@ -2338,11 +2499,6 @@ function getVignette(){
   vignetteCache={w:VW,h:VH,g};
   return g;
 }
-
-/* Some older Chrome builds throw IndexSizeError from ctx.arc() with a NaN
-   radius, which used to abort the rest of the render (making everything
-   after the tower disappear). We now guard against that by only calling
-   arc() with a finite radius, and by catching per-entity exceptions. */
 function safeArc(cx, cy, radius, start, end){
   if(!Number.isFinite(cx) || !Number.isFinite(cy)) return false;
   if(!Number.isFinite(radius) || radius < 0) return false;
@@ -2505,8 +2661,6 @@ function render(){
     }
   }
 
-  /* Tower range rings near the player. Wrapped in try/catch so a bad tower
-     can never kill the rest of the render. */
   for(const b of buildings){
     if(b.type!=='tower') continue;
     try{
@@ -2557,7 +2711,6 @@ function render(){
     return (safe(ay,0))-(safe(by,0));
   });
 
-  /* Each entity's draw is isolated so one bad sprite can't hide the map. */
   for(const o of list){
     try{
       if(o.kind==='node') drawNode(o);
@@ -2655,7 +2808,7 @@ function drawNode(n){
 
 function drawBuilding(b){
   const def = b.type==='town' ? TOWN_DEF : BUILD_DEFS[b.type];
-  if(!def) return;   // never let an unknown building kill the draw loop
+  if(!def) return;
   const x=b.x, y=b.y, w=b.w*TS, h=b.h*TS;
   if(buildingIsHealing(b)){
     const cx=x+w/2, cy=y+h/2;
@@ -3201,6 +3354,296 @@ function refreshForgeAndTowerPanels(){
 }
 
 /* ============================================================
+   SAVE / LOAD
+   ------------------------------------------------------------
+   Persists the full mutable game to localStorage.
+   Tiles are deterministic, so we only save what can change.
+   ============================================================ */
+const SAVE_KEY = 'wildwood_village_save_v1';
+const SAVE_VERSION = 1;
+
+function toBase64(u8){
+  let s='';
+  const chunk=0x8000;
+  for(let i=0;i<u8.length;i+=chunk){
+    s += String.fromCharCode.apply(null, u8.subarray(i, i+chunk));
+  }
+  return btoa(s);
+}
+function fromBase64(str, len){
+  const bin = atob(str);
+  const u8 = new Uint8Array(len);
+  const n = Math.min(len, bin.length);
+  for(let i=0;i<n;i++) u8[i] = bin.charCodeAt(i);
+  return u8;
+}
+
+function hasSave(){
+  try{
+    const raw = localStorage.getItem(SAVE_KEY);
+    if(!raw) return false;
+    const s = JSON.parse(raw);
+    return s && s.version === SAVE_VERSION;
+  }catch(e){ return false; }
+}
+function getSaveInfo(){
+  try{
+    const raw = localStorage.getItem(SAVE_KEY);
+    if(!raw) return null;
+    const s = JSON.parse(raw);
+    if(!s || s.version !== SAVE_VERSION) return null;
+    return { savedAt: s.savedAt, waveNum: s.waveNum, difficulty: s.difficulty };
+  }catch(e){ return null; }
+}
+function deleteSave(){
+  try{ localStorage.removeItem(SAVE_KEY); }catch(e){}
+}
+
+function saveGame(silent){
+  if(gameState !== 'playing') return false;
+  try{
+    const nodeIdx = new Map();
+    nodes.forEach((n,i)=>nodeIdx.set(n,i));
+
+    const save = {
+      version: SAVE_VERSION,
+      savedAt: Date.now(),
+      difficulty,
+      waveNum,
+      nextWaveT,
+      foodFloat,
+      healEnabled,
+      state: {
+        wood: state.wood, stone: state.stone, food: state.food,
+        t: state.t, leaveTimer: state.leaveTimer,
+        starveWarn: state.starveWarn, kills: state.kills,
+      },
+      player: {
+        x: player.x, y: player.y, hp: player.hp,
+        weaponLv: player.weaponLv, shieldLv: player.shieldLv,
+      },
+      roadAt: toBase64(roadAt),
+      nodes: nodes.map(n=>({
+        t:n.type, tx:n.tx, ty:n.ty,
+        hp:n.hp, alive:n.alive, rs:n.respawn,
+        ci: (n.claimed && nodeIdx.has(n.claimed)) ? nodeIdx.get(n.claimed) : -1,
+      })),
+      buildings: buildings.map(b=>({
+        t:b.type, tx:b.tx, ty:b.ty,
+        hp:b.hp, mx:b.maxHp,
+        cd:b.cd||0, fcd:b.fireCd||0, lv:b.level||1,
+        ldt:safe(b.lastDamageT,-999),
+        bd:safe(b.buffDmg,0), br:safe(b.buffRange,0),
+        bf:safe(b.buffRate,0), gd:safe(b.globalDmg,0),
+      })),
+      villagers: villagers.map(v=>({
+        x:v.x, y:v.y, hp:v.hp,
+        st:v.state, carry:v.carry, ct:v.carryType,
+        ti: (v.target && nodeIdx.has(v.target)) ? nodeIdx.get(v.target) : -1,
+      })),
+      enemies: enemies.map(e=>({
+        t:e.type, x:e.x, y:e.y, hp:e.hp,
+      })),
+    };
+
+    localStorage.setItem(SAVE_KEY, JSON.stringify(save));
+    if(!silent){
+      showToast('💾 Game saved');
+      pulseSaveChip();
+    }
+    return true;
+  }catch(err){
+    console.error('Save failed:', err);
+    if(!silent) showToast('Save failed — see console', true);
+    return false;
+  }
+}
+
+function loadGame(){
+  try{
+    const raw = localStorage.getItem(SAVE_KEY);
+    if(!raw) return false;
+    const save = JSON.parse(raw);
+    if(!save || save.version !== SAVE_VERSION) return false;
+
+    difficulty = save.difficulty || 'normal';
+    document.querySelectorAll('#diffBtns .dbtn').forEach(btn=>{
+      btn.classList.toggle('selected', btn.dataset.diff === difficulty);
+    });
+
+    /* Wipe everything */
+    nodes.length=0;
+    buildings.length=0;
+    villagers.length=0;
+    floaters.length=0;
+    enemies.length=0;
+    projectiles.length=0;
+
+    /* Regenerate tiles deterministically, then clear what genWorld seeded */
+    genWorld();
+    nodes.length=0;
+    buildings.length=0;
+    nodeAt.fill(null);
+    bldAt.fill(null);
+    roadAt.fill(0);
+    townCenter = null;
+
+    /* Restore roads */
+    const roads = fromBase64(save.roadAt, WN*WN);
+    for(let i=0;i<WN*WN;i++) roadAt[i] = roads[i];
+
+    /* Restore top-level state */
+    state.wood  = save.state.wood;
+    state.stone = save.state.stone;
+    state.food  = save.state.food;
+    state.t     = save.state.t;
+    state.leaveTimer  = save.state.leaveTimer;
+    state.starveWarn  = save.state.starveWarn;
+    state.kills = save.state.kills;
+    foodFloat   = save.foodFloat;
+    healEnabled = !!save.healEnabled;
+    waveNum     = save.waveNum;
+    nextWaveT   = save.nextWaveT;
+
+    /* Restore player */
+    player.x = save.player.x;
+    player.y = save.player.y;
+    player.hp = save.player.hp;
+    player.weaponLv = save.player.weaponLv;
+    player.shieldLv = save.player.shieldLv;
+    player.target=null; player.gather=0;
+    player.attackCd=0; player.swingT=0; player.swingDir=0;
+    player.invuln=0; player.flash=0;
+    player.bob=0; player.moving=false; player.dir=1;
+    player.lastDamageT=-999; player.regenAccum=0;
+
+    /* Restore nodes */
+    const claimMap = [];   // nodeIdx -> villagerIdx (filled after villagers load)
+    for(const n of save.nodes){
+      const def = NODE_DEFS[n.t];
+      if(!def) continue;
+      const node = {
+        kind:'node', type:n.t, tx:n.tx, ty:n.ty,
+        x:n.tx*TS+TS/2, y:n.ty*TS+TS/2,
+        hp:n.hp, maxHp:def.hp,
+        alive: !!n.alive, respawn:n.rs||0, shake:0,
+        claimed:null,
+      };
+      nodes.push(node);
+      if(node.alive) nodeAt[node.ty*WN+node.tx] = node;
+      claimMap.push(n.ci);
+    }
+
+    /* Restore buildings */
+    for(const b of save.buildings){
+      const def = (b.t === 'town') ? TOWN_DEF : BUILD_DEFS[b.t];
+      if(!def) continue;
+      const bld = {
+        kind:'bld', type:b.t, tx:b.tx, ty:b.ty,
+        w:def.w, h:def.h,
+        x:b.tx*TS, y:b.ty*TS,
+        ySort:(b.ty+def.h)*TS,
+        cd:b.cd||0, flash:0,
+        hp:b.hp, maxHp:b.mx,
+        lastDamageT: b.ldt, regenAccum:0,
+        fireCd: b.fcd,
+        buffDmg:b.bd, buffRange:b.br, buffRate:b.bf, globalDmg:b.gd,
+        level: b.lv,
+      };
+      if(b.t === 'tower') bld.level = b.lv || 1;
+      buildings.push(bld);
+      occupy(bld);
+      if(b.t === 'town') townCenter = bld;
+    }
+    if(!townCenter){
+      /* Fallback — recreate a placeholder town center at map middle */
+      const tx = Math.floor(WN/2)-2, ty = Math.floor(WN/2)-2;
+      townCenter = { kind:'bld', type:'town', tx, ty, w:4, h:4,
+                     x:tx*TS, y:ty*TS, ySort:(ty+4)*TS, cd:14,
+                     hp:TOWN_DEF.hp, maxHp:TOWN_DEF.hp, flash:0,
+                     lastDamageT:-999, regenAccum:0 };
+      buildings.push(townCenter);
+      occupy(townCenter);
+    }
+
+    /* Restore villagers, then re-link node claims */
+    for(const v of save.villagers){
+      const vill = {
+        kind:'vill', x:v.x, y:v.y,
+        r:10, speed:62, bob:0, dir:1, moving:false,
+        state: v.st || 'seek', target:null,
+        carry: v.carry || 0, carryType: v.ct || null,
+        timer:0, retarget:0, wanderT:0, wx:0, wy:0,
+        hp: v.hp, maxHp:36, dead:false, flash:0,
+        atkCd:0, swingT:0,
+        path:null, pathIdx:0, pathTargetX:-1, pathTargetY:-1,
+        _lastX:v.x, _lastY:v.y, _stuckT:0, _stuckCD:0,
+        colors: VILLAGER_COLORS[villagers.length % VILLAGER_COLORS.length],
+      };
+      villagers.push(vill);
+    }
+    /* Second pass — link targets and claims */
+    for(let i=0; i<claimMap.length; i++){
+      const villIdx = claimMap[i];
+      if(villIdx < 0 || villIdx >= villagers.length) continue;
+      const n = nodes[i];
+      const v = villagers[villIdx];
+      if(n && n.alive && v && !v.target){
+        n.claimed = v;
+        v.target  = n;
+      }
+    }
+
+    /* Restore enemies (they'll re-acquire targets on first update) */
+    for(const e of save.enemies){
+      const def = ENEMY_DEFS[e.t];
+      if(!def) continue;
+      const scale = 1 + waveNum*0.12;
+      enemies.push({
+        kind:'enemy', type:e.t, x:e.x, y:e.y, r:def.r,
+        hp:e.hp, maxHp:def.hp*scale,
+        speed:def.speed, damage:def.damage*(1+waveNum*0.05),
+        range:def.range, cd:def.cd,
+        attackCd:0, retarget:0, target:null,
+        flash:0, bob:Math.random()*TAU, dead:false,
+      });
+    }
+
+    /* Rebuild derived data */
+    computeDeliveryPoint();
+    recomputeTowerBuffs();
+
+    /* Refresh UI */
+    buildbar.innerHTML='';
+    buildBar();
+    document.getElementById('foodChip').classList.toggle('active', healEnabled);
+    document.getElementById('healChip').classList.toggle('off', !healEnabled);
+    document.getElementById('uiHealState').textContent = healEnabled ? 'ON' : 'OFF';
+    updateSellChip();
+    updateHintText();
+    updateUI();
+    refreshForgeAndTowerPanels();
+
+    /* Enter the game */
+    getAC();
+    startMusic();
+    gameState='playing';
+    showOverlay(null);
+    return true;
+  }catch(err){
+    console.error('Load failed:', err);
+    return false;
+  }
+}
+
+function pulseSaveChip(){
+  const el = document.getElementById('saveChip');
+  if(!el) return;
+  el.classList.add('pulse');
+  setTimeout(()=>el.classList.remove('pulse'), 600);
+}
+
+/* ============================================================
    INIT
    ============================================================ */
 resetGame();
@@ -3211,6 +3654,7 @@ updateSellChip();
 updateHintText();
 setDifficulty('normal');
 gameState='menu';
+refreshMenuSaveState();
 showOverlay('menu');
 
 let last=performance.now();
