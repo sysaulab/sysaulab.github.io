@@ -1,0 +1,928 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Book Pipeline — Markdown in. Books out.</title>
+    <meta name="description" content="A small toolchain for turning a directory of Markdown chapters into ebooks, print-ready PDFs, translations, and per-chapter audiobooks.">
+    <style>
+        /* ---------- RESET & BASE ---------- */
+        *, *::before, *::after {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        html {
+            scroll-behavior: smooth;
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+        }
+
+        body {
+            background-color: #000;
+            color: #e8e8e8;
+            font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+            font-size: 17px;
+            line-height: 1.7;
+            font-weight: 400;
+            letter-spacing: 0.01em;
+        }
+
+        /* ---------- TYPOGRAPHY ---------- */
+        h1, h2, h3, h4 {
+            font-weight: 600;
+            line-height: 1.2;
+            letter-spacing: -0.02em;
+            color: #fff;
+        }
+
+        h1 {
+            font-size: clamp(2.2rem, 5vw, 3.6rem);
+            font-weight: 700;
+            letter-spacing: -0.03em;
+        }
+
+        h2 {
+            font-size: clamp(1.6rem, 3.5vw, 2.2rem);
+            margin-bottom: 1rem;
+        }
+
+        h3 {
+            font-size: clamp(1.15rem, 2.5vw, 1.4rem);
+            margin-bottom: 0.5rem;
+        }
+
+        p {
+            margin-bottom: 1.2rem;
+            color: #c8c8c8;
+        }
+
+        a {
+            color: #7eb8ff;
+            text-decoration: none;
+            border-bottom: 1px solid transparent;
+            transition: border-color 0.2s, color 0.2s;
+        }
+
+        a:hover {
+            color: #a8d0ff;
+            border-bottom-color: #a8d0ff;
+        }
+
+        strong {
+            color: #f0f0f0;
+            font-weight: 600;
+        }
+
+        em {
+            color: #d0d0d0;
+        }
+
+        code {
+            font-family: "SF Mono", "Menlo", "Consolas", monospace;
+            font-size: 0.88em;
+            color: #d8d8d8;
+            background: #141414;
+            padding: 0.1em 0.35em;
+            border-radius: 3px;
+            border: 1px solid #1e1e1e;
+        }
+
+        /* ---------- LAYOUT ---------- */
+        .container {
+            max-width: 820px;
+            margin: 0 auto;
+            padding: 0 1.5rem;
+        }
+
+        section {
+            padding: 4rem 0;
+        }
+
+        section + section {
+            border-top: 1px solid #1a1a1a;
+        }
+
+        /* ---------- HERO ---------- */
+        .hero {
+            padding: 6rem 0 4rem;
+            text-align: left;
+        }
+
+        .hero .subtitle {
+            font-size: clamp(1.05rem, 2.2vw, 1.3rem);
+            color: #999;
+            margin-top: 1rem;
+            max-width: 640px;
+            font-weight: 400;
+            letter-spacing: 0;
+            line-height: 1.6;
+        }
+
+        .hero .tagline {
+            display: inline-block;
+            font-size: 0.75rem;
+            text-transform: uppercase;
+            letter-spacing: 0.15em;
+            color: #666;
+            margin-bottom: 1.5rem;
+            font-weight: 500;
+        }
+
+        /* ---------- CARDS ---------- */
+        .card-grid {
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 1.25rem;
+            margin-top: 2rem;
+        }
+
+        @media (min-width: 640px) {
+            .card-grid {
+                grid-template-columns: 1fr 1fr;
+            }
+        }
+
+        .card {
+            background: #0d0d0d;
+            border: 1px solid #1e1e1e;
+            border-radius: 8px;
+            padding: 1.5rem;
+            transition: border-color 0.2s, background 0.2s;
+        }
+
+        .card:hover {
+            border-color: #333;
+            background: #111;
+        }
+
+        .card h3 {
+            font-size: 1.1rem;
+            margin-bottom: 0.4rem;
+        }
+
+        .card p {
+            font-size: 0.95rem;
+            margin-bottom: 0;
+            color: #aaa;
+        }
+
+        .card .doc-label {
+            font-size: 0.7rem;
+            text-transform: uppercase;
+            letter-spacing: 0.12em;
+            color: #555;
+            margin-bottom: 0.6rem;
+            font-weight: 500;
+        }
+
+        /* ---------- HIGHLIGHT BOX ---------- */
+        .highlight {
+            background: #0a0f14;
+            border-left: 3px solid #2a5a8a;
+            padding: 1.5rem 1.75rem;
+            margin: 2rem 0;
+            border-radius: 0 6px 6px 0;
+        }
+
+        .highlight p {
+            margin-bottom: 0;
+            color: #b8c8d8;
+        }
+
+        .highlight p + p {
+            margin-top: 0.75rem;
+        }
+
+        /* ---------- QUOTE ---------- */
+        blockquote {
+            border-left: 2px solid #333;
+            padding-left: 1.5rem;
+            margin: 2rem 0;
+            font-style: italic;
+            color: #999;
+        }
+
+        blockquote p {
+            color: #999;
+            margin-bottom: 0;
+        }
+
+        /* ---------- METRIC ROW ---------- */
+        .metrics {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+            gap: 1.5rem;
+            margin: 2.5rem 0;
+        }
+
+        .metric {
+            text-align: left;
+        }
+
+        .metric .value {
+            font-size: 2rem;
+            font-weight: 700;
+            color: #fff;
+            letter-spacing: -0.03em;
+            line-height: 1.1;
+        }
+
+        .metric .label {
+            font-size: 0.8rem;
+            color: #777;
+            margin-top: 0.25rem;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            font-weight: 500;
+        }
+
+        /* ---------- LIST ---------- */
+        ul, ol {
+            margin: 1rem 0 1.5rem 1.25rem;
+            color: #c8c8c8;
+        }
+
+        li {
+            margin-bottom: 0.6rem;
+            padding-left: 0.25rem;
+        }
+
+        li strong {
+            color: #e8e8e8;
+        }
+
+        /* ---------- TABLE ---------- */
+        .table-wrap {
+            overflow-x: auto;
+            margin: 2rem 0;
+            border: 1px solid #1a1a1a;
+            border-radius: 8px;
+            background: #0a0a0a;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.92rem;
+        }
+
+        th {
+            text-align: left;
+            font-weight: 600;
+            color: #888;
+            font-size: 0.72rem;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            padding: 0.9rem 1.25rem;
+            border-bottom: 1px solid #1e1e1e;
+            white-space: nowrap;
+        }
+
+        td {
+            padding: 0.85rem 1.25rem;
+            border-bottom: 1px solid #141414;
+            color: #c0c0c0;
+            vertical-align: top;
+        }
+
+        tr:last-child td {
+            border-bottom: none;
+        }
+
+        td:first-child {
+            color: #e8e8e8;
+            white-space: nowrap;
+            font-weight: 500;
+        }
+
+        td code {
+            font-size: 0.85em;
+        }
+
+        /* ---------- CODE BLOCKS ---------- */
+        pre {
+            background: #0a0a0a;
+            border: 1px solid #1a1a1a;
+            border-radius: 8px;
+            padding: 1.5rem;
+            overflow-x: auto;
+            font-family: "SF Mono", "Menlo", "Consolas", monospace;
+            font-size: 0.85rem;
+            line-height: 1.6;
+            color: #c0c0c0;
+            margin: 1.5rem 0;
+        }
+
+        pre code {
+            background: none;
+            border: none;
+            padding: 0;
+            color: #c0c0c0;
+            font-size: inherit;
+        }
+
+        /* ---------- DIVIDER ---------- */
+        .divider {
+            width: 40px;
+            height: 2px;
+            background: #333;
+            margin: 1.5rem 0;
+        }
+
+        /* ---------- FOOTER ---------- */
+        footer {
+            padding: 3rem 0 4rem;
+            border-top: 1px solid #1a1a1a;
+            font-size: 0.85rem;
+            color: #555;
+        }
+
+        footer p {
+            color: #555;
+            margin-bottom: 0.5rem;
+        }
+
+        /* ---------- NAV ---------- */
+        nav {
+            padding: 1.5rem 0;
+            border-bottom: 1px solid #1a1a1a;
+        }
+
+        nav .container {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            flex-wrap: wrap;
+            gap: 0.5rem;
+        }
+
+        nav .brand {
+            font-weight: 600;
+            color: #fff;
+            font-size: 0.95rem;
+            letter-spacing: -0.01em;
+        }
+
+        nav .links {
+            display: flex;
+            gap: 1.5rem;
+            font-size: 0.85rem;
+        }
+
+        nav .links a {
+            color: #888;
+            border-bottom: none;
+        }
+
+        nav .links a:hover {
+            color: #fff;
+        }
+
+        /* ---------- RESPONSIVE ---------- */
+        @media (max-width: 600px) {
+            body {
+                font-size: 16px;
+            }
+
+            section {
+                padding: 3rem 0;
+            }
+
+            .hero {
+                padding: 4rem 0 3rem;
+            }
+
+            nav .links {
+                gap: 1rem;
+            }
+
+            .metrics {
+                grid-template-columns: 1fr 1fr;
+            }
+
+            th, td {
+                padding: 0.7rem 1rem;
+            }
+
+            pre {
+                padding: 1rem;
+                font-size: 0.8rem;
+            }
+        }
+    </style>
+</head>
+<body>
+
+    <!-- ========== NAV ========== -->
+    <nav>
+        <div class="container">
+            <span class="brand">Book Pipeline</span>
+            <div class="links">
+                <a href="index.html">Back</a>
+                <a href="#what">What</a>
+                <a href="#scripts">Scripts</a>
+                <a href="#layout">Layout</a>
+                <a href="#config">Config</a>
+                <a href="#build">Build</a>
+                <a href="#translate">Translate</a>
+                <a href="#audio">Audio</a>
+                <a href="#tips">Tips</a>
+            </div>
+        </div>
+    </nav>
+
+    <!-- ========== HERO ========== -->
+    <header class="hero">
+        <div class="container">
+            <span class="tagline">Publishing Toolchain</span>
+            <h1>Markdown in. Books out.</h1>
+            <p class="subtitle">
+                A small set of scripts that turn a directory of Markdown chapters
+                into ebooks, print-ready PDFs, translated editions, and
+                per-chapter audiobooks. One config file. One naming convention.
+            </p>
+        </div>
+    </header>
+
+    <!-- ========== WHAT ========== -->
+    <section id="what">
+        <div class="container">
+            <h2>What it is</h2>
+            <p>
+                Book Pipeline is a toolchain for authors who write in Markdown and
+                want to produce finished books. It reads a folder of chapter files,
+                applies a shared configuration, and outputs EPUB, PDF, plain text,
+                translated editions, and audiobooks.
+            </p>
+            <p>
+                Everything is driven by a single <code>book.json</code> file at the
+                project root and a simple naming convention for chapters:
+                <code>NNNN - Title.md</code>. The leading zero-padded number gives
+                a stable sort order; the title makes the files readable.
+            </p>
+
+            <div class="highlight">
+                <p>
+                    <strong>The core idea:</strong> write your book as plain
+                    Markdown, organise chapters with a predictable naming scheme,
+                    and let the pipeline handle every output format you need.
+                    One source of truth. Many finished products.
+                </p>
+            </div>
+
+            <div class="metrics">
+                <div class="metric">
+                    <div class="value">3</div>
+                    <div class="label">Python scripts</div>
+                </div>
+                <div class="metric">
+                    <div class="value">1</div>
+                    <div class="label">Config file</div>
+                </div>
+                <div class="metric">
+                    <div class="value">4+</div>
+                    <div class="label">Output formats</div>
+                </div>
+                <div class="metric">
+                    <div class="value">∞</div>
+                    <div class="label">Languages (via API)</div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- ========== SCRIPTS ========== -->
+    <section id="scripts">
+        <div class="container">
+            <h2>The three scripts</h2>
+            <p>
+                The pipeline is built from three Python scripts. Each does one
+                thing. They share the same config file and the same directory
+                layout.
+            </p>
+
+            <div class="table-wrap">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Script</th>
+                            <th>Purpose</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><code>mkbook.py</code></td>
+                            <td>Builds EPUB, plain text, and one or more PDF formats from <code>{lang}/*.md</code>. Optionally invokes the translator first.</td>
+                        </tr>
+                        <tr>
+                            <td><code>translate.py</code></td>
+                            <td>Batch-translates a source language directory into a target language directory using the DeepSeek API (or a local Ollama model).</td>
+                        </tr>
+                        <tr>
+                            <td><code>mkaudiobook.py</code></td>
+                            <td>Strips Markdown to prose and synthesizes one M4A per chapter using <code>say</code>, <code>piper</code>, or <code>espeak-ng</code>. Also writes the cleaned prose as <code>.txt</code>.</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <p>
+                <code>mkbook.py</code> shells out to a translation command for any
+                non-source language it builds — so you don't have to run
+                <code>translate.py</code> by hand.
+            </p>
+        </div>
+    </section>
+
+    <!-- ========== LAYOUT ========== -->
+    <section id="layout">
+        <div class="container">
+            <h2>Directory layout</h2>
+            <p>
+                The pipeline is driven entirely by <code>book.json</code> plus a
+                directory per language. A typical project looks like this:
+            </p>
+
+            <pre><code>mybook/
+├── book.json                # config — everything below is driven by this
+├── translate.py
+├── mkbook.py
+├── mkaudiobook.py
+├── deepseek_tokenizer.py    # required by translate.py
+│
+├── en/                      # source language (source_lang in book.json)
+│   ├── metadata.yaml        # Pandoc metadata (title, author, date, …)
+│   ├── cover.jpg            # used as EPUB cover
+│   ├── 0001 - A Beginning.md
+│   ├── 0002 - The Road.md
+│   ├── 0003 - Arrival.md
+│   └── …
+│
+├── es/                      # target language (auto-generated)
+│   ├── metadata.yaml
+│   ├── cover.jpg
+│   ├── 0001 - A Beginning.md
+│   └── …
+│
+└── fr/
+    └── …</code></pre>
+
+            <h3>Rules</h3>
+            <ul>
+                <li><strong>One directory per language</strong>, named after the language code used in <code>book.json</code>.</li>
+                <li><strong><code>source_lang</code></strong> names the directory that is authoritative. Its files are never overwritten by the translator.</li>
+                <li><strong>Every other directory listed in <code>languages</code></strong> is treated as a translation target if it doesn't exist yet, and rebuilt from source when it does.</li>
+                <li><strong>Chapter files must be Markdown (<code>*.md</code>)</strong> and sort into the reading order you want. Leading zero-padded numbers are the simplest way to achieve this.</li>
+                <li><strong><code>metadata.yaml</code></strong> and <strong><code>cover.jpg</code></strong> are per-language and optional, but recommended — they populate the title page and EPUB cover.</li>
+                <li><strong>Audiobook output goes under <code>{lang}/audio/</code>:</strong> <code>m4a/</code> for audio files, <code>text/</code> for the cleaned prose.</li>
+            </ul>
+
+            <p>
+                Generated artifacts (<code>.epub</code>, <code>.pdf</code>,
+                <code>.txt</code>, and the <code>audio/</code> subfolders) are safe
+                to <code>.gitignore</code>.
+            </p>
+        </div>
+    </section>
+
+    <!-- ========== CONFIG ========== -->
+    <section id="config">
+        <div class="container">
+            <h2>Configuration</h2>
+            <p>
+                Everything is controlled by <code>book.json</code> at the project
+                root. It defines the source language, the target languages, the
+                PDF formats, the audio settings, and the translation command.
+            </p>
+
+            <h3>Example <code>book.json</code></h3>
+            <p>
+                A full working config with <strong>trade</strong> (6″×9″) and
+                <strong>pocket</strong> (A-format, 4.25″×6.87″) print formats.
+            </p>
+
+            <pre><code>{
+  "source_lang": "en",
+
+  "languages": {
+    "en": "English",
+    "es": "Spanish",
+    "fr": "French",
+    "de": "German"
+  },
+
+  "translate_cmd": "./translate.py",
+
+  "epub": {
+    "cover_image": "cover.jpg"
+  },
+
+  "pdf": {
+    "engine": "xelatex",
+    "documentclass": "book",
+    "classoption": "openany,oneside",
+    "header_includes": "\\usepackage{microtype}\\usepackage{fontspec}",
+    "mainfont": "EB Garamond",
+    "mainfontoptions": "Numbers=OldStyle",
+    "toc": true,
+    "toc_depth": 2,
+
+    "outputs": [
+      {
+        "name": "trade",
+        "width": "6in",
+        "height": "9in",
+        "inner": "0.875in",
+        "outer": "0.625in",
+        "top": "0.75in",
+        "bottom": "0.75in",
+        "bindingoffset": "0.125in",
+        "fontsize": "11pt"
+      },
+      {
+        "name": "pocket",
+        "width": "4.25in",
+        "height": "6.87in",
+        "inner": "0.5in",
+        "outer": "0.375in",
+        "top": "0.5in",
+        "bottom": "0.5in",
+        "bindingoffset": "0.125in",
+        "fontsize": "9pt",
+        "impose_paper": "a4"
+      }
+    ]
+  },
+
+  "audio": {
+    "engine": "say",
+    "rate": 175,
+    "bitrate": "64k",
+    "sample_rate": 22050,
+    "voice": {
+      "en": "Samantha",
+      "es": "Mónica",
+      "fr": "Amélie",
+      "de": "Anna"
+    }
+  }
+}</code></pre>
+
+            <h3>Notes on the two print formats</h3>
+            <ul>
+                <li><strong><code>trade</code></strong> is a standard 6″×9″ trade paperback with a wider inner margin for the spine. No imposition is applied — you feed the resulting PDF straight to your print-on-demand service (KDP, IngramSpark, Lulu, etc.).</li>
+                <li><strong><code>pocket</code></strong> is roughly A-format (4.25″×6.87″), tighter margins, smaller type, and it sets <code>impose_paper</code> — so after Pandoc produces the PDF, <code>pdfbook2</code> will impose it 2-up on A4 sheets for at-home booklet printing. Remove <code>impose_paper</code> if you're sending it to a commercial printer.</li>
+            </ul>
+
+            <p>
+                The <code>mainfont</code> (<code>EB Garamond</code> above) must be
+                installed on the machine. On macOS, <code>Times New Roman</code> or
+                <code>Palatino</code> are safe defaults. With <code>xelatex</code>
+                you can use any font by name.
+            </p>
+        </div>
+    </section>
+
+    <!-- ========== INSTALL ========== -->
+    <section id="install">
+        <div class="container">
+            <h2>Install</h2>
+            <p>
+                Python dependencies and system tools. Adjust for your platform.
+            </p>
+
+            <pre><code># Python
+pip install openai tiktoken
+
+# System tools (Debian/Ubuntu examples; adjust for macOS/brew)
+sudo apt install pandoc ffmpeg espeak-ng
+# For print PDFs with imposition: pdfbook2 (from texlive-extra-utils)
+sudo apt install texlive-extra-utils</code></pre>
+
+            <p>
+                <code>translate.py</code> also needs a small helper module that
+                exposes a tokenizer for chunking:
+            </p>
+
+            <pre><code># deepseek_tokenizer.py
+from tokenizers import Tokenizer
+_tokenizer = Tokenizer.from_pretrained("deepseek-ai/DeepSeek-V3")
+ds_token = _tokenizer</code></pre>
+
+            <p>
+                macOS users get <code>say</code> for free; <code>piper</code> is an
+                optional offline neural TTS engine you can install separately.
+            </p>
+        </div>
+    </section>
+
+    <!-- ========== BUILD ========== -->
+    <section id="build">
+        <div class="container">
+            <h2>Building</h2>
+            <p>
+                Everything is run from the project root, where
+                <code>book.json</code> lives.
+            </p>
+
+            <h3>Books</h3>
+            <pre><code># Build every language defined in book.json (translating as needed)
+./mkbook.py
+
+# Build just one language
+./mkbook.py -l es
+
+# Skip translation — build only what's already on disk
+./mkbook.py --no-translate
+
+# Use a different config file
+./mkbook.py -c alternate-book.json</code></pre>
+
+            <p>
+                Outputs land next to each language directory:
+            </p>
+            <pre><code>en.epub
+en.txt
+en.trade.pdf
+en.pocket.pdf       # imposed on A4 if impose_paper is set</code></pre>
+        </div>
+    </section>
+
+    <!-- ========== TRANSLATE ========== -->
+    <section id="translate">
+        <div class="container">
+            <h2>Translation</h2>
+            <p>
+                <code>translate.py</code> is a standalone tool.
+                <code>mkbook.py</code> calls it with these arguments, so you
+                rarely need to run it directly:
+            </p>
+
+            <pre><code>./translate.py \
+  --input-dir en \
+  --output-dir es \
+  --source-lang English \
+  --target-lang Spanish</code></pre>
+
+            <h3>Useful flags</h3>
+            <pre><code># Parallel workers (default 5)
+--max-workers 8
+
+# Max tokens per chunk (default 3000)
+--chunk-size 4000
+
+# Use a local Ollama model instead of DeepSeek
+--local
+
+# Translate the whole book in one chat session for consistent terminology
+--serialize-all --sliding-window 24
+
+# Re-translate even if the output file already exists
+--force</code></pre>
+
+            <p>
+                Set <code>DEEPSEEK_API_KEY</code> in your environment, or pass
+                <code>--api-key</code>.
+            </p>
+        </div>
+    </section>
+
+    <!-- ========== AUDIO ========== -->
+    <section id="audio">
+        <div class="container">
+            <h2>Audiobooks</h2>
+            <pre><code># Text-only pass (fast; writes {lang}/audio/text/*.txt without synthesizing)
+./mkaudiobook.py --text-only
+
+# Synthesize all languages
+./mkaudiobook.py
+
+# One language, re-doing cached chapters
+./mkaudiobook.py -l en --force</code></pre>
+
+            <p>
+                Switching engines: set <code>audio.engine</code> in
+                <code>book.json</code>.
+            </p>
+
+            <ul>
+                <li><strong><code>say</code></strong> (default on macOS) — zero setup, uses installed system voices.</li>
+                <li><strong><code>piper</code></strong> — offline neural TTS; set <code>audio.piper_bin</code> and <code>audio.piper_models</code> (a <code>{lang: /path/to/model.onnx}</code> map).</li>
+                <li><strong><code>espeak-ng</code></strong> — pragmatic Linux fallback; no configuration beyond <code>audio.voice</code>.</li>
+            </ul>
+
+            <p>
+                <code>ffmpeg</code> is required for transcoding to M4A regardless
+                of engine.
+            </p>
+        </div>
+    </section>
+
+    <!-- ========== EXAMPLE ========== -->
+    <section id="example">
+        <div class="container">
+            <h2>A worked end-to-end example</h2>
+            <pre><code># 1. Write chapters in English (source language)
+mkdir -p en
+$EDITOR en/0001\ -\ A\ Beginning.md
+$EDITOR en/0002\ -\ The\ Road.md
+# … plus en/metadata.yaml and en/cover.jpg
+
+# 2. Create book.json (see example above)
+
+# 3. Build English EPUB + PDFs + plain text
+./mkbook.py -l en --no-translate
+
+# 4. Translate to Spanish, then build Spanish outputs
+export DEEPSEEK_API_KEY=sk-…
+./mkbook.py -l es
+
+# 5. Generate the English audiobook
+./mkaudiobook.py -l en</code></pre>
+
+            <p>Result:</p>
+            <pre><code>en.epub
+en.txt
+en.trade.pdf
+en.pocket.pdf
+en/audio/m4a/0001 - A Beginning.m4a
+en/audio/m4a/0002 - The Road.m4a
+en/audio/text/0001 - A Beginning.txt
+en/audio/text/0002 - The Road.txt
+es.epub
+es.trade.pdf
+es.pocket.pdf
+…</code></pre>
+        </div>
+    </section>
+
+    <!-- ========== TIPS ========== -->
+    <section id="tips">
+        <div class="container">
+            <h2>Tips</h2>
+
+            <ul>
+                <li>
+                    <strong>Keep chapter filenames stable.</strong> The translator
+                    writes to the same relative path in the target language, and
+                    <code>mkaudiobook.py</code> uses the stem for its output names.
+                    Renaming a chapter in <code>en/</code> means it'll be
+                    re-translated next run.
+                </li>
+                <li>
+                    <strong>Don't hand-edit translated chapters</strong> unless
+                    you're prepared to lose them: <code>mkbook.py</code> will
+                    overwrite them on the next build. If you need to hand-fix a
+                    translation, drop the corresponding file from the source
+                    directory into a scratch folder, or set
+                    <code>--no-translate</code> and edit only the target directory.
+                </li>
+                <li>
+                    <strong><code>--serialize-all</code> is for consistency, not
+                    speed.</strong> It translates the whole book in one chat with a
+                    sliding window, which helps terminology and voice stay stable
+                    across chapters. It's much slower than the default parallel
+                    mode.
+                </li>
+                <li>
+                    <strong><code>--text-only</code> on
+                    <code>mkaudiobook.py</code></strong> is worth running first —
+                    it lets you proofread the prose without paying the synthesis
+                    cost.
+                </li>
+                <li>
+                    <strong>Cross-platform fonts:</strong> if
+                    <code>EB Garamond</code> isn't installed, the PDF build will
+                    fail loudly. Swap in <code>Times New Roman</code> or
+                    <code>Palatino</code> in <code>book.json</code> to get going
+                    quickly, then install a proper book font later.
+                </li>
+            </ul>
+        </div>
+    </section>
+
+    <!-- ========== FOOTER ========== -->
+    <footer>
+        <div class="container">
+            <p>
+                <strong>Book Pipeline</strong> — a toolchain for turning Markdown
+                chapters into finished books.
+            </p>
+            <p>
+                The three scripts share a single <code>book.json</code> config file
+                and a simple naming convention for chapter files:
+                <code>NNNN - Title.md</code>.
+            </p>
+            <p style="margin-top: 1.5rem; font-size: 0.8rem; color: #444;">
+                This page is a lay summary. The README in the repository contains
+                the precise rules, the full config reference, and the exact
+                command-line flags. Where this summary and the README disagree,
+                the README is authoritative.
+            </p>
+        </div>
+    </footer>
+
+</body>
+</html>

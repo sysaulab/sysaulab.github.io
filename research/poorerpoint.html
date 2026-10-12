@@ -1,0 +1,825 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>poorerpoint — Markdown in. ASCII out.</title>
+    <meta name="description" content="A terminal presentation engine with sticky headers, plain-markdown decks, and exactly one button that matters.">
+    <style>
+        /* ---------- RESET & BASE ---------- */
+        *, *::before, *::after {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        html {
+            scroll-behavior: smooth;
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+        }
+
+        body {
+            background-color: #000;
+            color: #e8e8e8;
+            font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+            font-size: 17px;
+            line-height: 1.7;
+            font-weight: 400;
+            letter-spacing: 0.01em;
+        }
+
+        /* ---------- TYPOGRAPHY ---------- */
+        h1, h2, h3, h4 {
+            font-weight: 600;
+            line-height: 1.2;
+            letter-spacing: -0.02em;
+            color: #fff;
+        }
+
+        h1 {
+            font-size: clamp(2.2rem, 5vw, 3.6rem);
+            font-weight: 700;
+            letter-spacing: -0.03em;
+        }
+
+        h2 {
+            font-size: clamp(1.6rem, 3.5vw, 2.2rem);
+            margin-bottom: 1rem;
+        }
+
+        h3 {
+            font-size: clamp(1.15rem, 2.5vw, 1.4rem);
+            margin-bottom: 0.5rem;
+        }
+
+        p {
+            margin-bottom: 1.2rem;
+            color: #c8c8c8;
+        }
+
+        a {
+            color: #7eb8ff;
+            text-decoration: none;
+            border-bottom: 1px solid transparent;
+            transition: border-color 0.2s, color 0.2s;
+        }
+
+        a:hover {
+            color: #a8d0ff;
+            border-bottom-color: #a8d0ff;
+        }
+
+        strong {
+            color: #f0f0f0;
+            font-weight: 600;
+        }
+
+        em {
+            color: #d0d0d0;
+        }
+
+        code {
+            font-family: "SF Mono", "Menlo", "Consolas", monospace;
+            font-size: 0.88em;
+            color: #d8d8d8;
+            background: #141414;
+            padding: 0.1em 0.35em;
+            border-radius: 3px;
+            border: 1px solid #1e1e1e;
+        }
+
+        /* ---------- LAYOUT ---------- */
+        .container {
+            max-width: 820px;
+            margin: 0 auto;
+            padding: 0 1.5rem;
+        }
+
+        section {
+            padding: 4rem 0;
+        }
+
+        section + section {
+            border-top: 1px solid #1a1a1a;
+        }
+
+        /* ---------- HERO ---------- */
+        .hero {
+            padding: 6rem 0 4rem;
+            text-align: left;
+        }
+
+        .hero .subtitle {
+            font-size: clamp(1.05rem, 2.2vw, 1.3rem);
+            color: #999;
+            margin-top: 1rem;
+            max-width: 640px;
+            font-weight: 400;
+            letter-spacing: 0;
+            line-height: 1.6;
+        }
+
+        .hero .tagline {
+            display: inline-block;
+            font-size: 0.75rem;
+            text-transform: uppercase;
+            letter-spacing: 0.15em;
+            color: #666;
+            margin-bottom: 1.5rem;
+            font-weight: 500;
+        }
+
+        /* ---------- CARDS ---------- */
+        .card-grid {
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 1.25rem;
+            margin-top: 2rem;
+        }
+
+        @media (min-width: 640px) {
+            .card-grid {
+                grid-template-columns: 1fr 1fr;
+            }
+        }
+
+        .card {
+            background: #0d0d0d;
+            border: 1px solid #1e1e1e;
+            border-radius: 8px;
+            padding: 1.5rem;
+            transition: border-color 0.2s, background 0.2s;
+        }
+
+        .card:hover {
+            border-color: #333;
+            background: #111;
+        }
+
+        .card h3 {
+            font-size: 1.1rem;
+            margin-bottom: 0.4rem;
+        }
+
+        .card p {
+            font-size: 0.95rem;
+            margin-bottom: 0;
+            color: #aaa;
+        }
+
+        .card .doc-label {
+            font-size: 0.7rem;
+            text-transform: uppercase;
+            letter-spacing: 0.12em;
+            color: #555;
+            margin-bottom: 0.6rem;
+            font-weight: 500;
+        }
+
+        /* ---------- HIGHLIGHT BOX ---------- */
+        .highlight {
+            background: #0a0f14;
+            border-left: 3px solid #2a5a8a;
+            padding: 1.5rem 1.75rem;
+            margin: 2rem 0;
+            border-radius: 0 6px 6px 0;
+        }
+
+        .highlight p {
+            margin-bottom: 0;
+            color: #b8c8d8;
+        }
+
+        .highlight p + p {
+            margin-top: 0.75rem;
+        }
+
+        /* ---------- QUOTE ---------- */
+        blockquote {
+            border-left: 2px solid #333;
+            padding-left: 1.5rem;
+            margin: 2rem 0;
+            font-style: italic;
+            color: #999;
+        }
+
+        blockquote p {
+            color: #999;
+            margin-bottom: 0;
+        }
+
+        /* ---------- METRIC ROW ---------- */
+        .metrics {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+            gap: 1.5rem;
+            margin: 2.5rem 0;
+        }
+
+        .metric {
+            text-align: left;
+        }
+
+        .metric .value {
+            font-size: 2rem;
+            font-weight: 700;
+            color: #fff;
+            letter-spacing: -0.03em;
+            line-height: 1.1;
+        }
+
+        .metric .label {
+            font-size: 0.8rem;
+            color: #777;
+            margin-top: 0.25rem;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            font-weight: 500;
+        }
+
+        /* ---------- LIST ---------- */
+        ul, ol {
+            margin: 1rem 0 1.5rem 1.25rem;
+            color: #c8c8c8;
+        }
+
+        li {
+            margin-bottom: 0.6rem;
+            padding-left: 0.25rem;
+        }
+
+        li strong {
+            color: #e8e8e8;
+        }
+
+        /* ---------- TABLE ---------- */
+        .table-wrap {
+            overflow-x: auto;
+            margin: 2rem 0;
+            border: 1px solid #1a1a1a;
+            border-radius: 8px;
+            background: #0a0a0a;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.92rem;
+        }
+
+        th {
+            text-align: left;
+            font-weight: 600;
+            color: #888;
+            font-size: 0.72rem;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            padding: 0.9rem 1.25rem;
+            border-bottom: 1px solid #1e1e1e;
+            white-space: nowrap;
+        }
+
+        td {
+            padding: 0.85rem 1.25rem;
+            border-bottom: 1px solid #141414;
+            color: #c0c0c0;
+            vertical-align: top;
+        }
+
+        tr:last-child td {
+            border-bottom: none;
+        }
+
+        td:first-child {
+            color: #e8e8e8;
+            white-space: nowrap;
+            font-weight: 500;
+        }
+
+        td code {
+            font-size: 0.85em;
+        }
+
+        /* ---------- DIVIDER ---------- */
+        .divider {
+            width: 40px;
+            height: 2px;
+            background: #333;
+            margin: 1.5rem 0;
+        }
+
+        /* ---------- FOOTER ---------- */
+        footer {
+            padding: 3rem 0 4rem;
+            border-top: 1px solid #1a1a1a;
+            font-size: 0.85rem;
+            color: #555;
+        }
+
+        footer p {
+            color: #555;
+            margin-bottom: 0.5rem;
+        }
+
+        /* ---------- NAV ---------- */
+        nav {
+            padding: 1.5rem 0;
+            border-bottom: 1px solid #1a1a1a;
+        }
+
+        nav .container {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            flex-wrap: wrap;
+            gap: 0.5rem;
+        }
+
+        nav .brand {
+            font-weight: 600;
+            color: #fff;
+            font-size: 0.95rem;
+            letter-spacing: -0.01em;
+        }
+
+        nav .links {
+            display: flex;
+            gap: 1.5rem;
+            font-size: 0.85rem;
+        }
+
+        nav .links a {
+            color: #888;
+            border-bottom: none;
+        }
+
+        nav .links a:hover {
+            color: #fff;
+        }
+
+        /* ---------- RESPONSIVE ---------- */
+        @media (max-width: 600px) {
+            body {
+                font-size: 16px;
+            }
+
+            section {
+                padding: 3rem 0;
+            }
+
+            .hero {
+                padding: 4rem 0 3rem;
+            }
+
+            nav .links {
+                gap: 1rem;
+            }
+
+            .metrics {
+                grid-template-columns: 1fr 1fr;
+            }
+
+            th, td {
+                padding: 0.7rem 1rem;
+            }
+        }
+    </style>
+</head>
+<body>
+
+    <!-- ========== NAV ========== -->
+    <nav>
+        <div class="container">
+            <span class="brand">poorerpoint</span>
+            <div class="links">
+                <a href="index.html">Back</a>
+                <a href="#what">What</a>
+                <a href="#why">Why</a>
+                <a href="#how">How</a>
+                <a href="#keys">Keys</a>
+                <a href="#web">Web</a>
+                <a href="#history">History</a>
+            </div>
+        </div>
+    </nav>
+
+    <!-- ========== HERO ========== -->
+    <header class="hero">
+        <div class="container">
+            <span class="tagline">Terminal Presentation Engine</span>
+            <h1>Markdown in. ASCII out.</h1>
+            <p class="subtitle">
+                Spacebar advances. Headers persist. Content flows. Nothing else.
+                Write your deck as plain text, and let the structure do the work
+                a theme was never going to do anyway.
+            </p>
+        </div>
+    </header>
+
+    <!-- ========== WHAT ========== -->
+    <section id="what">
+        <div class="container">
+            <h2>What is poorerpoint?</h2>
+            <p>
+                poorerpoint is a presentation engine that runs in your terminal.
+                You write your slides in ordinary markdown. You run one command.
+                You press the spacebar to advance. That is the whole interface.
+            </p>
+            <p>
+                It exists because presentation software has spent thirty years
+                adding features and forgetting the one thing that actually makes
+                a talk readable: <strong>the header should stay on screen.</strong>
+            </p>
+
+            <div class="highlight">
+                <p>
+                    <strong>The core idea:</strong> a deck is not a pile of slides.
+                    It is a single document where headers persist, content
+                    accumulates, and only the thing that actually changed gets
+                    animated. A header stack is sticky. Everything below it flows.
+                </p>
+            </div>
+
+            <p>
+                There are no themes, no layout tools, no transition timeline, no
+                per-object entrance triggers. There is markdown, a terminal, and
+                the spacebar. The constraint is the feature.
+            </p>
+        </div>
+    </section>
+
+    <!-- ========== WHY ========== -->
+    <section id="why">
+        <div class="container">
+            <h2>Why it exists</h2>
+            <p>
+                PowerPoint has no concept of <em>"this header stays on screen."</em>
+                Every slide is a fresh pile of independent objects, and persistence
+                is something you simulate by hand — copy the same text box N times,
+                tune entrance and exit triggers to the millisecond, and hope it
+                reads as one thing that never moved.
+            </p>
+            <p>
+                It is a lie told with an animation timeline, and it costs a
+                half-night before every presentation.
+            </p>
+            <p>
+                poorerpoint has the concept. A header stack is sticky: a new header
+                replaces the same-or-higher level and everything below it, and the
+                rest stays put. The only thing that animates is what actually
+                changed. Titles slide in from the right in 333 ms — enough to
+                notice, not enough to steal the show. Bullets follow. Then nothing
+                moves until you press space.
+            </p>
+            <p>
+                The point is not the animation. The point is that writing a deck
+                in plain markdown forces you to commit to a <strong>structure</strong>
+                before you touch a font. If the heading levels don't make sense as
+                text, they won't make sense as slides, and no theme will save them.
+            </p>
+        </div>
+    </section>
+
+    <!-- ========== HOW ========== -->
+    <section id="how">
+        <div class="container">
+            <h2>How it works</h2>
+            <p>
+                A deck is just a markdown file. Headers are titles and subtitles.
+                Content under a header is a slide. The engine parses the file into
+                a stack of headers, then walks through it one content block at a
+                time.
+            </p>
+
+            <div class="metrics">
+                <div class="metric">
+                    <div class="value">333 ms</div>
+                    <div class="label">Title animation</div>
+                </div>
+                <div class="metric">
+                    <div class="value">55 ms</div>
+                    <div class="label">Bullet cadence</div>
+                </div>
+                <div class="metric">
+                    <div class="value">60 fps</div>
+                    <div class="label">Frame rate</div>
+                </div>
+                <div class="metric">
+                    <div class="value">1</div>
+                    <div class="label">Button that matters</div>
+                </div>
+            </div>
+
+            <h3>The rules</h3>
+            <ul>
+                <li><strong>Headers form a stack.</strong> Each level indents one space. H1 flush left, H2 one space, H3 two, and so on. In practice you rarely need more than four.</li>
+                <li><strong>A header persists</strong> until another header of the same or higher level replaces it. Lower-level headers under it are dropped too.</li>
+                <li><strong>A slide is a stack state plus the content beneath it.</strong> The next header that has content starts the next slide.</li>
+                <li><strong>Headers with no content are skipped.</strong> No empty slides.</li>
+                <li><strong>Consecutive headers merge.</strong> An H1 followed immediately by an H2 renders as a stacked title block, not two slides.</li>
+            </ul>
+
+            <h3>What markdown is supported</h3>
+            <p>
+                Headers (<code>#</code> through <code>######</code>), paragraphs,
+                <strong>bold</strong>, <em>italic</em>, <code>inline code</code>,
+                nested bullet lists, fenced code blocks, horizontal rules, and
+                tables with alignment.
+            </p>
+
+            <h3>Tables that fit</h3>
+            <p>
+                Tables are measured against the terminal width. Column widths are
+                computed two ways — the natural width of the full cell text, and
+                the floor below which wrapping would break a single word — then
+                distributed proportionally when the table doesn't fit. Long prose
+                wraps. Long unbreakable words are allowed to push the table past
+                the right edge rather than break mid-word.
+            </p>
+
+            <div class="highlight">
+                <p>
+                    <strong>Persistence is free.</strong> The engine keeps a
+                    longest-common-prefix diff against the previous slide. Lines
+                    that didn't change were never re-entered, so they never needed
+                    to be re-hidden. The unchanged parts of a slide simply stay
+                    where they are.
+                </p>
+            </div>
+        </div>
+    </section>
+
+    <!-- ========== KEYS ========== -->
+    <section id="keys">
+        <div class="container">
+            <h2>The keys</h2>
+            <p>
+                Six keys. One of them is the spacebar. The rest are there for the
+                presenter who needs them.
+            </p>
+
+            <div class="table-wrap">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Key</th>
+                            <th>Action</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td>Space</td>
+                            <td>Next slide. Ignored while animating — never buffered.</td>
+                        </tr>
+                        <tr>
+                            <td>→ / l</td>
+                            <td>Next slide. Always live; resets and replays the animation.</td>
+                        </tr>
+                        <tr>
+                            <td>← / h</td>
+                            <td>Previous slide. Resets and replays the animation.</td>
+                        </tr>
+                        <tr>
+                            <td>↓ / j</td>
+                            <td>Scroll content down. Resets on slide change.</td>
+                        </tr>
+                        <tr>
+                            <td>↑ / k</td>
+                            <td>Scroll content up. Resets on slide change.</td>
+                        </tr>
+                        <tr>
+                            <td>q / Esc</td>
+                            <td>Quit.</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <p>
+                Content that overflows the viewport is auto-scrolled so new
+                material is always visible. Manual scrolling is there for the
+                presenter when a slide runs long.
+            </p>
+        </div>
+    </section>
+
+    <!-- ========== WEB ========== -->
+    <section id="web">
+        <div class="container">
+            <h2>The web port</h2>
+            <p>
+                There is a web application version of poorerpoint. It is not
+                documented in the terminal tool's manual — this page is where it
+                gets its first mention.
+            </p>
+            <p>
+                The web port runs the same engine in a browser. Same markdown input,
+                same sticky-header stack, same slide model, same animation timings.
+                A deck that reads well in the terminal reads well on the web,
+                because the structure is the same structure. The parser and the
+                state machine are shared; only the rendering layer differs.
+            </p>
+
+            <div class="card-grid">
+                <div class="card">
+                    <div class="doc-label">Shared</div>
+                    <h3>The engine</h3>
+                    <p>The markdown parser, the header stack, the slide model, and
+                    the longest-common-prefix diff that makes persistence free.</p>
+                </div>
+                <div class="card">
+                    <div class="doc-label">Different</div>
+                    <h3>The surface</h3>
+                    <p>Instead of writing to a terminal, the web port renders the
+                    same slide state as a web page. Spacebar still advances.</p>
+                </div>
+            </div>
+
+            <div class="highlight">
+                <p>
+                    <strong>A note on documentation:</strong> the web port is
+                    intentionally undocumented in the TUI manual, which describes
+                    the terminal tool and nothing else. If you are looking for
+                    the browser version, the manual will not mention it. This
+                    page is the entry point.
+                </p>
+            </div>
+        </div>
+    </section>
+
+    <!-- ========== HISTORY ========== -->
+    <section id="history">
+        <div class="container">
+            <h2>Archaeology</h2>
+            <p>
+                poorerpoint is the third version of the idea. The first two are
+                worth recording, because the difference between them and this one
+                is the whole point.
+            </p>
+
+            <h3>asciishow</h3>
+            <p>
+                The first. A curses program with a custom DSL. Every deck opened
+                with a settings block, then <code>!CONTENT!</code>, then commands:
+                <code>!slide</code>, <code>!label</code>, <code>!wait</code>,
+                <code>!center</code>, <code>!indent</code>. You could place text at
+                absolute coordinates, choose per-command animation speeds, and
+                type a title character-by-character at 100 fps.
+            </p>
+            <p>
+                It was more expressive than what came after, and that was exactly
+                the problem: it had one speaker. A private language is a private
+                language.
+            </p>
+
+            <h3>poorerpoint.py</h3>
+            <p>
+                The second. Same DSL, finally named. Still no model of a slide —
+                persistence was achieved by <em>not clearing the curses window</em>,
+                the same trick PowerPoint makes you do by hand. It worked, and it
+                was forgotten, by its own author, within a few years. A private
+                language dies with the mood that invented it.
+            </p>
+
+            <h3>poorerpoint</h3>
+            <p>
+                This one. It replaced the DSL with markdown, deleted every layout
+                command, and added exactly one thing the predecessors never had:
+                a data structure. <code>Slide { stack, anim, blocks }</code>.
+                Everything else is a rounding of what was already there.
+            </p>
+
+            <blockquote>
+                <p>
+                    The first two were written at 2pm on the patio of the cheapest
+                    hotel in Managua, half a drink in, annoyed at a subscription
+                    fee. That is the whole origin story. It is not a dramatic one.
+                    It is, on reflection, the correct one.
+                </p>
+            </blockquote>
+        </div>
+    </section>
+
+    <!-- ========== INSTALL ========== -->
+    <section id="install">
+        <div class="container">
+            <h2>Install and run</h2>
+            <p>
+                Requires a Rust toolchain and a terminal that speaks UTF-8.
+            </p>
+
+            <div class="table-wrap">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Step</th>
+                            <th>Command</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td>Clone</td>
+                            <td><code>git clone https://github.com/&lt;you&gt;/poorerpoint</code></td>
+                        </tr>
+                        <tr>
+                            <td>Build</td>
+                            <td><code>cargo build --release</code></td>
+                        </tr>
+                        <tr>
+                            <td>Run</td>
+                            <td><code>poorerpoint deck.md</code></td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <p>
+                The binary lands at <code>target/release/poorerpoint</code>.
+                Input is a file, always. No stdin, no config, no arguments
+                beyond the path.
+            </p>
+
+            <h3>A minimal deck</h3>
+            <pre style="background:#0a0a0a;border:1px solid #1a1a1a;border-radius:8px;padding:1.5rem;overflow-x:auto;font-family:'SF Mono','Menlo','Consolas',monospace;font-size:0.85rem;line-height:1.6;color:#c0c0c0;margin:1.5rem 0;"><code style="background:none;border:none;padding:0;color:#c0c0c0;"># poorerpoint
+
+A terminal presentation engine.
+
+## Why
+
+- Markdown in, ASCII out
+- Headers stick, content flows
+- Space is the only button you need
+
+## How
+
+### Parsing
+
+Headers mutate a **sticky stack**.
+Content attaches to the current stack.
+
+### Rendering
+
+Titles slide in from the right.
+Bullets follow, one every 55 ms.
+
+# Fin
+
+Space to leave.</code></pre>
+        </div>
+    </section>
+
+    <!-- ========== DESIGN ========== -->
+    <section id="design">
+        <div class="container">
+            <h2>Design notes</h2>
+
+            <h3>Timing</h3>
+            <p>
+                The title block takes 333 ms total, with lines staggered so the
+                last lands at 333. Content appears one block every 55 ms, starting
+                at 333. The frame rate is 60 fps. These numbers are not tuned to
+                be noticed. They are tuned to be finished before the audience
+                starts waiting.
+            </p>
+
+            <h3>State</h3>
+            <p>
+                The engine holds a <code>Vec&lt;Slide&gt;</code>. Each slide carries
+                its own title-stack snapshot and the list of lines introduced by
+                that slide — a longest-common-prefix diff against the previous one.
+                Animating that diff is what makes persistence free. Unchanged lines
+                were never re-entered, so they never needed to be re-hidden.
+            </p>
+
+            <h3>Wrapping</h3>
+            <p>
+                Wrapping is by whitespace everywhere. No mid-word breaks. Tables
+                are the one exception, and only when a single word is longer than
+                its column can possibly be.
+            </p>
+        </div>
+    </section>
+
+    <!-- ========== FOOTER ========== -->
+    <footer>
+        <div class="container">
+            <p>
+                <strong>poorerpoint</strong> — a terminal presentation engine.
+                MIT licensed.
+            </p>
+            <p>
+                Copyright (c) 2026 SYSAULAB. See the LICENSE file in the repository
+                for the full text.
+            </p>
+            <p style="margin-top: 1.5rem; font-size: 0.8rem; color: #444;">
+                This page is a lay summary. The README in the repository contains
+                the precise rules, the supported markdown subset, and the design
+                notes. Where this summary and the README disagree, the README is
+                authoritative.
+            </p>
+        </div>
+    </footer>
+
+</body>
+</html>
