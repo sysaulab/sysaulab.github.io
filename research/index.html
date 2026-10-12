@@ -1,0 +1,678 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Software-Defined Entropy — Research Overview</title>
+    <meta name="description" content="A research programme on harvesting randomness from the operating system itself — and measuring it honestly.">
+    <style>
+        /* ---------- RESET & BASE ---------- */
+        *, *::before, *::after {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        html {
+            scroll-behavior: smooth;
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+        }
+
+        body {
+            background-color: #000;
+            color: #e8e8e8;
+            font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+            font-size: 17px;
+            line-height: 1.7;
+            font-weight: 400;
+            letter-spacing: 0.01em;
+        }
+
+        /* ---------- TYPOGRAPHY ---------- */
+        h1, h2, h3, h4 {
+            font-weight: 600;
+            line-height: 1.2;
+            letter-spacing: -0.02em;
+            color: #fff;
+        }
+
+        h1 {
+            font-size: clamp(2.2rem, 5vw, 3.6rem);
+            font-weight: 700;
+            letter-spacing: -0.03em;
+        }
+
+        h2 {
+            font-size: clamp(1.6rem, 3.5vw, 2.2rem);
+            margin-bottom: 1rem;
+        }
+
+        h3 {
+            font-size: clamp(1.15rem, 2.5vw, 1.4rem);
+            margin-bottom: 0.5rem;
+        }
+
+        p {
+            margin-bottom: 1.2rem;
+            color: #c8c8c8;
+        }
+
+        a {
+            color: #7eb8ff;
+            text-decoration: none;
+            border-bottom: 1px solid transparent;
+            transition: border-color 0.2s, color 0.2s;
+        }
+
+        a:hover {
+            color: #a8d0ff;
+            border-bottom-color: #a8d0ff;
+        }
+
+        strong {
+            color: #f0f0f0;
+            font-weight: 600;
+        }
+
+        em {
+            color: #d0d0d0;
+        }
+
+        /* ---------- LAYOUT ---------- */
+        .container {
+            max-width: 820px;
+            margin: 0 auto;
+            padding: 0 1.5rem;
+        }
+
+        section {
+            padding: 4rem 0;
+        }
+
+        section + section {
+            border-top: 1px solid #1a1a1a;
+        }
+
+        /* ---------- HERO ---------- */
+        .hero {
+            padding: 6rem 0 4rem;
+            text-align: left;
+        }
+
+        .hero .subtitle {
+            font-size: clamp(1.05rem, 2.2vw, 1.3rem);
+            color: #999;
+            margin-top: 1rem;
+            max-width: 640px;
+            font-weight: 400;
+            letter-spacing: 0;
+            line-height: 1.6;
+        }
+
+        .hero .tagline {
+            display: inline-block;
+            font-size: 0.75rem;
+            text-transform: uppercase;
+            letter-spacing: 0.15em;
+            color: #666;
+            margin-bottom: 1.5rem;
+            font-weight: 500;
+        }
+
+        /* ---------- CARDS ---------- */
+        .card-grid {
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 1.25rem;
+            margin-top: 2rem;
+        }
+
+        @media (min-width: 640px) {
+            .card-grid {
+                grid-template-columns: 1fr 1fr;
+            }
+        }
+
+        .card {
+            background: #0d0d0d;
+            border: 1px solid #1e1e1e;
+            border-radius: 8px;
+            padding: 1.5rem;
+            transition: border-color 0.2s, background 0.2s;
+        }
+
+        .card:hover {
+            border-color: #333;
+            background: #111;
+        }
+
+        .card h3 {
+            font-size: 1.1rem;
+            margin-bottom: 0.4rem;
+        }
+
+        .card p {
+            font-size: 0.95rem;
+            margin-bottom: 0;
+            color: #aaa;
+        }
+
+        .card .doc-label {
+            font-size: 0.7rem;
+            text-transform: uppercase;
+            letter-spacing: 0.12em;
+            color: #555;
+            margin-bottom: 0.6rem;
+            font-weight: 500;
+        }
+
+        /* ---------- HIGHLIGHT BOX ---------- */
+        .highlight {
+            background: #0a0f14;
+            border-left: 3px solid #2a5a8a;
+            padding: 1.5rem 1.75rem;
+            margin: 2rem 0;
+            border-radius: 0 6px 6px 0;
+        }
+
+        .highlight p {
+            margin-bottom: 0;
+            color: #b8c8d8;
+        }
+
+        .highlight p + p {
+            margin-top: 0.75rem;
+        }
+
+        /* ---------- QUOTE ---------- */
+        blockquote {
+            border-left: 2px solid #333;
+            padding-left: 1.5rem;
+            margin: 2rem 0;
+            font-style: italic;
+            color: #999;
+        }
+
+        blockquote p {
+            color: #999;
+            margin-bottom: 0;
+        }
+
+        /* ---------- METRIC ROW ---------- */
+        .metrics {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+            gap: 1.5rem;
+            margin: 2.5rem 0;
+        }
+
+        .metric {
+            text-align: left;
+        }
+
+        .metric .value {
+            font-size: 2rem;
+            font-weight: 700;
+            color: #fff;
+            letter-spacing: -0.03em;
+            line-height: 1.1;
+        }
+
+        .metric .label {
+            font-size: 0.8rem;
+            color: #777;
+            margin-top: 0.25rem;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            font-weight: 500;
+        }
+
+        /* ---------- LIST ---------- */
+        ul, ol {
+            margin: 1rem 0 1.5rem 1.25rem;
+            color: #c8c8c8;
+        }
+
+        li {
+            margin-bottom: 0.6rem;
+            padding-left: 0.25rem;
+        }
+
+        li strong {
+            color: #e8e8e8;
+        }
+
+        /* ---------- DIVIDER ---------- */
+        .divider {
+            width: 40px;
+            height: 2px;
+            background: #333;
+            margin: 1.5rem 0;
+        }
+
+        /* ---------- FOOTER ---------- */
+        footer {
+            padding: 3rem 0 4rem;
+            border-top: 1px solid #1a1a1a;
+            font-size: 0.85rem;
+            color: #555;
+        }
+
+        footer p {
+            color: #555;
+            margin-bottom: 0.5rem;
+        }
+
+        /* ---------- NAV ---------- */
+        nav {
+            padding: 1.5rem 0;
+            border-bottom: 1px solid #1a1a1a;
+        }
+
+        nav .container {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            flex-wrap: wrap;
+            gap: 0.5rem;
+        }
+
+        nav .brand {
+            font-weight: 600;
+            color: #fff;
+            font-size: 0.95rem;
+            letter-spacing: -0.01em;
+        }
+
+        nav .links {
+            display: flex;
+            gap: 1.5rem;
+            font-size: 0.85rem;
+        }
+
+        nav .links a {
+            color: #888;
+            border-bottom: none;
+        }
+
+        nav .links a:hover {
+            color: #fff;
+        }
+
+        /* ---------- RESPONSIVE ---------- */
+        @media (max-width: 600px) {
+            body {
+                font-size: 16px;
+            }
+
+            section {
+                padding: 3rem 0;
+            }
+
+            .hero {
+                padding: 4rem 0 3rem;
+            }
+
+            nav .links {
+                gap: 1rem;
+            }
+
+            .metrics {
+                grid-template-columns: 1fr 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+
+    <!-- ========== NAV ========== -->
+    <nav>
+        <div class="container">
+            <span class="brand">Software-Defined Entropy</span>
+            <div class="links">
+                <a href="../index.html">Back</a>
+                <a href="#what">What</a>
+                <a href="#how">How</a>
+                <a href="#measure">Measure</a>
+                <a href="#toolkit">Toolkit</a>
+                <a href="#boundaries">Boundaries</a>
+            </div>
+        </div>
+    </nav>
+
+    <!-- ========== HERO ========== -->
+    <header class="hero">
+        <div class="container">
+            <span class="tagline">Research Overview</span>
+            <h1>Randomness from the operating system itself.</h1>
+            <p class="subtitle">
+                Most computers get their randomness from specialised hardware. This research
+                asks a different question: can you harvest it from the software that is
+                already running — the scheduler, the timer, the way threads race for the CPU?
+            </p>
+        </div>
+    </header>
+
+    <!-- ========== WHAT ========== -->
+    <section id="what">
+        <div class="container">
+            <h2>What is this about?</h2>
+            <p>
+                Every secure system needs randomness. Encryption keys, session tokens,
+                nonces — they all depend on numbers that an attacker cannot guess.
+                The usual way to get those numbers is from a dedicated hardware chip
+                that measures physical noise: thermal fluctuations, quantum effects,
+                electronic jitter.
+            </p>
+            <p>
+                This research explores a different approach. Instead of adding hardware,
+                it harvests randomness from the <strong>operating system's own behaviour</strong>.
+                When multiple threads compete for the CPU, the exact moment one of them
+                gets to run is determined by a complex, unpredictable interaction of
+                scheduling decisions, cache states, and run-queue dynamics. That
+                unpredictability is the raw material.
+            </p>
+
+            <div class="highlight">
+                <p>
+                    <strong>The core idea:</strong> a thread that yields the CPU and then
+                    reads shared memory is sampling a decision that only the operating
+                    system's scheduler can make. That decision depends on the entire
+                    state of the machine — and it cannot be predicted from inside
+                    the process.
+                </p>
+            </div>
+
+            <p>
+                The research is documented across four connected papers, a toolkit
+                of command-line programs, and a measurement methodology that treats
+                the estimator as an instrument with its own limits.
+            </p>
+        </div>
+    </section>
+
+    <!-- ========== HOW ========== -->
+    <section id="how">
+        <div class="container">
+            <h2>How it works</h2>
+            <p>
+                The generator — called <strong>speedy64</strong> — uses three threads
+                that race on a shared ring of memory. Each thread repeatedly reads a
+                value, transforms it, and writes it back. There are no locks, no
+                synchronisation, no barriers. The threads genuinely compete.
+            </p>
+            <p>
+                The main thread is also the emitter. It mixes its part of the ring,
+                then calls <code>sched_yield()</code> — asking the operating system
+                to pause it and run something else. The scheduler decides when to
+                bring it back. That decision depends on which other threads are
+                runnable, on which cores, under what load, with what recent runtime
+                accounting. None of that is visible to the process.
+            </p>
+            <p>
+                When the thread resumes, it reads all three ring nodes and XORs them
+                together. The value it reads encodes how much the other two threads
+                advanced during the yield — which encodes the scheduler's decision.
+                A fixed mixing function spreads that tiny perturbation across all
+                64 bits of the output word.
+            </p>
+
+            <div class="metrics">
+                <div class="metric">
+                    <div class="value">~12 MB/s</div>
+                    <div class="label">Throughput on bare metal</div>
+                </div>
+                <div class="metric">
+                    <div class="value">6.6–7.5</div>
+                    <div class="label">Bits per byte (measured)</div>
+                </div>
+                <div class="metric">
+                    <div class="value">3</div>
+                    <div class="label">Racing threads</div>
+                </div>
+                <div class="metric">
+                    <div class="value">0</div>
+                    <div class="label">Hardware added</div>
+                </div>
+            </div>
+
+            <p>
+                The design requires <strong>two independent ingredients</strong>:
+                a large state space (the racing ring) and an unpredictable sampling
+                instant (the scheduler's decision). Neither alone is enough. The
+                research demonstrates this with negative controls — variants that
+                remove one ingredient and fail visibly.
+            </p>
+        </div>
+    </section>
+
+    <!-- ========== MEASURE ========== -->
+    <section id="measure">
+        <div class="container">
+            <h2>Measuring randomness honestly</h2>
+            <p>
+                A common mistake in randomness research is to report a single number
+                — "our generator achieves 7.12 bits of entropy per byte" — as if it
+                were a property of the generator. It is not. It is a property of the
+                generator <em>as measured by a particular estimator, on a particular
+                slice size, with a particular slice count, on a particular machine</em>.
+            </p>
+            <p>
+                The methodology paper in this suite makes a simple argument: the
+                dominant uncertainty in practical min-entropy measurement is the
+                estimator itself, not the source. The estimator has a ceiling and
+                a floor. A source whose numbers sit inside that envelope cannot be
+                distinguished from uniform by the instrument that produced them.
+            </p>
+
+            <div class="highlight">
+                <p>
+                    <strong>The baseline is mandatory.</strong> No min-entropy number
+                    should be reported without running the same pipeline on
+                    <code>/dev/urandom</code> — the operating system's own
+                    cryptographically secure generator — and comparing the envelopes.
+                </p>
+            </div>
+
+            <p>
+                On one hundred 1 MB slices of <code>/dev/urandom</code>, the
+                non-IID estimator produces values from 6.12 to 7.49, with a typical
+                around 7.10. That 1.37-bit spread belongs to the estimator, not to
+                the source. The IID estimator is much narrower — typical 7.88,
+                spread 0.03 — but its ceiling is also the estimator's, not the
+                source's.
+            </p>
+            <p>
+                The discipline is to report the <strong>envelope</strong>: typical,
+                maximum, minimum, and spread, on both tracks, alongside a matched
+                baseline. A single number is not a measurement. The shape of the
+                distribution is.
+            </p>
+        </div>
+    </section>
+
+    <!-- ========== TOOLKIT ========== -->
+    <section id="toolkit">
+        <div class="container">
+            <h2>The toolkit</h2>
+            <p>
+                The research is implemented as a suite of command-line tools that
+                follow the Unix convention: read from standard input, write to
+                standard output, compose through pipes. Every tool is a standalone
+                binary. Every tool does one thing.
+            </p>
+
+            <div class="card-grid">
+                <div class="card">
+                    <div class="doc-label">Sources</div>
+                    <h3><code>s-</code> tools</h3>
+                    <p>Produce data. From the kernel's entropy pool, from files, from
+                    the speedy64 scheduler-jitter generator, or from a simple
+                    infinite zero stream for testing.</p>
+                </div>
+                <div class="card">
+                    <div class="doc-label">Filters</div>
+                    <h3><code>f-</code> tools</h3>
+                    <p>Transform data. Deterministic PRNGs (Biski64, QXO64, xoshiro,
+                    PCG), hex encoding, byte limiting, bit-width reduction, throughput
+                    monitoring.</p>
+                </div>
+                <div class="card">
+                    <div class="doc-label">Terminators</div>
+                    <h3><code>t-</code> tools</h3>
+                    <p>Consume data. Statistical tests (NIST SP 800-22, bit-occupancy
+                    birthday tests) and the min-entropy assessment harness that wraps
+                    the NIST SP 800-90B estimators.</p>
+                </div>
+                <div class="card">
+                    <div class="doc-label">Utilities</div>
+                    <h3>Systems tools</h3>
+                    <p>A timer-granularity profiler, a seekable pseudorandom
+                    filesystem (<code>randfs</code>), and parallel output filters
+                    that exploit <code>O_APPEND</code> block atomicity.</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- ========== BOUNDARIES ========== -->
+    <section id="boundaries">
+        <div class="container">
+            <h2>Where the operating system becomes the instrument</h2>
+            <p>
+                Three systems case studies tie the toolkit to the OS primitives
+                it exercises. Each is a boundary between a randomness-related
+                design and the operating system's implementation of a primitive.
+            </p>
+
+            <h3>Timer granularity</h3>
+            <p>
+                On macOS on Apple Silicon, <code>thread::sleep</code> has a
+                granularity threshold of 7.6 microseconds. Below that, the actual
+                delay is dominated by fixed overhead and is not controllable by
+                the caller. High fidelity — where the requested delay and the
+                actual delay agree to within 10% — requires delays above
+                approximately 5 milliseconds. This measurement motivates the
+                yield-per-emit design: the timer path has a quantisation regime,
+                and the scheduler path does not.
+            </p>
+
+            <h3>Seekable pseudorandom filesystems</h3>
+            <p>
+                <code>randfs</code> serves infinite, deterministic, seekable
+                pseudorandom files from a directory of 32-byte seed files. Each
+                virtual file is <code>i64::MAX</code> bytes long, derived from
+                ChaCha20 keyed on the seed. Reading byte 10<sup>18</sup> costs
+                the same as reading byte 0. It exists because testing tools that
+                were never designed for enormous files requires a file that is
+                enormous, reproducible, and random-access.
+            </p>
+
+            <h3>Parallel output</h3>
+            <p>
+                The parallel filters trade reproducibility for throughput by
+                having multiple threads write to stdout concurrently, each
+                writing complete blocks via <code>O_APPEND</code>. The kernel
+                guarantees that appends are atomic, so blocks are interleaved
+                but never split. The output is not repeatable across runs —
+                and that non-reproducibility is the point. The filters make
+                explicit what "parallel randomness" can and cannot mean.
+            </p>
+
+            <div class="highlight">
+                <p>
+                    <strong>The shared lesson:</strong> in each case, the operating
+                    system is not a passive substrate. It has a resolution, a
+                    semantic limit, and a guarantee that is narrower than it might
+                    appear. The interesting failures live at those boundaries.
+                </p>
+            </div>
+        </div>
+    </section>
+
+    <!-- ========== SECURITY ========== -->
+    <section id="security">
+        <div class="container">
+            <h2>What this is — and what it is not</h2>
+            <p>
+                The research is careful about its own limits. The speedy64 generator
+                is a <strong>statistical</strong> source, not a cryptographic one.
+                It passes the standard statistical tests and reports high min-entropy,
+                but its entropy comes from shared scheduler state that a co-resident
+                adversary can observe and influence.
+            </p>
+            <p>
+                <strong>Do not use it for keys, tokens, nonces, or any security-relevant
+                output.</strong> The operating system's own CSPRNG — <code>/dev/urandom</code>,
+                <code>getrandom(2)</code> — is the correct tool for cryptographic
+                randomness. This research is about measurement, methodology, and
+                understanding where randomness comes from in a software system.
+            </p>
+            <p>
+                The toolkit includes one cryptographic source: <code>s-entropy</code>,
+                which wraps the OS CSPRNG. Everything else is for simulation,
+                testing, procedural generation, or research.
+            </p>
+        </div>
+    </section>
+
+    <!-- ========== DOCUMENTS ========== -->
+    <section id="documents">
+        <div class="container">
+            <h2>The four documents</h2>
+            <p>
+                The research is documented across four connected papers, plus a
+                reader's map for orientation.
+            </p>
+
+            <div class="card-grid">
+                <div class="card">
+                    <div class="doc-label">Document I</div>
+                    <h3><a href="https://github.com/sysaulab/softrng/blob/main/README.softrng.md">SoftRNG: A Modular Toolkit</a></h3>
+                    <p>The practitioner's manual. Every tool, every option, every
+                    design rationale. The entry point for users.</p>
+                </div>
+                <div class="card">
+                    <div class="doc-label">Document II</div>
+                    <h3><a href="https://github.com/sysaulab/softrng/blob/main/PAPER.speedy64.md">speedy64: Scheduler Jitter</a></h3>
+                    <p>The mechanism, the negative controls, and the measurements
+                    across bare metal and virtualised environments.</p>
+                </div>
+                <div class="card">
+                    <div class="doc-label">Document III</div>
+                    <h3><a href="https://github.com/sysaulab/softrng/blob/main/PAPER.min-entropy.md">The Estimator's Envelope</a></h3>
+                    <p>The methodology for min-entropy assessment. Why the
+                    estimator's limits matter more than the source's.</p>
+                </div>
+                <div class="card">
+                    <div class="doc-label">Document IV</div>
+                    <h3><a href="https://github.com/sysaulab/softrng/blob/main/PAPER.system.md">Boundaries</a></h3>
+                    <p>Timer granularity, seekable pseudorandom filesystems,
+                    and parallel output. Where the OS becomes the instrument.</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- ========== FOOTER ========== -->
+    <footer>
+        <div class="container">
+            <p>
+                <strong>Software-Defined Entropy</strong> — a research programme by
+                Sylvain Saucier, with an AI collaborator.
+            </p>
+            <p>
+                The toolkit is distributed under AGPL-3.0. Individual libraries
+                may be MIT/Apache-2.0 dual-licensed for reuse outside the suite.
+            </p>
+            <p style="margin-top: 1.5rem; font-size: 0.8rem; color: #444;">
+                This page is a lay summary. The full technical documents contain
+                the precise claims, measurements, and caveats. Where this summary
+                and the documents disagree, the documents are authoritative.
+            </p>
+        </div>
+    </footer>
+
+</body>
+</html>
