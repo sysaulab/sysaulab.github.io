@@ -1,0 +1,941 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>fuzzy_dict — Fuzzy Search Without the Full Scan</title>
+    <meta name="description" content="A fuzzy string matching library for Rust that uses character-presence bitmasks to narrow the search space before scoring.">
+    <style>
+        /* ---------- RESET & BASE ---------- */
+        *, *::before, *::after {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        html {
+            scroll-behavior: smooth;
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+        }
+
+        body {
+            background-color: #000;
+            color: #e8e8e8;
+            font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+            font-size: 17px;
+            line-height: 1.7;
+            font-weight: 400;
+            letter-spacing: 0.01em;
+        }
+
+        /* ---------- TYPOGRAPHY ---------- */
+        h1, h2, h3, h4 {
+            font-weight: 600;
+            line-height: 1.2;
+            letter-spacing: -0.02em;
+            color: #fff;
+        }
+
+        h1 {
+            font-size: clamp(2.2rem, 5vw, 3.6rem);
+            font-weight: 700;
+            letter-spacing: -0.03em;
+        }
+
+        h2 {
+            font-size: clamp(1.6rem, 3.5vw, 2.2rem);
+            margin-bottom: 1rem;
+        }
+
+        h3 {
+            font-size: clamp(1.15rem, 2.5vw, 1.4rem);
+            margin-bottom: 0.5rem;
+        }
+
+        p {
+            margin-bottom: 1.2rem;
+            color: #c8c8c8;
+        }
+
+        a {
+            color: #7eb8ff;
+            text-decoration: none;
+            border-bottom: 1px solid transparent;
+            transition: border-color 0.2s, color 0.2s;
+        }
+
+        a:hover {
+            color: #a8d0ff;
+            border-bottom-color: #a8d0ff;
+        }
+
+        strong {
+            color: #f0f0f0;
+            font-weight: 600;
+        }
+
+        em {
+            color: #d0d0d0;
+        }
+
+        code {
+            font-family: "SF Mono", "Menlo", "Consolas", monospace;
+            font-size: 0.88em;
+            color: #d8d8d8;
+            background: #141414;
+            padding: 0.1em 0.35em;
+            border-radius: 3px;
+            border: 1px solid #1e1e1e;
+        }
+
+        /* ---------- LAYOUT ---------- */
+        .container {
+            max-width: 820px;
+            margin: 0 auto;
+            padding: 0 1.5rem;
+        }
+
+        section {
+            padding: 4rem 0;
+        }
+
+        section + section {
+            border-top: 1px solid #1a1a1a;
+        }
+
+        /* ---------- HERO ---------- */
+        .hero {
+            padding: 6rem 0 4rem;
+            text-align: left;
+        }
+
+        .hero .subtitle {
+            font-size: clamp(1.05rem, 2.2vw, 1.3rem);
+            color: #999;
+            margin-top: 1rem;
+            max-width: 640px;
+            font-weight: 400;
+            letter-spacing: 0;
+            line-height: 1.6;
+        }
+
+        .hero .tagline {
+            display: inline-block;
+            font-size: 0.75rem;
+            text-transform: uppercase;
+            letter-spacing: 0.15em;
+            color: #666;
+            margin-bottom: 1.5rem;
+            font-weight: 500;
+        }
+
+        /* ---------- CARDS ---------- */
+        .card-grid {
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 1.25rem;
+            margin-top: 2rem;
+        }
+
+        @media (min-width: 640px) {
+            .card-grid {
+                grid-template-columns: 1fr 1fr;
+            }
+        }
+
+        .card {
+            background: #0d0d0d;
+            border: 1px solid #1e1e1e;
+            border-radius: 8px;
+            padding: 1.5rem;
+            transition: border-color 0.2s, background 0.2s;
+        }
+
+        .card:hover {
+            border-color: #333;
+            background: #111;
+        }
+
+        .card h3 {
+            font-size: 1.1rem;
+            margin-bottom: 0.4rem;
+        }
+
+        .card p {
+            font-size: 0.95rem;
+            margin-bottom: 0;
+            color: #aaa;
+        }
+
+        .card .doc-label {
+            font-size: 0.7rem;
+            text-transform: uppercase;
+            letter-spacing: 0.12em;
+            color: #555;
+            margin-bottom: 0.6rem;
+            font-weight: 500;
+        }
+
+        /* ---------- HIGHLIGHT BOX ---------- */
+        .highlight {
+            background: #0a0f14;
+            border-left: 3px solid #2a5a8a;
+            padding: 1.5rem 1.75rem;
+            margin: 2rem 0;
+            border-radius: 0 6px 6px 0;
+        }
+
+        .highlight p {
+            margin-bottom: 0;
+            color: #b8c8d8;
+        }
+
+        .highlight p + p {
+            margin-top: 0.75rem;
+        }
+
+        /* ---------- WARNING BOX ---------- */
+        .warning {
+            background: #140d0a;
+            border-left: 3px solid #8a4a2a;
+            padding: 1.5rem 1.75rem;
+            margin: 2rem 0;
+            border-radius: 0 6px 6px 0;
+        }
+
+        .warning p {
+            margin-bottom: 0;
+            color: #d8b8a8;
+        }
+
+        .warning p + p {
+            margin-top: 0.75rem;
+        }
+
+        .warning strong {
+            color: #f0c8b0;
+        }
+
+        /* ---------- QUOTE ---------- */
+        blockquote {
+            border-left: 2px solid #333;
+            padding-left: 1.5rem;
+            margin: 2rem 0;
+            font-style: italic;
+            color: #999;
+        }
+
+        blockquote p {
+            color: #999;
+            margin-bottom: 0;
+        }
+
+        /* ---------- METRIC ROW ---------- */
+        .metrics {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+            gap: 1.5rem;
+            margin: 2.5rem 0;
+        }
+
+        .metric {
+            text-align: left;
+        }
+
+        .metric .value {
+            font-size: 2rem;
+            font-weight: 700;
+            color: #fff;
+            letter-spacing: -0.03em;
+            line-height: 1.1;
+        }
+
+        .metric .label {
+            font-size: 0.8rem;
+            color: #777;
+            margin-top: 0.25rem;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            font-weight: 500;
+        }
+
+        /* ---------- LIST ---------- */
+        ul, ol {
+            margin: 1rem 0 1.5rem 1.25rem;
+            color: #c8c8c8;
+        }
+
+        li {
+            margin-bottom: 0.6rem;
+            padding-left: 0.25rem;
+        }
+
+        li strong {
+            color: #e8e8e8;
+        }
+
+        /* ---------- TABLE ---------- */
+        .table-wrap {
+            overflow-x: auto;
+            margin: 2rem 0;
+            border: 1px solid #1a1a1a;
+            border-radius: 8px;
+            background: #0a0a0a;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.92rem;
+        }
+
+        th {
+            text-align: left;
+            font-weight: 600;
+            color: #888;
+            font-size: 0.72rem;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            padding: 0.9rem 1.25rem;
+            border-bottom: 1px solid #1e1e1e;
+            white-space: nowrap;
+        }
+
+        td {
+            padding: 0.85rem 1.25rem;
+            border-bottom: 1px solid #141414;
+            color: #c0c0c0;
+            vertical-align: top;
+        }
+
+        tr:last-child td {
+            border-bottom: none;
+        }
+
+        td:first-child {
+            color: #e8e8e8;
+            white-space: nowrap;
+            font-weight: 500;
+        }
+
+        td code {
+            font-size: 0.85em;
+        }
+
+        /* ---------- CODE BLOCKS ---------- */
+        pre {
+            background: #0a0a0a;
+            border: 1px solid #1a1a1a;
+            border-radius: 8px;
+            padding: 1.5rem;
+            overflow-x: auto;
+            font-family: "SF Mono", "Menlo", "Consolas", monospace;
+            font-size: 0.85rem;
+            line-height: 1.6;
+            color: #c0c0c0;
+            margin: 1.5rem 0;
+        }
+
+        pre code {
+            background: none;
+            border: none;
+            padding: 0;
+            color: #c0c0c0;
+            font-size: inherit;
+        }
+
+        /* ---------- DIVIDER ---------- */
+        .divider {
+            width: 40px;
+            height: 2px;
+            background: #333;
+            margin: 1.5rem 0;
+        }
+
+        /* ---------- FOOTER ---------- */
+        footer {
+            padding: 3rem 0 4rem;
+            border-top: 1px solid #1a1a1a;
+            font-size: 0.85rem;
+            color: #555;
+        }
+
+        footer p {
+            color: #555;
+            margin-bottom: 0.5rem;
+        }
+
+        /* ---------- NAV ---------- */
+        nav {
+            padding: 1.5rem 0;
+            border-bottom: 1px solid #1a1a1a;
+        }
+
+        nav .container {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            flex-wrap: wrap;
+            gap: 0.5rem;
+        }
+
+        nav .brand {
+            font-weight: 600;
+            color: #fff;
+            font-size: 0.95rem;
+            letter-spacing: -0.01em;
+        }
+
+        nav .links {
+            display: flex;
+            gap: 1.5rem;
+            font-size: 0.85rem;
+        }
+
+        nav .links a {
+            color: #888;
+            border-bottom: none;
+        }
+
+        nav .links a:hover {
+            color: #fff;
+        }
+
+        /* ---------- RESPONSIVE ---------- */
+        @media (max-width: 600px) {
+            body {
+                font-size: 16px;
+            }
+
+            section {
+                padding: 3rem 0;
+            }
+
+            .hero {
+                padding: 4rem 0 3rem;
+            }
+
+            nav .links {
+                gap: 1rem;
+                flex-wrap: wrap;
+            }
+
+            .metrics {
+                grid-template-columns: 1fr 1fr;
+            }
+
+            th, td {
+                padding: 0.7rem 1rem;
+            }
+
+            pre {
+                padding: 1rem;
+                font-size: 0.8rem;
+            }
+        }
+    </style>
+</head>
+<body>
+
+    <!-- ========== NAV ========== -->
+    <nav>
+        <div class="container">
+            <span class="brand">fuzzy_dict</span>
+            <div class="links">
+                <a href="#what">What</a>
+                <a href="#how">How</a>
+                <a href="#alphabet">Alphabet</a>
+                <a href="#usage">Usage</a>
+                <a href="#scoring">Scoring</a>
+                <a href="#limits">Limits</a>
+            </div>
+        </div>
+    </nav>
+
+    <!-- ========== HERO ========== -->
+    <header class="hero">
+        <div class="container">
+            <span class="tagline">Rust Library · Weekend Project</span>
+            <h1>Fuzzy search without the full scan.</h1>
+            <p class="subtitle">
+                A character-presence bitmask filter that narrows the candidate set
+                before any similarity score is computed. Bucket words by which
+                characters they contain, then look up the buckets that could
+                possibly match.
+            </p>
+        </div>
+    </header>
+
+    <!-- ========== WHAT ========== -->
+    <section id="what">
+        <div class="container">
+            <h2>What it is</h2>
+            <p>
+                Fuzzy string matching is what happens when you type <em>helo</em>
+                and expect <em>hello</em> to come back. It is the machinery behind
+                spell checkers, search autocomplete, command-line fuzzy finders,
+                and duplicate detection.
+            </p>
+            <p>
+                The expensive part is the scoring. Every candidate word has to be
+                compared to the query with some similarity metric — edit distance,
+                Jaro-Winkler, subsequence matching. If your dictionary has a
+                million words, you do not want to score all million.
+            </p>
+            <p>
+                <strong>fuzzy_dict</strong> is a pre-filter. It throws away most
+                of the dictionary before any scoring happens, using a cheap
+                necessary condition: <em>if a candidate lacks a character class
+                that appears in the query, it probably cannot match.</em>
+            </p>
+
+            <div class="highlight">
+                <p>
+                    <strong>The core idea:</strong> give every word a 64-bit
+                    fingerprint of which characters it contains. Bucket words by
+                    that fingerprint. At query time, look up the exact bucket
+                    plus a handful of neighbours. Only score what survives.
+                </p>
+            </div>
+
+            <p>
+                It is a first-stage candidate collector, not a complete matcher.
+                It does not compute edit distance. It does not replace a
+                similarity metric. It makes the metric cheaper by giving it less
+                work to do.
+            </p>
+        </div>
+    </section>
+
+    <!-- ========== HOW ========== -->
+    <section id="how">
+        <div class="container">
+            <h2>How it works</h2>
+            <p>
+                Each word gets a 64-bit mask. Every bit represents a character
+                class — a group of characters that are treated as equivalent.
+                Bit 1 might mean "a, A, á, À, â, Ä, ã, Ã", bit 2 might mean "b, B",
+                and so on. Bit 0 is reserved for characters the alphabet does not
+                know about.
+            </p>
+            <p>
+                For a word, you set the bits for every character class it
+                contains. <em>hello</em> sets the bits for h, e, l, o.
+                <em>world</em> sets w, o, r, l, d. The mask is order-blind: it
+                records <em>which</em> classes are present, not <em>where</em>.
+            </p>
+
+            <div class="metrics">
+                <div class="metric">
+                    <div class="value">64-bit</div>
+                    <div class="label">Mask per word</div>
+                </div>
+                <div class="metric">
+                    <div class="value">1</div>
+                    <div class="label">Bit per character class</div>
+                </div>
+                <div class="metric">
+                    <div class="value">±2</div>
+                    <div class="label">Bit flips searched</div>
+                </div>
+                <div class="metric">
+                    <div class="value">O(1)</div>
+                    <div class="label">Bucket lookup</div>
+                </div>
+            </div>
+
+            <h3>The search</h3>
+            <p>
+                At query time, the algorithm computes the query's mask and then
+                looks up not just the exact bucket, but every bucket whose mask
+                differs by one or two bits. The reasoning is straightforward: a
+                candidate that is missing one character from the query might still
+                be a good fuzzy match. A candidate missing two might too. A
+                candidate missing five is probably not worth scoring.
+            </p>
+            <p>
+                The expansion is bounded. There are at most 64 bits to consider,
+                so the number of masks generated is constant in the dictionary
+                size. Most of those masks correspond to empty buckets, so the
+                actual lookups are few.
+            </p>
+            <p>
+                Candidates from the surviving buckets are scored with a small
+                inline function. Collection stops early once the running score
+                sum crosses a threshold, and if a word in the exact bucket scores
+                a perfect 1.0, it is returned immediately as the sole result.
+            </p>
+        </div>
+    </section>
+
+    <!-- ========== ALPHABET ========== -->
+    <section id="alphabet">
+        <div class="container">
+            <h2>Alphabet handling — read this first</h2>
+            <p>
+                The alphabet is defined by plain text files, one character class
+                per line. Characters on the same line share a bit, which is how
+                you get case-insensitivity and accent-insensitivity for free.
+                Group <code>aAáÀâÄãÃ</code> on one line and they all become the
+                same class.
+            </p>
+            <p>
+                When multiple alphabet files are loaded, they are merged
+                <strong>line-wise</strong>: line 0 from every file shares bit 1,
+                line 1 shares bit 2, and so on.
+            </p>
+
+            <div class="warning">
+                <p>
+                    <strong>This is the biggest gotcha in the library.</strong>
+                    Load Latin and Cyrillic together, and the Latin
+                    <code>a</code> and the Cyrillic <code>А</code> both land on
+                    line 0 of their respective files. They share a bit. They are
+                    treated as the same character.
+                </p>
+            </div>
+
+            <p>
+                The default alphabet — <code>Alphabet::default()</code> — loads
+                <em>every</em> standard alphabet merged this way. It is
+                convenient for demonstrations and unsuitable for anything else.
+            </p>
+
+            <h3>What to do instead</h3>
+            <p>
+                Load only the scripts you actually need:
+            </p>
+
+            <pre><code>let alphabet = Alphabet::load_named(&["latin"]);
+let alphabet = Alphabet::load_named(&["cyrillic"]);
+let alphabet = Alphabet::load_named(&["latin", "symbol"]);</code></pre>
+
+            <p>
+                If you need strict separation between scripts, use a separate
+                dictionary per script and merge the results yourself. The library
+                does not do it for you.
+            </p>
+
+            <h3>Included alphabets</h3>
+            <p>
+                The <code>assets/</code> directory ships with definitions for
+                scripts across Europe, the Caucasus, the Middle East, South and
+                Southeast Asia, Africa, the Americas, and Central and East Asia.
+                There is also a <code>symbols</code> file.
+            </p>
+
+            <div class="warning">
+                <p>
+                    <strong>Mongolian is currently broken.</strong> The file
+                    contains <code>#</code> comment lines, and the loader does
+                    not skip them — it treats them as character classes. Clean
+                    up the file or patch the loader if you need Mongolian.
+                </p>
+            </div>
+
+            <h3>CJK</h3>
+            <p>
+                Chinese, Japanese, and Korean are logographic. They have
+                thousands of characters and cannot fit in a 64-bit mask. The
+                library does not romanise. If you want to filter CJK text,
+                romanise it in your application — pinyin, romaji, whatever fits —
+                before passing it in.
+            </p>
+        </div>
+    </section>
+
+    <!-- ========== USAGE ========== -->
+    <section id="usage">
+        <div class="container">
+            <h2>Usage</h2>
+            <p>
+                Not yet on crates.io. Depend on it from git:
+            </p>
+
+            <pre><code>[dependencies]
+fuzzy_dict = { git = "https://github.com/yourusername/fuzzy_dict" }</code></pre>
+
+            <p>A complete example:</p>
+
+            <pre><code>use fuzzy_dict::{Alphabet, FuzzyDict};
+
+fn main() -> Result&lt;(), Box&lt;dyn std::error::Error&gt;&gt; {
+    // Load only the script you need.
+    let alphabet = Alphabet::load_named(&["latin"]);
+    let mut dict = FuzzyDict::with_alphabet(alphabet);
+
+    // Load a dictionary file (one word per line, '#' for comments).
+    dict.add_file("dictionary.txt")?;
+
+    // Or add words manually.
+    dict.add_word("hello");
+    dict.add_word("world");
+
+    let results = dict.search_limit("helo", 10);
+    for (word, score) in results {
+        println!("{} -&gt; {:.3}", word, score);
+    }
+
+    Ok(())
+}</code></pre>
+
+            <h3>Custom alphabets</h3>
+            <p>
+                An alphabet file is plain text. Each non-empty line defines a
+                character class assigned one bit.
+            </p>
+
+            <pre><code>aAáÀâÄãÃ
+bB
+cCçÇ</code></pre>
+
+            <pre><code>let alphabet = Alphabet::from_file("my_alphabet.txt")?;</code></pre>
+
+            <p>
+                There is also a command-line demo in
+                <code>examples/demo.rs</code>:
+            </p>
+
+            <pre><code>cargo run --example demo words.txt cafe 15 0.7</code></pre>
+
+            <p>
+                Arguments: dictionary file, query, optional result limit, optional
+                score threshold.
+            </p>
+        </div>
+    </section>
+
+    <!-- ========== SCORING ========== -->
+    <section id="scoring">
+        <div class="container">
+            <h2>Scoring</h2>
+            <p>
+                The scorer is small and fast. It compares the longest common
+                prefix and the longest common suffix of the two strings, then
+                normalises and caps the result:
+            </p>
+
+            <pre><code>score(a, b) = min( (LCP(a,b) + LCS(a,b)) / max(len(a), len(b)),
+                   min(len(a), len(b)) / max(len(a), len(b)) )</code></pre>
+
+            <p>
+                The second term is a cap. Without it, a short string fully
+                contained in a longer one — <em>cat</em> inside
+                <em>category</em>, say — could score a perfect 1.0.
+            </p>
+
+            <div class="warning">
+                <p>
+                    <strong>Byte-length scoring.</strong> The implementation
+                    currently uses <code>str::len()</code>, which counts bytes,
+                    not characters. For non-ASCII scripts this halves scores and
+                    distorts ranking. The fix is a one-line change to
+                    <code>chars().count()</code>, but it is not applied.
+                </p>
+            </div>
+
+            <p>
+                The scorer is also <strong>not pluggable</strong>. If you want
+                Jaro-Winkler, Levenshtein, or a custom metric, you have to edit
+                the source. There is no trait or function pointer to swap in.
+            </p>
+        </div>
+    </section>
+
+    <!-- ========== LIMITS ========== -->
+    <section id="limits">
+        <div class="container">
+            <h2>Limitations</h2>
+            <p>
+                This is a weekend project. It is open source and usable, but the
+                caveats below are real and worth reading before you rely on it.
+            </p>
+
+            <div class="table-wrap">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Limitation</th>
+                            <th>Impact</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td>Default alphabet merges all scripts</td>
+                            <td>Cross-script characters collide on the same bit. The biggest gotcha in the library.</td>
+                        </tr>
+                        <tr>
+                            <td>Byte-length scoring</td>
+                            <td>Non-ASCII ranking is distorted. Halves scores for Cyrillic, Greek, Arabic, and others.</td>
+                        </tr>
+                        <tr>
+                            <td>False negatives for query-only characters</td>
+                            <td>A query containing a character that appears nowhere in the dictionary can miss valid matches.</td>
+                        </tr>
+                        <tr>
+                            <td>Order-insensitive</td>
+                            <td><code>abc</code> and <code>cba</code> produce the same mask. Character order is not captured.</td>
+                        </tr>
+                        <tr>
+                            <td>CJK requires romanisation</td>
+                            <td>Logographic scripts cannot fit in 64 bits. Pre-process externally.</td>
+                        </tr>
+                        <tr>
+                            <td>Static alphabet</td>
+                            <td>The alphabet must be fixed before the dictionary is built. Changing it means rebuilding.</td>
+                        </tr>
+                        <tr>
+                            <td>Scorer not pluggable</td>
+                            <td>Changing the metric requires editing the source.</td>
+                        </tr>
+                        <tr>
+                            <td>No test suite</td>
+                            <td>No unit or integration tests. This is a prerequisite for a stable release.</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <h3>The false negative condition</h3>
+            <p>
+                The filter is designed to never miss a potential match — that is
+                what makes a pre-filter useful. But there is one case where the
+                current implementation breaks that guarantee.
+            </p>
+            <p>
+                When expanding from the exact mask to neighbouring masks, the
+                algorithm only flips bits that appear somewhere in the
+                dictionary. If the query contains a character that appears
+                nowhere in the dictionary, that bit is set in the query's mask but
+                is not in the dictionary's effective mask. No flip ever turns it
+                off, so the search cannot reach any bucket whose mask lacks it —
+                even though every dictionary word lacks it.
+            </p>
+
+            <div class="highlight">
+                <p>
+                    <strong>The fix is one line:</strong> compute the set of
+                    flippable bits as <code>effective_mask | query_mask</code>.
+                    Until that is applied, the "no false negatives" claim does
+                    not hold for queries containing characters absent from the
+                    dictionary.
+                </p>
+            </div>
+
+            <h3>Alphabet loader quirks</h3>
+            <p>
+                The loader skips empty lines but does not skip
+                <code>#</code> comments. It uses the raw line index for bit
+                assignment, so blank lines leave gaps in the bit range. It trims
+                whitespace from each line, which means whitespace characters
+                cannot be defined as a class — the <code>symbols</code> file loses
+                its space and tab.
+            </p>
+        </div>
+    </section>
+
+    <!-- ========== RELATED ========== -->
+    <section id="related">
+        <div class="container">
+            <h2>Where it sits</h2>
+            <p>
+                Fuzzy matching has a lot of prior art. The bitmask filter is not
+                trying to replace any of it — it is trying to make it cheaper by
+                reducing the candidate set first.
+            </p>
+
+            <div class="card-grid">
+                <div class="card">
+                    <div class="doc-label">Complementary</div>
+                    <h3>SymSpell</h3>
+                    <p>Pre-computes symmetric deletions for edit distance up to
+                    2. The bitmask filter can reduce the candidate set passed to
+                    it.</p>
+                </div>
+                <div class="card">
+                    <div class="doc-label">Different trade-off</div>
+                    <h3>BK-trees</h3>
+                    <p>Traverse a metric space and prune on distance bounds.
+                    O(log n) traversal versus constant-time candidate collection,
+                    but they capture more information.</p>
+                </div>
+                <div class="card">
+                    <div class="doc-label">Order-aware</div>
+                    <h3>N-gram filters</h3>
+                    <p>Capture character order but require more storage and more
+                    complex query processing. The bitmask trades order for
+                    compactness and speed.</p>
+                </div>
+                <div class="card">
+                    <div class="doc-label">Probabilistic</div>
+                    <h3>Bloom filters</h3>
+                    <p>FlashFuzzy uses them for pre-filtering. This approach is
+                    deterministic, not probabilistic.</p>
+                </div>
+            </div>
+
+            <p style="margin-top: 2rem;">
+                The bitmask idea itself is not new. Fuzzysort uses a 32-bit flag
+                scheme for lowercase letters, digits, ASCII, and non-ASCII. This
+                library generalises that to arbitrary alphabets and multiple
+                scripts via configurable bit assignment.
+            </p>
+        </div>
+    </section>
+
+    <!-- ========== PERFORMANCE ========== -->
+    <section id="performance">
+        <div class="container">
+            <h2>Performance</h2>
+            <p>
+                Earlier versions of the README quoted specific throughput numbers
+                — "100,000+ queries per second", "80–95% candidate reduction".
+                Those have not been benchmarked reproducibly and depend heavily on
+                the alphabet, dictionary, and query. They have been removed.
+            </p>
+            <p>
+                What can be said structurally:
+            </p>
+            <ul>
+                <li>Exact mask lookup is O(1) on average.</li>
+                <li>Expansion is bounded by the number of effective bits (≤ 64), so it does not grow with dictionary size.</li>
+                <li>Only candidates in matching buckets are scored.</li>
+                <li>Memory overhead is one mask per <em>bucket</em>, not per word — shared masks amortise.</li>
+            </ul>
+
+            <div class="highlight">
+                <p>
+                    <strong>On the "8 bytes per word" claim:</strong> that was
+                    inaccurate. The mask is stored once per bucket, and the real
+                    overhead depends on the bucket distribution. The hash map
+                    entry itself often dominates.
+                </p>
+            </div>
+        </div>
+    </section>
+
+    <!-- ========== FOOTER ========== -->
+    <footer>
+        <div class="container">
+            <p>
+                <strong>fuzzy_dict</strong> — a character-presence bitmask filter
+                for fuzzy string matching in Rust.
+            </p>
+            <p>
+                Inspired by fuzzysort and FlashFuzzy. Contributions and
+                improvements welcome — if you polish the code, feel free to
+                upload it to crates.io, just keep the original author credit.
+            </p>
+            <p style="margin-top: 1.5rem; font-size: 0.8rem; color: #444;">
+                This page is a lay summary. The repository README and the paper
+                contain the precise claims, the measurements, and the caveats.
+                Where this summary and those documents disagree, they are
+                authoritative. The paper itself contains some claims that the
+                README corrects.
+            </p>
+        </div>
+    </footer>
+
+</body>
+</html>
