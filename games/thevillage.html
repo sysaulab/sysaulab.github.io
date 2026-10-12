@@ -281,11 +281,26 @@ const ART_SQUARE = `
   <rect y="200" width="800" height="62" fill="#3d7fa6"/>
   <rect y="260" width="800" height="240" fill="#d9cfa8"/>
   ${houseRow(0,300,800,12,68,11)}
-  <ellipse cx="112" cy="168" rx="118" ry="58" fill="#7fae7a"/>
-  <path d="M58 176 a54 54 0 0 1 108 0 z" fill="#4f7f5f"/>
-  <rect x="66" y="172" width="92" height="16" fill="#3f6b4f"/>
-  <line x1="112" y1="124" x2="112" y2="104" stroke="#3f6b4f" stroke-width="4"/>
-  <circle cx="112" cy="101" r="5" fill="#c9a227"/>
+
+  <!-- the hill and the Green Dome, behind the rooflines -->
+  <path d="M-40 300 Q30 205 150 198 Q250 193 320 300 Z" fill="#a8c686"/>
+  <path d="M-20 300 Q60 222 180 216 Q268 212 320 300 Z" fill="#8fb87e"/>
+  <g>
+    <rect x="96" y="152" width="128" height="46" rx="2" fill="#4f7f5f"/>
+    <path d="M92 152 a68 56 0 0 1 136 0 z" fill="#3f6b4f"/>
+    <path d="M92 152 a68 56 0 0 1 136 0" fill="none" stroke="#2f5d50" stroke-width="2"/>
+    <g fill="#2b4a42">
+      <rect x="106" y="164" width="12" height="22"/>
+      <rect x="128" y="164" width="12" height="22"/>
+      <rect x="150" y="164" width="12" height="22"/>
+      <rect x="172" y="164" width="12" height="22"/>
+      <rect x="194" y="164" width="12" height="22"/>
+    </g>
+    <line x1="160" y1="98" x2="160" y2="78" stroke="#2f5d50" stroke-width="3"/>
+    <circle cx="160" cy="75" r="5" fill="#c9a227"/>
+  </g>
+
+  <!-- bandstand -->
   <g>
     <ellipse cx="300" cy="404" rx="112" ry="24" fill="#c9bf9c"/>
     <rect x="228" y="300" width="144" height="13" fill="#8a6a4a"/>
@@ -295,16 +310,29 @@ const ART_SQUARE = `
     <circle cx="300" cy="250" r="8" fill="#c9a227"/>
     <path d="M300 250 v-24" stroke="#c9a227" stroke-width="3"/>
   </g>
+
+  <!-- fountain: basin, plinth, tulip jet -->
   <g>
     <ellipse cx="480" cy="432" rx="116" ry="32" fill="#cfc6a4"/>
     <ellipse cx="480" cy="426" rx="100" ry="26" fill="#5b93b5"/>
     <rect x="470" y="362" width="20" height="62" fill="#cfc6a4"/>
     <ellipse cx="480" cy="360" rx="46" ry="12" fill="#e0d8bb"/>
     <ellipse cx="480" cy="354" rx="30" ry="8" fill="#5b93b5"/>
-    <path d="M480 352 q-18 -42 -32 -52" stroke="#a9d9f0" stroke-width="6" fill="none" stroke-linecap="round"/>
-    <path d="M480 352 q18 -42 32 -52" stroke="#a9d9f0" stroke-width="6" fill="none" stroke-linecap="round"/>
+    <g stroke="#a9d9f0" stroke-width="5" fill="none" stroke-linecap="round">
+      <path d="M480 350 Q466 318 480 292 Q494 318 480 350"/>
+      <path d="M480 350 Q474 316 480 296"/>
+    </g>
+    <g fill="#a9d9f0" opacity=".75">
+      <circle cx="480" cy="288" r="3.5"/>
+      <circle cx="472" cy="300" r="2.5"/>
+      <circle cx="488" cy="300" r="2.5"/>
+      <circle cx="466" cy="316" r="2"/>
+      <circle cx="494" cy="316" r="2"/>
+    </g>
     <circle cx="496" cy="428" r="5" fill="#e8d98a" opacity=".9"/>
   </g>
+
+  <!-- shop: cornice, awning, glazed shopfront -->
   <g>
     <rect x="600" y="232" width="180" height="190" fill="#e8dfc8"/>
     <path d="M590 254 h200 l-16 -28 h-168 z" fill="#b4553f"/>
@@ -314,35 +342,51 @@ const ART_SQUARE = `
       <rect x="664" y="268" width="26" height="30"/>
       <rect x="716" y="268" width="26" height="30"/>
     </g>
-    <rect x="642" y="322" width="98" height="100" fill="#3a4a55" opacity=".7"/>
+    <rect x="612" y="322" width="156" height="100" fill="#3a4a55" opacity=".65"/>
+    <rect x="620" y="330" width="42" height="84" fill="#e8d98a" opacity=".3"/>
+    <rect x="670" y="330" width="42" height="84" fill="#e8d98a" opacity=".22"/>
+    <rect x="720" y="340" width="40" height="82" fill="#2f5d50"/>
+    <circle cx="754" cy="382" r="3" fill="#c9a227"/>
+    <rect x="612" y="322" width="156" height="100" fill="none" stroke="#8a6a4a" stroke-width="4"/>
+    <line x1="666" y1="322" x2="666" y2="422" stroke="#8a6a4a" stroke-width="3"/>
+    <line x1="718" y1="322" x2="718" y2="422" stroke="#8a6a4a" stroke-width="3"/>
     <rect x="600" y="232" width="180" height="190" fill="none" stroke="#c9bf9c" stroke-width="3"/>
   </g>
+
   <path d="M0 500 L128 500 Q156 440 92 402 Q40 424 0 414 Z" fill="#cdbb8c"/>
-  <circle cx="642" cy="126" r="26" fill="#ffffff" opacity=".95"/>
-  <circle cx="634" cy="118" r="8" fill="#eef4f6"/>
+
+  <!-- a cloud, well clear of the Rover -->
+  <g opacity=".9">
+    <ellipse cx="740" cy="58" rx="32" ry="12" fill="#ffffff"/>
+    <ellipse cx="718" cy="54" rx="18" ry="10" fill="#ffffff"/>
+    <ellipse cx="762" cy="56" rx="20" ry="11" fill="#ffffff"/>
+  </g>
+
+  <!-- A Rover, drifting at head height over the square -->
+  <g>
+    <ellipse cx="642" cy="126" rx="28" ry="26" fill="#f7f4ee"/>
+    <ellipse cx="642" cy="126" rx="28" ry="26" fill="none" stroke="#cfc7b8" stroke-width="2"/>
+    <ellipse cx="631" cy="115" rx="10" ry="7" fill="#ffffff"/>
+    <ellipse cx="642" cy="143" rx="16" ry="4" fill="#c2b791" opacity=".35"/>
+  </g>
 
   <!-- the lift: brass-and-glass tower on the arcade -->
   <g>
     <ellipse cx="90" cy="398" rx="62" ry="13" fill="#c2b791" opacity=".85"/>
-
     <rect x="40" y="234" width="100" height="164" fill="#d8cfba"/>
     <rect x="40" y="234" width="100" height="164" fill="none" stroke="#b9a888" stroke-width="3"/>
-
     <rect x="48" y="244" width="84" height="120" fill="#8fb8c8" opacity=".55"/>
     <rect x="48" y="244" width="4" height="120" fill="#b08d3f"/>
     <rect x="88" y="244" width="4" height="120" fill="#b08d3f"/>
     <rect x="128" y="244" width="4" height="120" fill="#b08d3f"/>
     <rect x="48" y="280" width="84" height="3" fill="#b08d3f"/>
     <rect x="48" y="316" width="84" height="3" fill="#b08d3f"/>
-
     <rect x="58" y="286" width="64" height="54" rx="4" fill="#3a4a55" opacity=".6"/>
     <rect x="58" y="286" width="64" height="54" rx="4" fill="none" stroke="#b08d3f" stroke-width="2"/>
-
     <path d="M30 234 H150 L138 210 H42 Z" fill="#b4553f"/>
     <rect x="34" y="230" width="112" height="6" fill="#8a3f2f"/>
     <line x1="90" y1="210" x2="90" y2="192" stroke="#8a6a4a" stroke-width="3"/>
     <circle cx="90" cy="189" r="5" fill="#c9a227"/>
-
     <rect x="40" y="356" width="100" height="42" fill="#2f5d50"/>
     <rect x="40" y="356" width="100" height="42" fill="none" stroke="#1d3d35" stroke-width="3"/>
     <rect x="52" y="364" width="76" height="30" fill="#1d3d35"/>
@@ -354,7 +398,6 @@ const ART_SQUARE = `
       <line x1="118" y1="364" x2="118" y2="394"/>
     </g>
     <rect x="52" y="378" width="76" height="3" fill="#c9a227" opacity=".7"/>
-
     <rect x="64" y="344" width="52" height="13" rx="3" fill="#f7f4ee" stroke="#b9a888" stroke-width="2"/>
     <text x="90" y="353" font-size="9" fill="#2f5d50" text-anchor="middle" font-family="sans-serif">LIFT</text>
   </g>

@@ -34,7 +34,42 @@ const CORE_T = -CORE_H / 2, CORE_B = CORE_H / 2;
 const OUT_MARGIN = 420;
 
 const SAVE_KEY = 'orbit_save_v4';
+const PREF_KEY = 'orbit_prefs_v1';
 const STARTING_STARS = 5;   // size of the star pool on a fresh run
+
+// ================================================================ DIFFICULTY
+// A shot is "banked" when it scoops at least `safeStars` stars. A banked shot
+// never damages the pool. On top of that each mode may declare certain death
+// causes as *always* damaging, ignoring the bank entirely.
+//
+//   easy   — nothing always hurts; 1 ★ banks the shot. (original behaviour)
+//   normal — planets always hurt;  1 ★ banks the shot.
+//   hard   — planets + deep space always hurt; you must hit TWO ★ in a row
+//            (two ★ on the same shot) to bank it.
+//
+const DIFFS = {
+  easy: {
+    id:'easy', label:'EASY',
+    blurb:'1 \u2605 BANKS THE SHOT \u00b7 NOTHING ALWAYS HURTS',
+    planetsAlwaysHurt:false, boundsAlwaysHurt:false, timeoutAlwaysHurt:false,
+    safeStars:1
+  },
+  normal: {
+    id:'normal', label:'NORMAL',
+    blurb:'PLANETS ALWAYS HURT \u00b7 1 \u2605 BANKS THE SHOT',
+    planetsAlwaysHurt:true,  boundsAlwaysHurt:false, timeoutAlwaysHurt:false,
+    safeStars:1
+  },
+  hard: {
+    id:'hard', label:'HARD',
+    blurb:'PLANETS + DEEP SPACE ALWAYS HURT \u00b7 BANK 2 \u2605 IN A ROW',
+    planetsAlwaysHurt:true,  boundsAlwaysHurt:true,  timeoutAlwaysHurt:false,
+    safeStars:2
+  }
+};
+const DIFF_ORDER = ['easy', 'normal', 'hard'];
+let difficulty = 'normal';
+function D(){ return DIFFS[difficulty] || DIFFS.normal; }
 
 let viewScale = 1;
 
@@ -61,6 +96,24 @@ let flash = 0;              // red screen flash when a star is lost
 let flightCollected = 0;    // stars scooped during the current flight
 let deadReason = '';        // 'planet' | 'bounds' | 'timeout'
 let deadWasDamaged = false;
+
+// ================================================================ PREFS
+function loadPrefs(){
+  try {
+    const raw = localStorage.getItem(PREF_KEY);
+    if(!raw) return;
+    const d = JSON.parse(raw);
+    if(d && DIFFS[d.difficulty]) difficulty = d.difficulty;
+  } catch(_) {}
+}
+function savePrefs(){
+  try { localStorage.setItem(PREF_KEY, JSON.stringify({ difficulty })); } catch(_) {}
+}
+function setDifficulty(id){
+  if(!DIFFS[id] || id === difficulty) return;
+  difficulty = id;
+  savePrefs();
+}
 
 // ================================================================ SAVE
 function loadSave(){
@@ -822,7 +875,7 @@ function stepFlight(h){
       starFlags[i] = true;
       levelStars++;
       totalStars++;
-      flightCollected++;              // <-- this flight is now "safe"
+      flightCollected++;              // <-- this flight is now "banked"
       spawnBurst(s.x, s.y, 48, 16, 150);
       spawnFloater(s.x, s.y - 22, '+1 \u2605', 'rgba(255,215,94,0.95)');
       sfxStar(levelStars - 1);
@@ -839,12 +892,20 @@ function stepFlight(h){
 }
 
 // ---------------------------------------------------------------- death
-// A shot is only "safe" if it scooped at least one star.
-// Otherwise, whichever way it fails — planet, deep space, or timeout — it
-// burns one star from the pool.
+// Whether a failed shot costs a pool star is decided by the difficulty:
+//   * some death causes are flagged "always hurt" and ignore the bank,
+//   * otherwise the shot is safe only when it banked >= safeStars stars.
+function shotWasDamaged(cause){
+  const d = D();
+  if(cause === 'planet'  && d.planetsAlwaysHurt) return true;
+  if(cause === 'bounds'  && d.boundsAlwaysHurt)  return true;
+  if(cause === 'timeout' && d.timeoutAlwaysHurt) return true;
+  return flightCollected < d.safeStars;
+}
+
 function die(cause){
   deadReason     = cause;
-  deadWasDamaged = (flightCollected === 0);
+  deadWasDamaged = shotWasDamaged(cause);
 
   if(deadWasDamaged){
     totalStars = Math.max(0, totalStars - 1);
@@ -862,6 +923,31 @@ function die(cause){
   spawnBurst(ship.x, ship.y, 10, 26, 220);
   sfxCrash();
   duckMusic();
+}
+
+function deadHeadline(){
+  if(deadReason === 'planet') return 'CRASHED  \u2014  -1 \u2605';
+  if(deadReason === 'bounds') return 'LOST IN DEEP SPACE  \u2014  -1 \u2605';
+  return 'OUT OF TIME  \u2014  -1 \u2605';
+}
+
+function deadCauseNote(){
+  const d = D();
+  if(deadReason === 'planet'  && d.planetsAlwaysHurt)
+    return 'PLANETS ALWAYS HURT IN ' + d.label;
+  if(deadReason === 'bounds'  && d.boundsAlwaysHurt)
+    return 'DEEP SPACE ALWAYS HURTS IN ' + d.label;
+  if(deadReason === 'timeout' && d.timeoutAlwaysHurt)
+    return 'TIMEOUT ALWAYS HURTS IN ' + d.label;
+  return 'NEEDED ' + d.safeStars + ' \u2605 IN A ROW \u2014 GOT ' + flightCollected;
+}
+
+function aimRuleText(){
+  if(difficulty === 'easy')
+    return 'collect a \u2605 on the shot \u2014 otherwise it costs one';
+  if(difficulty === 'normal')
+    return 'planets always hurt \u2014 a \u2605 banks the shot';
+  return 'planets + deep space always hurt \u2014 bank 2 \u2605 in a row';
 }
 
 function gameOver(){
@@ -972,10 +1058,27 @@ function spawnFloater(x, y, text, color){
 }
 
 // ================================================================ MENU
+const TITLE_Y = () => Math.max(72, H * 0.24);
+const PILL_TOP = () => TITLE_Y() + 82;
+const PILL_H = 40;
+
+function diffPills(){
+  const total = Math.min(360, Math.max(210, W - 80));
+  const gap = 10;
+  const w = (total - gap * 2) / 3;
+  const cx = W / 2;
+  const top = PILL_TOP();
+  return DIFF_ORDER.map((id, i) => ({
+    id,
+    label: DIFFS[id].label,
+    x: cx - total / 2 + i * (w + gap) + w / 2,
+    y: top + PILL_H / 2,
+    w, h: PILL_H
+  }));
+}
+
 function welcomeButtons(){
   const bw = Math.min(320, Math.max(190, W - 72));
-  const bh = 58;
-  const gap = 14;
 
   const items = [];
   if(canContinue()){
@@ -993,12 +1096,20 @@ function welcomeButtons(){
   });
 
   const n = items.length;
-  const stackH = n * bh + (n - 1) * gap;
   const cx = W / 2;
 
-  const titleBottom = Math.max(72, H * 0.24) + 92;
+  const titleBottom = TITLE_Y() + 156;
   const footerTop = H - 74;
   const avail = Math.max(0, footerTop - titleBottom);
+
+  let gap = 14;
+  let bh  = 58;
+  if(n * bh + (n - 1) * gap > avail){
+    gap = 10;
+    bh = Math.max(36, (avail - (n - 1) * gap) / n);
+  }
+
+  const stackH = n * bh + (n - 1) * gap;
   const top = titleBottom + Math.max(0, (avail - stackH) / 2);
 
   return items.map((it, i) => ({
@@ -1101,6 +1212,47 @@ function drawMenuButton(b){
   ctx.restore();
 }
 
+function drawDiffPills(){
+  for(const p of diffPills()){
+    const sel = p.id === difficulty;
+    const hov = welcomeHover === 'diff:' + p.id;
+    const x = p.x - p.w / 2, y = p.y - p.h / 2;
+    const r = 9;
+
+    ctx.save();
+    if(sel){
+      ctx.shadowColor = 'rgba(124,247,200,0.45)';
+      ctx.shadowBlur = 16;
+    }
+    const g = ctx.createLinearGradient(0, y, 0, y + p.h);
+    if(sel){
+      g.addColorStop(0, 'rgba(26,72,62,0.95)');
+      g.addColorStop(1, 'rgba(10,36,31,0.95)');
+    } else {
+      g.addColorStop(0, hov ? 'rgba(22,38,62,0.95)' : 'rgba(10,18,34,0.88)');
+      g.addColorStop(1, hov ? 'rgba(13,24,44,0.95)' : 'rgba(6,12,24,0.88)');
+    }
+    ctx.fillStyle = g;
+    roundRectPath(x, y, p.w, p.h, r);
+    ctx.fill();
+    ctx.shadowBlur = 0;
+
+    ctx.strokeStyle = sel
+      ? 'rgba(124,247,200,0.9)'
+      : 'rgba(140,200,240,' + (hov ? 0.6 : 0.22) + ')';
+    ctx.lineWidth = 1.4;
+    roundRectPath(x, y, p.w, p.h, r);
+    ctx.stroke();
+
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.font = '700 12px ui-monospace, monospace';
+    ctx.fillStyle = sel ? '#9dfbe0' : 'rgba(200,225,245,' + (hov ? 0.9 : 0.6) + ')';
+    ctx.fillText(p.label, p.x, p.y);
+    ctx.restore();
+  }
+}
+
 function drawWelcome(){
   ctx.fillStyle = 'rgba(4,8,18,0.66)';
   ctx.fillRect(0, 0, W, H);
@@ -1108,7 +1260,7 @@ function drawWelcome(){
   drawWelcomeDecor();
 
   const btns = welcomeButtons();
-  const titleY = Math.max(72, H * 0.24);
+  const titleY = TITLE_Y();
   const pulse = 0.5 + 0.5 * Math.sin(worldTime * 1.5);
 
   ctx.save();
@@ -1132,6 +1284,17 @@ function drawWelcome(){
   ctx.fillText('A SLINGSHOT PUZZLE', W / 2, titleY + 54);
   ctx.restore();
 
+  drawDiffPills();
+
+  ctx.save();
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.font = '600 10px ui-monospace, monospace';
+  if('letterSpacing' in ctx) ctx.letterSpacing = '2px';
+  ctx.fillStyle = 'rgba(150,195,235,0.45)';
+  ctx.fillText(D().blurb, W / 2, PILL_TOP() + PILL_H + 16);
+  ctx.restore();
+
   for(const b of btns) drawMenuButton(b);
 
   ctx.save();
@@ -1148,11 +1311,11 @@ function drawWelcome(){
   } else {
     ctx.fillStyle = 'rgba(255,215,94,0.55)';
     ctx.fillText('\u2605 ' + STARTING_STARS +
-                 '  \u00b7  A SHOT THAT MISSES EVERY STAR COSTS ONE',
+                 '  \u00b7  LOSE THEM ALL AND THE RUN ENDS',
                  W / 2, H - 46);
   }
   ctx.fillStyle = 'rgba(140,180,220,0.28)';
-  ctx.fillText('ESC  \u00b7  RETURN TO MENU', W / 2, H - 24);
+  ctx.fillText('1 2 3 \u00b7 DIFFICULTY     ESC \u00b7 MENU', W / 2, H - 24);
   ctx.restore();
 }
 
@@ -1245,6 +1408,13 @@ function handleDown(e){
   }
 
   if(state === 'welcome'){
+    for(const p of diffPills()){
+      if(Math.abs(sp.x - p.x) < p.w / 2 && Math.abs(sp.y - p.y) < p.h / 2){
+        setDifficulty(p.id);
+        if(e.cancelable) e.preventDefault();
+        return;
+      }
+    }
     for(const b of welcomeButtons()){
       if(Math.abs(sp.x - b.x) < b.w / 2 && Math.abs(sp.y - b.y) < b.h / 2){
         handleWelcomeButton(b.id);
@@ -1279,9 +1449,16 @@ function handleMove(e){
   if(state === 'welcome'){
     const sp = getPos(e);
     let hov = null;
-    for(const b of welcomeButtons()){
-      if(Math.abs(sp.x - b.x) < b.w / 2 && Math.abs(sp.y - b.y) < b.h / 2){
-        hov = b.id; break;
+    for(const p of diffPills()){
+      if(Math.abs(sp.x - p.x) < p.w / 2 && Math.abs(sp.y - p.y) < p.h / 2){
+        hov = 'diff:' + p.id; break;
+      }
+    }
+    if(!hov){
+      for(const b of welcomeButtons()){
+        if(Math.abs(sp.x - b.x) < b.w / 2 && Math.abs(sp.y - b.y) < b.h / 2){
+          hov = b.id; break;
+        }
       }
     }
     if(hov !== welcomeHover){
@@ -1366,6 +1543,9 @@ window.addEventListener('keydown', e => {
     }
     if(e.key === 'n' || e.key === 'N'){ newGame(); return; }
     if(e.key === 'm' || e.key === 'M'){ toggleMute(); return; }
+    if(e.key === '1'){ setDifficulty('easy');   return; }
+    if(e.key === '2'){ setDifficulty('normal'); return; }
+    if(e.key === '3'){ setDifficulty('hard');   return; }
     return;
   }
 
@@ -1373,6 +1553,11 @@ window.addEventListener('keydown', e => {
   if(e.key === 'r' || e.key === 'R') startLevel(level);
   if(e.key === 's' || e.key === 'S') startLevel(level + 1);
   if(e.key === 'm' || e.key === 'M') toggleMute();
+  if(e.key === 'd' || e.key === 'D'){
+    const i = DIFF_ORDER.indexOf(difficulty);
+    setDifficulty(DIFF_ORDER[(i + 1) % DIFF_ORDER.length]);
+    return;
+  }
   if((e.key === ' ' || e.key === 'Enter') && state === 'win'){ startLevel(resumeLevel); }
 });
 
@@ -1709,6 +1894,7 @@ function render(){
 // ---------------------------------------------------------------- HUD
 function drawHUD(){
   ctx.textBaseline = 'alphabetic';
+  if('letterSpacing' in ctx) ctx.letterSpacing = '0px';
 
   ctx.textAlign = 'left';
   ctx.font = '600 15px ui-monospace, monospace';
@@ -1719,6 +1905,16 @@ function drawHUD(){
   ctx.font = '600 12px ui-monospace, monospace';
   ctx.fillStyle = open ? 'rgba(124,247,200,0.9)' : 'rgba(150,180,215,0.5)';
   ctx.fillText(open ? 'EXIT OPEN' : 'EXIT LOCKED', 20, 52);
+
+  // difficulty badge — top centre
+  ctx.textAlign = 'center';
+  ctx.font = '600 11px ui-monospace, monospace';
+  if('letterSpacing' in ctx) ctx.letterSpacing = '3px';
+  ctx.fillStyle = difficulty === 'hard'   ? 'rgba(255,150,150,0.6)'
+                : difficulty === 'normal' ? 'rgba(255,205,130,0.6)'
+                :                           'rgba(140,220,200,0.55)';
+  ctx.fillText(D().label, W / 2, 30);
+  if('letterSpacing' in ctx) ctx.letterSpacing = '0px';
 
   ctx.textAlign = 'right';
   ctx.font = '600 15px ui-monospace, monospace';
@@ -1742,9 +1938,7 @@ function drawHUD(){
     ctx.textAlign = 'center';
     ctx.font = '600 12px ui-monospace, monospace';
     ctx.fillStyle = 'rgba(150,195,235,0.42)';
-    const hint = aiming
-      ? 'release to launch'
-      : 'collect a \u2605 on the shot \u2014 otherwise it costs one';
+    const hint = aiming ? 'release to launch' : aimRuleText();
     ctx.fillText(hint.toUpperCase(), W / 2, H - 28);
 
     if(attempts >= 5){
@@ -1754,16 +1948,21 @@ function drawHUD(){
   }
 
   if(state === 'fly'){
-    // Flight status pip: shows whether the current shot is safe
+    // Bank status pip: how many stars this shot has scooped vs. what it needs
+    const need = D().safeStars;
+    const banked = flightCollected >= need;
+
     ctx.textAlign = 'center';
     ctx.font = '600 12px ui-monospace, monospace';
-    if(flightCollected > 0){
-      ctx.fillStyle = 'rgba(124,247,200,0.7)';
-      ctx.fillText('SAFE SHOT', W / 2, H - 28);
+    if(banked){
+      ctx.fillStyle = 'rgba(124,247,200,0.75)';
+      ctx.fillText('\u2605 ' + flightCollected + '/' + need + '  \u2014  SHOT BANKED',
+                   W / 2, H - 28);
     } else {
       const p = 0.5 + 0.5 * Math.sin(worldTime * 6);
       ctx.fillStyle = `rgba(255,${120 - p * 60},${120 - p * 60},${0.5 + p * 0.35})`;
-      ctx.fillText('UNSAFE SHOT \u2014 HIT A \u2605 OR LOSE ONE', W / 2, H - 28);
+      ctx.fillText('\u2605 ' + flightCollected + '/' + need + '  \u2014  NOT BANKED',
+                   W / 2, H - 28);
     }
   }
 
@@ -1773,17 +1972,16 @@ function drawHUD(){
     if(deadWasDamaged){
       ctx.font = '600 15px ui-monospace, monospace';
       ctx.fillStyle = 'rgba(255,120,120,0.85)';
-      if(deadReason === 'planet')       ctx.fillText('CRASHED \u2014 NO STARS BANKED', W / 2, H / 2 - 6);
-      else if(deadReason === 'bounds')  ctx.fillText('LOST IN DEEP SPACE \u2014 NO STARS BANKED', W / 2, H / 2 - 6);
-      else                              ctx.fillText('OUT OF TIME \u2014 NO STARS BANKED', W / 2, H / 2 - 6);
+      ctx.fillText(deadHeadline(), W / 2, H / 2 - 6);
 
       ctx.font = '600 12px ui-monospace, monospace';
       ctx.fillStyle = 'rgba(255,150,150,0.55)';
-      ctx.fillText('-1  \u2605  FROM POOL', W / 2, H / 2 + 18);
+      ctx.fillText(deadCauseNote(), W / 2, H / 2 + 18);
     } else {
       ctx.font = '600 15px ui-monospace, monospace';
       ctx.fillStyle = 'rgba(124,247,200,0.85)';
-      ctx.fillText('SHOT BANKED A \u2605 \u2014 NO DAMAGE', W / 2, H / 2 - 6);
+      ctx.fillText('BANKED ' + flightCollected + ' \u2605 \u2014 NO DAMAGE',
+                   W / 2, H / 2 - 6);
 
       ctx.font = '600 12px ui-monospace, monospace';
       ctx.fillStyle = 'rgba(124,247,200,0.55)';
@@ -1895,6 +2093,8 @@ function loop(now){
 
 // ---------------------------------------------------------------- boot
 (function boot(){
+  loadPrefs();
+
   const s = loadSave();
   if(s){
     savedGame   = s;
