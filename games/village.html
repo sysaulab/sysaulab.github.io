@@ -55,7 +55,16 @@
   #goal .diff{font-size:10.5px;opacity:.55;letter-spacing:.1em;
     text-transform:uppercase;margin-top:6px;font-weight:700}
   #goal .diff b{color:#ffb87a}
-
+  #nextWaveBtn{pointer-events:auto; display:block; width:100%; margin-top:8px;
+    padding:6px 10px; background:rgba(60,40,20,.9);
+    border:1px solid rgba(255,180,110,.5); color:#ffd8a8;
+    border-radius:8px; font:inherit; font-size:12px; font-weight:700;
+    letter-spacing:.03em; cursor:pointer; transition:.14s}
+  #nextWaveBtn:hover{background:rgba(120,70,30,.95);
+    border-color:#ffb87a; color:#fff}
+  #nextWaveBtn:active{transform:scale(.98)}
+  #nextWaveBtn.soon{background:rgba(180,60,40,.95);
+    border-color:#ff8a6a; color:#fff}
   #buildbar{position:absolute;bottom:16px;left:50%;transform:translateX(-50%);
     display:flex;gap:7px;pointer-events:auto;flex-wrap:wrap;justify-content:center;
     max-width:96vw}
@@ -233,6 +242,7 @@
     <div class="gr"><span>Kills</span><b id="gKills">0</b></div>
     <div class="gr"><span>Survived</span><b id="gTime">0:00</b></div>
     <div class="wave" id="waveRow">Next wave in <b id="uiWaveT">120</b>s</div>
+    <button id="nextWaveBtn" title="Skip the countdown and spawn the next wave now">▶ Next Wave</button>
     <div class="diff" id="gDiff">Difficulty <b>Normal</b></div>
   </div>
 
@@ -752,7 +762,7 @@ let waveNum=0;
 let nextWaveT=firstWaveDelaySeconds();
 let painting=false, lastPaintTile=-1;
 let nearTower=null;
-let deliveryPt={x:0,y:0};
+//let deliveryPt={x:0,y:0};
 
 let gameState='menu';
 let perfOn=false, perfAccum=0, perfFrames=0;
@@ -814,7 +824,6 @@ function genWorld(){
   player.x=(tx+2)*TS;
   player.y=(ty+6)*TS;
   unstickPlayer();
-  computeDeliveryPoint();
 }
 function addNode(type,tx,ty){
   const def=NODE_DEFS[type];
@@ -837,22 +846,43 @@ function clearNodesIn(tx,ty,w,h){
     }
   }
 }
-function computeDeliveryPoint(){
-  const cxT=townCenter.tx+2;
-  const cyT=townCenter.ty+townCenter.h+1;
-  for(let dy=0; dy<8; dy++){
-    for(let dx=-3; dx<=3; dx++){
-      const tx=cxT+dx, ty=cyT+dy;
-      if(tx<0||ty<0||tx>=WN||ty>=WN) continue;
-      const i=ty*WN+tx;
-      if(bldAt[i]) continue;
-      if(tiles[i]===T_WATER) continue;
-      deliveryPt={ x:tx*TS+TS/2, y:ty*TS+TS/2 };
-      return;
+
+/* ---- Drop-off helpers (villagers deliver to nearest building) ---- */
+function townCenterPoint(){
+  return { x: townCenter.x + townCenter.w*TS/2,
+           y: townCenter.y + townCenter.h*TS/2 };
+}
+function safeVillagerSpot(){
+  const c = townCenterPoint();
+  const spot = findWalkableSpotNear(c.x, c.y, 160);
+  if(spot) return spot;
+  return { x: c.x, y: c.y + townCenter.h*TS/2 + 24 };
+}
+function findDropoffFor(v){
+  let best=null, bestD=1e9;
+  for(const b of buildings){
+    const bcx=b.x+b.w*TS/2, bcy=b.y+b.h*TS/2;
+    const d=Math.hypot(bcx-v.x, bcy-v.y);
+    if(d<bestD){ bestD=d; best=b; }
+  }
+  return best;
+}
+function findDropoffPoint(b, fromX, fromY){
+  /* Walkable tile adjacent to the building, nearest to (fromX, fromY). */
+  let best=null, bestD=1e9;
+  for(let ty=b.ty-1; ty<=b.ty+b.h; ty++){
+    for(let tx=b.tx-1; tx<=b.tx+b.w; tx++){
+      const inside = tx>=b.tx && tx<b.tx+b.w && ty>=b.ty && ty<b.ty+b.h;
+      if(inside) continue;
+      if(!tileWalkable(tx,ty,false)) continue;
+      const wx=tx*TS+TS/2, wy=ty*TS+TS/2;
+      const d=Math.hypot(wx-fromX, wy-fromY);
+      if(d<bestD){ bestD=d; best={x:wx, y:wy}; }
     }
   }
-  deliveryPt={ x:townCenter.x+64, y:townCenter.y+townCenter.h*TS+64 };
+  return best;
 }
+
 function unstickPlayer(){
   if(!collideAt(player.x, player.y, player.r, false)) return;
   for(let rad=6; rad<=160; rad+=6){
@@ -1332,7 +1362,6 @@ function sellBuilding(b){
     for(let x=b.tx;x<b.tx+b.w;x++)
       if(bldAt[y*WN+x]===b) bldAt[y*WN+x]=null;
   invalidateVillagerPaths();
-  computeDeliveryPoint();
   recomputeTowerBuffs();
   const cx=b.x+b.w*TS/2, cy=b.y+b.h*TS/2;
   addFloat(cx, cy-8, 'Sold!', '#ffd8a8');
@@ -1505,7 +1534,6 @@ function tryPlace(){
   occupy(b);
   evacuateVillagersFrom(tx, ty, def.w, def.h);
   invalidateVillagerPaths();
-  computeDeliveryPoint();
   recomputeTowerBuffs();
   addFloat(b.x+def.w*TS/2, b.y+def.h*TS/2, def.name+' built!', '#c8f0a8');
   sfx('build');
@@ -1534,13 +1562,22 @@ const VILLAGER_COLORS=[
 ];
 
 function spawnVillager(){
-  let sx=deliveryPt.x+(Math.random()-0.5)*80;
-  let sy=deliveryPt.y+(Math.random()-0.5)*80;
-  for(let tries=0; tries<40; tries++){
-    if(!collideAt(sx, sy, 10, false)) break;
-    sx=deliveryPt.x+(Math.random()-0.5)*200;
-    sy=deliveryPt.y+(Math.random()-0.5)*200;
+  /* Prefer spawning at a random house; fall back to town center if none. */
+  const houses = buildings.filter(b=>b.type==='house');
+  let baseX, baseY;
+  if(houses.length>0){
+    const h = houses[Math.floor(Math.random()*houses.length)];
+    baseX = h.x + h.w*TS/2;
+    baseY = h.y + h.h*TS/2;
+  } else {
+    const c = townCenterPoint();
+    baseX = c.x; baseY = c.y;
   }
+  let spot = findWalkableSpotNear(baseX, baseY, 90);
+  if(!spot) spot = findWalkableSpotNear(baseX, baseY, 220);
+  if(!spot) spot = safeVillagerSpot();
+  const sx = spot.x, sy = spot.y;
+
   const v={ kind:'vill', x:sx, y:sy,
     r:10, speed:62, bob:0, dir:1, moving:false,
     state:'seek', target:null, carry:0, carryType:null,
@@ -1550,11 +1587,11 @@ function spawnVillager(){
     path:null, pathIdx:0, pathTargetX:-1, pathTargetY:-1,
     _lastX:sx, _lastY:sy, _stuckT:0, _stuckCD:0, _hardStuckT:0,
     badNodes:null,
+    dropoffBuilding:null, dropoffPoint:null,
     colors:VILLAGER_COLORS[villagers.length%VILLAGER_COLORS.length] };
   villagers.push(v);
   addFloat(v.x,v.y,'A villager arrived!','#8ee06a');
 }
-
 /* ---- Bigger search range: find resources from farther away ---- */
 function nodeBadForVillager(v, n){
   if(!v.badNodes) return false;
@@ -1615,6 +1652,18 @@ const VILLAGER_DMG=8;
 const VILLAGER_ATK_RANGE=70;
 const VILLAGER_ATK_CD=1.2;
 
+/* Villagers inherit the hero's forged weapon & shield upgrades. */
+function heroWeaponDamage(){
+  return player.weaponLv>0 ? WEAPON_LEVELS[player.weaponLv-1].damage : 3;
+}
+function villagerDamage(){
+  // keep the villager's own base of 8, then add the weapon's upgrade delta
+  return VILLAGER_DMG + (heroWeaponDamage() - 3);
+}
+function villagerDamageReduction(){
+  return player.shieldLv>0 ? SHIELD_LEVELS[player.shieldLv-1].reduction : 0;
+}
+
 function updateVillager(v,dt){
   if(v.dead) return;
   if(v.flash>0) v.flash-=dt;
@@ -1652,7 +1701,15 @@ function updateVillager(v,dt){
         if(v._stuckT >= 1.0){
           let goalX=null, goalY=null;
           if(v.state==='seek' && v.target){ goalX=v.target.x; goalY=v.target.y; }
-          else if(v.state==='return'){ goalX=deliveryPt.x; goalY=deliveryPt.y; }
+          else if(v.state==='return'){
+            if(v.dropoffBuilding){
+              goalX=v.dropoffBuilding.x+v.dropoffBuilding.w*TS/2;
+              goalY=v.dropoffBuilding.y+v.dropoffBuilding.h*TS/2;
+            } else {
+              const c=townCenterPoint();
+              goalX=c.x; goalY=c.y;
+            }
+          }
 
           let handled=false;
           if(goalX!==null){
@@ -1682,7 +1739,7 @@ function updateVillager(v,dt){
         }
 
         if(v._hardStuckT >= 6.0){
-          const spot = findWalkableSpotNear(deliveryPt.x, deliveryPt.y, 180);
+          const spot = safeVillagerSpot();
           if(spot){ v.x=spot.x; v.y=spot.y; }
           v.path    = null;
           v.pathIdx = 0;
@@ -1744,7 +1801,7 @@ function updateVillager(v,dt){
       v.atkCd = VILLAGER_ATK_CD;
       v.swingT = 0.2;
       v.dir = t.x < v.x ? -1 : 1;
-      damageEnemy(t, VILLAGER_DMG);
+      damageEnemy(t, villagerDamage());
     }
   }
   if(!threat && v.hp < v.maxHp){
@@ -1829,9 +1886,43 @@ function updateVillager(v,dt){
   }
   /* ---------- RETURN ---------- */
   else if(v.state==='return'){
-    const tx=deliveryPt.x, ty=deliveryPt.y;
-    const d=Math.hypot(tx-v.x,ty-v.y);
-    if(d<48){
+    if(!v.dropoffBuilding || buildings.indexOf(v.dropoffBuilding)<0){
+      v.dropoffBuilding = findDropoffFor(v);
+      v.dropoffPoint = null;
+      v.path = null; v.pathIdx = 0;
+    }
+
+    /* No buildings at all → just deposit where we are. */
+    if(!v.dropoffBuilding){
+      if(v.carry>0 && v.carryType){
+        addRes(v.carryType, v.carry);
+        addFloat(v.x,v.y-10,'+'+v.carry+' '+v.carryType,'#d8e8b0');
+      }
+      v.carry=0; v.carryType=null;
+      v.state='seek'; v.retarget=0; v.path=null;
+      return;
+    }
+
+    if(!v.dropoffPoint){
+      v.dropoffPoint = findDropoffPoint(v.dropoffBuilding, v.x, v.y);
+      v.path = null; v.pathIdx = 0;
+    }
+
+    /* Building is boxed in with no adjacent walkable tile → deposit here. */
+    if(!v.dropoffPoint){
+      if(v.carry>0 && v.carryType){
+        addRes(v.carryType, v.carry);
+        addFloat(v.x,v.y-10,'+'+v.carry+' '+v.carryType,'#d8e8b0');
+      }
+      v.carry=0; v.carryType=null;
+      v.state='seek'; v.retarget=0; v.path=null;
+      v.dropoffBuilding=null; v.dropoffPoint=null;
+      return;
+    }
+
+    const tx=v.dropoffPoint.x, ty=v.dropoffPoint.y;
+    const d=Math.hypot(tx-v.x, ty-v.y);
+    if(d < 26){
       if(v.carry>0 && v.carryType){
         addRes(v.carryType, v.carry);
         addFloat(v.x,v.y-10,'+'+v.carry+' '+v.carryType,'#d8e8b0');
@@ -1839,6 +1930,7 @@ function updateVillager(v,dt){
       v.carry=0; v.carryType=null;
       v.state='seek'; v.retarget=0;
       v.path=null;
+      v.dropoffBuilding=null; v.dropoffPoint=null;
     } else {
       if(v._stuckT >= 0.5){
         moveToward(v, tx, ty, dt, true, roadMul);
@@ -1847,14 +1939,15 @@ function updateVillager(v,dt){
       }
       v.bob+=dt*8;
     }
-  }
-}
+  }}
 
 function damageVillager(v, dmg){
   if(v.dead) return;
-  v.hp -= dmg;
+  const reduction = villagerDamageReduction();
+  const final = Math.max(1, Math.round(dmg * (1 - reduction)));
+  v.hp -= final;
   v.flash=0.2;
-  addFloat(v.x, v.y-20, '-'+dmg, '#ff9a7a');
+  addFloat(v.x, v.y-20, '-'+final, '#ff9a7a');
   if(v.hp<=0){
     v.dead=true;
     if(v.target && v.target.claimed===v) v.target.claimed=null;
@@ -2066,7 +2159,6 @@ function damageBuilding(b, dmg){
       for(let x=b.tx;x<b.tx+b.w;x++)
         if(bldAt[y*WN+x]===b) bldAt[y*WN+x]=null;
     invalidateVillagerPaths();
-    computeDeliveryPoint();
     recomputeTowerBuffs();
     addFloat(b.x+b.w*TS/2, b.y+b.h*TS/2, 'Destroyed!', '#ff6a6a');
     sfx('thud');
@@ -2390,7 +2482,11 @@ document.getElementById('saveChip').addEventListener('click', ()=>{
   sfx('ui');
   saveGame(false);
 });
-
+document.getElementById('nextWaveBtn').addEventListener('click', ()=>{
+  if(gameState!=='playing') return;
+  nextWaveT = Math.min(nextWaveT, 0.01);
+  sfx('ui');
+});
 document.getElementById('btnContinue').addEventListener('click', ()=>{
   sfx('ui');
   if(!loadGame()){
@@ -2470,7 +2566,7 @@ function update(dt){
         if(pop()<popCap() && getFood()>=10){
           foodFloat-=10;
           spawnVillager();
-          b.cd=8;
+          b.cd=1;
         } else b.cd=0;
       }
     }
@@ -3032,6 +3128,29 @@ function drawPerson(p, colors){
   ctx.beginPath();
   ctx.arc(0,-r*1.22+bob*0.35, r*0.66, Math.PI, TAU);
   ctx.fill();
+  if(player.shieldLv>0){
+    ctx.save();
+    ctx.rotate(p.dir<0?Math.PI:0);
+    ctx.fillStyle = ['#8a6a3a','#7a7a82','#9aa0a8','#b0b8c0','#d4c8a8'][player.shieldLv-1];
+    ctx.strokeStyle='rgba(0,0,0,.4)';
+    ctx.lineWidth=1.2;
+    ctx.beginPath();
+    ctx.ellipse(-r*0.95, -3+bob*0.35, 4.5, 6.5, 0, 0, TAU);
+    ctx.fill(); ctx.stroke();
+    ctx.restore();
+  }
+  if(player.weaponLv>0){
+    ctx.save();
+    ctx.rotate(p.dir<0?Math.PI:0);
+    ctx.translate(r*0.85, -3+bob*0.35);
+    const len = 7 + player.weaponLv*2;
+    ctx.strokeStyle='#5a3a22'; ctx.lineWidth=2.5;
+    ctx.beginPath(); ctx.moveTo(0,0); ctx.lineTo(len*0.3,0); ctx.stroke();
+    ctx.strokeStyle=['#a08050','#8a9aa8','#c0c8d0','#d8dce4','#ffe0a0'][player.weaponLv-1];
+    ctx.lineWidth=2.5;
+    ctx.beginPath(); ctx.moveTo(len*0.3,0); ctx.lineTo(len,0); ctx.stroke();
+    ctx.restore();
+  }
   if(p.swingT>0){
     const t=1-p.swingT/0.2;
     ctx.strokeStyle=`rgba(255,230,160,${0.8*(1-t)})`;
@@ -3264,7 +3383,11 @@ function updateUI(){
 
   setText(uiWaveT,'uiWaveT', String(Math.ceil(Math.max(0,nextWaveT))));
   const soon = nextWaveT<20;
-  if(_domCache._soon!==soon){ _domCache._soon=soon; waveRow.classList.toggle('soon', soon); }
+  const nextBtn = document.getElementById('nextWaveBtn');
+  if(_domCache._nextSoon!==soon){
+    _domCache._nextSoon=soon;
+    nextBtn.classList.toggle('soon', soon);
+  }
 
   const starving = state.starveWarn>0;
   if(_domCache._starving!==starving){
@@ -3628,6 +3751,7 @@ function loadGame(){
         path:null, pathIdx:0, pathTargetX:-1, pathTargetY:-1,
         _lastX:v.x, _lastY:v.y, _stuckT:0, _stuckCD:0, _hardStuckT:0,
         badNodes:null,
+        dropoffBuilding:null, dropoffPoint:null,
         colors: VILLAGER_COLORS[villagers.length % VILLAGER_COLORS.length],
       };
       villagers.push(vill);
@@ -3657,7 +3781,6 @@ function loadGame(){
       });
     }
 
-    computeDeliveryPoint();
     recomputeTowerBuffs();
 
     buildbar.innerHTML='';
