@@ -174,7 +174,7 @@
   <button class="icon" id="menuBtn" title="Menu">☰</button>
 </div>
 
-<div class="hint" id="hint">Drag back from the cue ball to aim &amp; shoot</div>
+<div class="hint" id="hint">Drag anywhere to aim — pull back &amp; release</div>
 
 <div class="msg hidden" id="msg">
   <div class="card">
@@ -759,6 +759,8 @@ let aiming = false;
 let aimDir = {x:1, y:0};
 let aimPower = 0;
 let activePointer = null;
+let dragOrigin = null;       // anchor of the current drag (virtual coords)
+let dragPos    = null;       // latest finger position (virtual coords)
 
 const G = {
   mode: 'cpu',
@@ -886,6 +888,8 @@ function showMenu(){
   state = 'menu';
   aiming = false;
   aimPower = 0;
+  dragOrigin = null;
+  dragPos = null;
   G.aiPending = false;
   G.aiFiring = 0;
   elMenu.classList.remove('hidden');
@@ -921,6 +925,8 @@ function startGame(mode, difficulty){
   aimPower = 0;
   aimDir = {x:1, y:0};
   activePointer = null;
+  dragOrigin = null;
+  dragPos = null;
   state = 'aim';
 
   hideMenu();
@@ -940,8 +946,8 @@ function beginTurn(){
   } else {
     showHint(
       G.mode === '2p'
-        ? (G.turn === 0 ? 'Player 1 — drag back to shoot' : 'Player 2 — drag back to shoot')
-        : 'Your shot — drag back from the cue ball',
+        ? (G.turn === 0 ? 'Player 1 — drag anywhere to shoot' : 'Player 2 — drag anywhere to shoot')
+        : 'Your shot — drag anywhere to aim & shoot',
       2400
     );
   }
@@ -1117,7 +1123,7 @@ function resolveShot(){
       const p = defaultCuePlacement();
       cue.x = p.x; cue.y = p.y;
       state = 'place';
-      showHint('Ball in hand — drag the cue ball, then lift your finger', 3200);
+      showHint('Ball in hand — tap or drag to place the cue ball', 3200);
       Sound.play('turn', 1);
     }
   } else if(potted > 0){
@@ -1137,6 +1143,8 @@ function endGame(){
   state = 'over';
   aiming = false;
   aimPower = 0;
+  dragOrigin = null;
+  dragPos = null;
   G.aiPending = false;
   G.aiFiring = 0;
   updateHUD();
@@ -1311,8 +1319,13 @@ function predict(origin, dir){
 }
 
 // ═══════════════════════════════════════════════
-//  INPUT
+//  INPUT  —  drag anywhere on the screen
+//  The touch-down point becomes the anchor of a
+//  virtual pull-back, so power never depends on
+//  how close the cue ball is to an edge.
 // ═══════════════════════════════════════════════
+const DRAG_DEAD = 5;      // virtual px of slack before aiming starts
+
 function onDown(e){
   if(activePointer !== null) return;
   if(state !== 'aim' && state !== 'place') return;
@@ -1324,12 +1337,16 @@ function onDown(e){
 
   if(state === 'place'){
     aiming = false;
+    dragOrigin = null;
+    dragPos = null;
     tryPlace(p.x, p.y);
     return;
   }
 
-  aiming = true;
-  updateAim(p.x, p.y);
+  aiming     = true;
+  dragOrigin = {x:p.x, y:p.y};
+  dragPos    = {x:p.x, y:p.y};
+  aimPower   = 0;
   elHint.classList.add('hide');
 }
 
@@ -1345,11 +1362,13 @@ function onMove(e){
 function onUp(e){
   if(e.pointerId !== activePointer) return;
   activePointer = null;
+  dragOrigin = null;
+  dragPos = null;
 
   if(state === 'place'){
     if(isValidCuePos(cue.x, cue.y)){
       state = 'aim';
-      showHint('Drag back from the cue ball to aim & shoot', 2200);
+      showHint('Drag anywhere to aim & shoot', 2200);
     }
     return;
   }
@@ -1361,11 +1380,31 @@ function onUp(e){
   }
 }
 
+// anchor-relative slingshot: the shot flies opposite the drag
 function updateAim(px, py){
-  const dx = cue.x - px, dy = cue.y - py;
-  const d = Math.hypot(dx, dy);
-  if(d > 3){ aimDir.x = dx/d; aimDir.y = dy/d; }
-  aimPower = Math.min(1, Math.max(0, (d - 12) / MAXPULL));
+  if(!dragOrigin) return;
+
+  dragPos = {x:px, y:py};
+
+  let dx = px - dragOrigin.x;
+  let dy = py - dragOrigin.y;
+  let d  = Math.hypot(dx, dy);
+  if(d < 0.001) return;
+
+  // once the pull is maxed out, let the anchor trail the finger so
+  // the player can keep rotating at full power without extra room
+  if(d > MAXPULL){
+    const k = MAXPULL / d;
+    dragOrigin.x = px - dx * k;
+    dragOrigin.y = py - dy * k;
+    dx *= k; dy *= k; d = MAXPULL;
+  }
+
+  if(d <= DRAG_DEAD){ aimPower = 0; return; }
+
+  aimDir.x = -dx / d;
+  aimDir.y = -dy / d;
+  aimPower = Math.min(1, (d - DRAG_DEAD) / (MAXPULL - DRAG_DEAD));
 }
 
 function tryPlace(px, py){
@@ -1562,6 +1601,69 @@ function drawCue(){
   ctx.restore();
 }
 
+// on-screen drag feedback, drawn in CSS pixels
+function drawDragUI(){
+  const s  = view.scale;
+  const ax = view.ox + (dragOrigin.x + RAIL) * s;
+  const ay = view.oy + (dragOrigin.y + RAIL) * s;
+  const fx = view.ox + (dragPos.x   + RAIL) * s;
+  const fy = view.oy + (dragPos.y   + RAIL) * s;
+
+  ctx.save();
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+  // pull line
+  ctx.beginPath();
+  ctx.moveTo(ax, ay);
+  ctx.lineTo(fx, fy);
+  ctx.setLineDash([7, 7]);
+  ctx.lineWidth = 2;
+  ctx.strokeStyle = 'rgba(255,255,255,0.30)';
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  // anchor ring + power arc
+  ctx.beginPath();
+  ctx.arc(ax, ay, 27, 0, TAU);
+  ctx.lineWidth = 2;
+  ctx.strokeStyle = 'rgba(255,255,255,0.15)';
+  ctx.stroke();
+
+  if(aimPower > 0.01){
+    ctx.beginPath();
+    ctx.arc(ax, ay, 27, -Math.PI/2, -Math.PI/2 + TAU * aimPower);
+    ctx.lineWidth = 4;
+    ctx.lineCap = 'round';
+    ctx.strokeStyle = 'hsl(' + (125 - aimPower*125) + ',92%,56%)';
+    ctx.stroke();
+
+    // shot direction arrow at the anchor
+    const L = 34;
+    const ex = ax + aimDir.x * L, ey = ay + aimDir.y * L;
+    ctx.beginPath();
+    ctx.moveTo(ax, ay);
+    ctx.lineTo(ex, ey);
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = 'rgba(190,255,220,0.75)';
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(ex, ey, 4, 0, TAU);
+    ctx.fillStyle = 'rgba(190,255,220,0.9)';
+    ctx.fill();
+  }
+
+  // finger dot
+  ctx.beginPath();
+  ctx.arc(fx, fy, 10, 0, TAU);
+  ctx.fillStyle = 'rgba(255,255,255,0.12)';
+  ctx.fill();
+  ctx.lineWidth = 1.5;
+  ctx.strokeStyle = 'rgba(255,255,255,0.45)';
+  ctx.stroke();
+
+  ctx.restore();
+}
+
 function render(now){
   const { w: iw, h: ih } = viewportSize();
 
@@ -1729,6 +1831,8 @@ function render(now){
   ctx.strokeStyle = 'rgba(0,0,0,0.55)';
   ctx.lineWidth = 3;
   ctx.stroke();
+
+  if(aiming && dragOrigin && dragPos) drawDragUI();
 }
 
 // ═══════════════════════════════════════════════
