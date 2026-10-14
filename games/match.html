@@ -193,9 +193,10 @@
   let score = 0;
   let moves = START_MOVES;
   let selected = null;
-  let drag = null;
+  let drag = null;         // { id, r, c, x, y, dir }
   let muted = false;
   let actx = null;
+  let endTimer = null;     // pending game-over reveal
 
   const wait = ms => new Promise(r => setTimeout(r, ms));
   const rnd  = n => Math.floor(Math.random() * n);
@@ -439,6 +440,7 @@
 
   async function attemptSwap(r1, c1, r2, c2) {
     if (busy || moves <= 0) return;
+    if (!inBounds(r1, c1) || !inBounds(r2, c2)) return;
     const a = board[r1][c1], b = board[r2][c2];
     if (!a || !b) return;
 
@@ -490,7 +492,9 @@
 
   function endCheck() {
     if (moves <= 0) {
-      setTimeout(() => {
+      clearTimeout(endTimer);
+      endTimer = setTimeout(() => {
+        endTimer = null;
         finalEl.textContent = score;
         overlayEl.classList.remove('hidden');
       }, 400);
@@ -529,40 +533,55 @@
 
   boardEl.addEventListener('pointerdown', e => {
     initAudio();
-    if (busy || moves <= 0) return;
+    if (busy || moves <= 0 || drag) return;      // one gesture at a time
     const p = pointToCell(e.clientX, e.clientY);
     if (!p) return;
     e.preventDefault();
-    drag = { r: p.r, c: p.c, x: e.clientX, y: e.clientY, moved: false };
+    drag = {
+      id: e.pointerId,                           // <-- bound to THIS pointer
+      r: p.r, c: p.c,
+      x: e.clientX, y: e.clientY,
+      dir: null                                  // locked direction, if any
+    };
     try { boardEl.setPointerCapture(e.pointerId); } catch (_) {}
   });
 
   boardEl.addEventListener('pointermove', e => {
-    if (!drag || drag.moved || busy) return;
+    if (!drag || e.pointerId !== drag.id || busy) return;
+    if (e.pointerType === 'mouse' && e.buttons === 0) return;   // hover, not a drag
+
     const dx = e.clientX - drag.x;
     const dy = e.clientY - drag.y;
-    if (Math.hypot(dx, dy) < Math.max(12, cell * 0.42)) return;
+    const th = Math.max(20, cell * 0.55);
 
-    drag.moved = true;
-    let dr = 0, dc = 0;
-    if (Math.abs(dx) > Math.abs(dy)) dc = dx > 0 ? 1 : -1;
-    else                             dr = dy > 0 ? 1 : -1;
+    // Below the threshold (or back inside it) -> not a swipe.
+    if (Math.hypot(dx, dy) < th) { drag.dir = null; return; }
 
-    const { r, c } = drag;
-    if (inBounds(r + dr, c + dc)) {
-      clearSelection();
-      attemptSwap(r, c, r + dr, c + dc);
-    }
+    // Lock a direction, but DON'T commit yet — the finger may still return.
+    drag.dir = Math.abs(dx) > Math.abs(dy)
+      ? { dr: 0,  dc: dx > 0 ? 1 : -1 }
+      : { dr: dy > 0 ? 1 : -1, dc: 0 };
   });
 
   boardEl.addEventListener('pointerup', e => {
-    if (!drag) return;
+    if (!drag || e.pointerId !== drag.id) return;   // ignore other pointers
     const d = drag;
     drag = null;
 
-    if (d.moved || busy || moves <= 0) return;
+    if (busy || moves <= 0) return;
 
-    // Tap behaviour: select / swap with a previously selected neighbour
+    // --- swipe: commit on release ---
+    if (d.dir) {
+      const nr = d.r + d.dir.dr;
+      const nc = d.c + d.dir.dc;
+      if (inBounds(nr, nc)) {
+        clearSelection();
+        attemptSwap(d.r, d.c, nr, nc);
+      }
+      return;
+    }
+
+    // --- tap: select / swap with a previously selected neighbour ---
     if (selected) {
       if (selected.r === d.r && selected.c === d.c) { clearSelection(); return; }
       const adjacent = Math.abs(selected.r - d.r) + Math.abs(selected.c - d.c) === 1;
@@ -576,11 +595,17 @@
     setSelection(d.r, d.c);
   });
 
-  boardEl.addEventListener('pointercancel', () => { drag = null; });
+  boardEl.addEventListener('pointercancel', e => {
+    if (drag && drag.id === e.pointerId) drag = null;
+  });
+
   boardEl.addEventListener('contextmenu', e => e.preventDefault());
 
   /* ======================= NEW GAME ======================= */
   function newGame() {
+    clearTimeout(endTimer);
+    endTimer = null;
+
     boardEl.innerHTML = '';
     board = Array.from({ length: ROWS }, () => Array(COLS).fill(null));
     score = 0;
