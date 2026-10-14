@@ -642,7 +642,7 @@ const T_GRASS=0, T_WATER=1, T_SAND=2;
 
 const NODE_DEFS={
   tree:{ hp:3, solid:true,  radius:15, yields:'wood',  amount:1, respawn:480, gatherTime:0.95 },
-  rock:{ hp:4, solid:true,  radius:14, yields:'stone', amount:1, respawn:720, gatherTime:1.35 },
+  rock:{ hp:12, solid:true,  radius:14, yields:'stone', amount:1, respawn:720, gatherTime:1.35 },
   bush:{ hp:2, solid:false, radius:11, yields:'food',  amount:2, respawn:240, gatherTime:0.75 },
 };
 
@@ -1206,7 +1206,7 @@ function addFloat(x,y,text,color){
 }
 function harvestMultiplier(){ return 1 + player.weaponLv*0.18; }
 
-const VILLAGER_BASE_CARRY = 6;
+const VILLAGER_BASE_CARRY = 8;
 const VILLAGER_CARRY_PER_STORAGE = 4;
 function villagerCarryCap(){
   return VILLAGER_BASE_CARRY + VILLAGER_CARRY_PER_STORAGE * countType('storage');
@@ -1561,20 +1561,22 @@ const VILLAGER_COLORS=[
   {body:'#b58ad6',skin:'#e0a878',hair:'#2a1a10'},
 ];
 
-function spawnVillager(){
-  /* Prefer spawning at a random house; fall back to town center if none. */
+
+/* A walkable spot next to a random house, or null if none can be found. */
+function findHouseRespawnSpot(){
   const houses = buildings.filter(b=>b.type==='house');
-  let baseX, baseY;
-  if(houses.length>0){
-    const h = houses[Math.floor(Math.random()*houses.length)];
-    baseX = h.x + h.w*TS/2;
-    baseY = h.y + h.h*TS/2;
-  } else {
-    const c = townCenterPoint();
-    baseX = c.x; baseY = c.y;
-  }
+  if(houses.length===0) return null;
+  const h = houses[Math.floor(Math.random()*houses.length)];
+  const baseX = h.x + h.w*TS/2;
+  const baseY = h.y + h.h*TS/2;
   let spot = findWalkableSpotNear(baseX, baseY, 90);
   if(!spot) spot = findWalkableSpotNear(baseX, baseY, 220);
+  return spot;
+}
+
+
+function spawnVillager(){
+  let spot = findHouseRespawnSpot();
   if(!spot) spot = safeVillagerSpot();
   const sx = spot.x, sy = spot.y;
 
@@ -1739,13 +1741,28 @@ function updateVillager(v,dt){
         }
 
         if(v._hardStuckT >= 6.0){
-          const spot = safeVillagerSpot();
-          if(spot){ v.x=spot.x; v.y=spot.y; }
+          /* Last resort: release any claim and respawn at a random house
+             instead of piling up around the town center. */
+          if(v.target && v.target.claimed===v) v.target.claimed=null;
+
+          const oldX=v.x, oldY=v.y;
+          addFloat(oldX, oldY-18, 'Lost...', '#e0a878');
+
+          const spot = findHouseRespawnSpot() || safeVillagerSpot();
+          if(spot){
+            v.x = spot.x; v.y = spot.y;
+            v._lastX = v.x; v._lastY = v.y;
+            addFloat(v.x, v.y-18, 'Returned!', '#8ee06a');
+          }
+
           v.path    = null;
           v.pathIdx = 0;
           v.target  = null;
+          v.dropoffBuilding = null;   // re-pick nearest drop-off from new spot
+          v.dropoffPoint    = null;
           if(v.state!=='return') v.state='seek';
           v._hardStuckT = 0;
+          v._stuckT     = 0;
         }
       } else {
         v._stuckT=0;
