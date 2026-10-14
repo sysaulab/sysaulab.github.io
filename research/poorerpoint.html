@@ -609,30 +609,35 @@
         <div class="container">
             <h2>The web port</h2>
             <p>
-                There is a <a href="../apps/PoorerPoint.html" target="_blank">web application</a> version of PoorerPoint. It is not
+                There is a <a href="../apps/poorerpoint.html" target="_blank">web application</a> version of PoorerPoint. It is not
                 documented in the terminal tool's manual — this page is where it
                 gets its first mention.
             </p>
             <p>
-                The web port runs the same engine in a browser. Same markdown input,
-                same sticky-header stack, same slide model, same animation timings.
-                A deck that reads well in the terminal reads well on the web,
-                because the structure is the same structure. The parser and the
-                state machine are shared; only the rendering layer differs.
+                The web port is not a wrapper around the terminal engine. It is a
+                complete reimplementation in JavaScript, HTML, and CSS that
+                replicates the behavior from scratch: the same markdown input,
+                the same sticky-header stack, the same slide model, and the same
+                animation timings. A deck that reads well in the terminal reads
+                well on the web, because the rules are the same rules — but the
+                code behind them is not.
             </p>
 
             <div class="card-grid">
                 <div class="card">
-                    <div class="doc-label">Shared</div>
-                    <h3>The engine</h3>
+                    <div class="doc-label">Reimplemented</div>
+                    <h3>The behavior</h3>
                     <p>The markdown parser, the header stack, the slide model, and
-                    the longest-common-prefix diff that makes persistence free.</p>
+                    the longest-common-prefix diff that makes persistence free —
+                    all rebuilt in JavaScript to match the terminal engine's
+                    output.</p>
                 </div>
                 <div class="card">
-                    <div class="doc-label">Different</div>
-                    <h3>The surface</h3>
-                    <p>Instead of writing to a terminal, the web port renders the
-                    same slide state as a web page. Spacebar still advances.</p>
+                    <div class="doc-label">Added</div>
+                    <h3>Custom themes</h3>
+                    <p>Because the port renders to the DOM, it can do something
+                    the terminal cannot: swap in custom themes. The behavior is
+                    the same; the skin is yours.</p>
                 </div>
             </div>
 
@@ -720,7 +725,7 @@
                     <tbody>
                         <tr>
                             <td>Clone</td>
-                            <td><code>git clone https://github.com/&lt;you&gt;/PoorerPoint</code></td>
+                            <td><code>git clone <a href="https://github.com/sysaulab/poorerpoint">https://github.com/sysaulab/poorerpoint</a></code></td>
                         </tr>
                         <tr>
                             <td>Build</td>
@@ -728,7 +733,7 @@
                         </tr>
                         <tr>
                             <td>Run</td>
-                            <td><code>PoorerPoint deck.md</code></td>
+                            <td><code>poorerpoint deck.md</code></td>
                         </tr>
                     </tbody>
                 </table>
