@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Terminal Grapheme Width — Research Overview</title>
-    <meta name="description" content="An assessment of extended grapheme cluster width support in modern terminal emulators, a cursor-probe methodology, and a proposal for shareable terminal profiles.">
+    <meta name="description" content="An assessment of extended grapheme cluster width support across eleven terminals on macOS and Linux, a cursor-probe methodology, and a proposal for shareable terminal profiles.">
     <style>
         /* ---------- RESET & BASE ---------- */
         *, *::before, *::after {
@@ -51,6 +51,7 @@
         h3 {
             font-size: clamp(1.15rem, 2.5vw, 1.4rem);
             margin-bottom: 0.5rem;
+            margin-top: 1.5rem;
         }
 
         p {
@@ -123,53 +124,6 @@
             letter-spacing: 0.15em;
             color: #666;
             margin-bottom: 1.5rem;
-            font-weight: 500;
-        }
-
-        /* ---------- CARDS ---------- */
-        .card-grid {
-            display: grid;
-            grid-template-columns: 1fr;
-            gap: 1.25rem;
-            margin-top: 2rem;
-        }
-
-        @media (min-width: 640px) {
-            .card-grid {
-                grid-template-columns: 1fr 1fr;
-            }
-        }
-
-        .card {
-            background: #0d0d0d;
-            border: 1px solid #1e1e1e;
-            border-radius: 8px;
-            padding: 1.5rem;
-            transition: border-color 0.2s, background 0.2s;
-        }
-
-        .card:hover {
-            border-color: #333;
-            background: #111;
-        }
-
-        .card h3 {
-            font-size: 1.1rem;
-            margin-bottom: 0.4rem;
-        }
-
-        .card p {
-            font-size: 0.95rem;
-            margin-bottom: 0;
-            color: #aaa;
-        }
-
-        .card .doc-label {
-            font-size: 0.7rem;
-            text-transform: uppercase;
-            letter-spacing: 0.12em;
-            color: #555;
-            margin-bottom: 0.6rem;
             font-weight: 500;
         }
 
@@ -277,6 +231,17 @@
             text-align: right;
         }
 
+        tbody tr.group td {
+            color: #666;
+            font-size: 0.72rem;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            padding-top: 1.75rem;
+            padding-bottom: 0.5rem;
+            border-bottom: none;
+            font-weight: 500;
+        }
+
         /* ---------- DIVIDER ---------- */
         .divider {
             width: 40px;
@@ -381,10 +346,13 @@
             <span class="tagline">Research Overview</span>
             <h1>Terminals do not know how wide their own glyphs are.</h1>
             <p class="subtitle">
-                A modern emoji renders identically across macOS terminals. Its
-                cursor advance does not. This research measures the gap, proposes
-                a shareable profile for each terminal version, and argues that
-                nothing short of a new standard will close it.
+                A modern emoji renders differently across terminals, and its
+                cursor advance differs too. Across eleven terminals on two
+                operating systems, the share of graphemes whose measured width
+                disagrees with <code>unicode-width</code> ranges from 0.25% to
+                64.27%. The lowest count is not always the best terminal — two
+                of the terminals we tested report correct cursor positions while
+                rendering decomposed glyphs.
             </p>
         </div>
     </header>
@@ -456,8 +424,8 @@
             </ol>
             <p>
                 Our corpus is the fully-qualified set from
-                <code>emoji-test.txt</code> (Unicode 16.0), roughly 3,700 sequences,
-                plus the ASCII printable range for baseline verification. Each
+                <code>emoji-test.txt</code> (Unicode 16.0) plus the ASCII printable
+                range for baseline verification — 4,058 sequences in total, including the unqualified entries. Each
                 sequence is segmented with a UAX&nbsp;#29 implementation; we require
                 exactly one cluster per fully-qualified emoji to validate the
                 segmentation library. The expected width is the sum of per-codepoint
@@ -467,28 +435,51 @@
 
             <div class="metrics">
                 <div class="metric">
-                    <div class="value">~3,700</div>
-                    <div class="label">Emoji sequences probed</div>
+                    <div class="value">4,058</div>
+                    <div class="label">Sequences probed</div>
                 </div>
                 <div class="metric">
-                    <div class="value">~20 ms</div>
+                    <div class="value">0.06-29 ms</div>
                     <div class="label">Per probe</div>
                 </div>
                 <div class="metric">
-                    <div class="value">~75 s</div>
+                    <div class="value">0.2-120 s</div>
                     <div class="label">Full calibration</div>
                 </div>
                 <div class="metric">
-                    <div class="value">2</div>
-                    <div class="label">macOS terminals tested</div>
+                    <div class="value">11</div>
+                    <div class="label">Terminals, two platforms</div>
                 </div>
             </div>
 
             <p>
-                Both terminals were tested on macOS on Apple Silicon, in the default
-                configuration, with the system's own emoji font and no third-party
-                terminal customisation. The measurements reflect the terminal as
-                shipped.
+                Per-probe time varies across more than two orders of magnitude,
+                and the variation is not correlated with correctness. The fastest
+                terminal — Terminal.app at 0.06 ms — is also the second-worst by
+                deviation rate. The slowest — Kitty on Debian at 29.43 ms — sits in
+                the middle of the Linux group. Three of the Linux terminals, all
+                VTE-based, report a per-probe time of exactly 16.67 ms, one frame
+                at 60&nbsp;Hz; their CPR response appears to be coupled to the
+                screen refresh rather than the input loop. Alacritty and Konsole
+                respond in a tenth of a millisecond, without waiting for a frame.
+            </p>
+
+            <p>
+                All Linux terminals were tested inside an Apple hypervisor VM
+                running Debian&nbsp;13.7 with the XFCE4 desktop. Absolute per-probe
+                times are inflated by virtualisation and are not directly comparable
+                to the bare-metal macOS figures; comparisons within each platform
+                are valid. The corpus is identical across platforms. The base
+                Debian install ships without a colour emoji font, so the first
+                Linux pass measured the terminals against a stock font stack — a
+                monochrome fallback and whatever else fontconfig could resolve.
+                zA second pass was run on four of the seven Linux terminals after
+                installing Noto Color Emoji, to isolate the effect of font
+                coverage from the effect of the terminal binary. Those results
+                appear in the findings. As a control, we also measured the kernel's own virtual
+                console — not a terminal emulator at all, but the driver that
+                underlies every one of them on Linux. It is the fastest
+                subject in the study and the least correct.
             </p>
         </div>
     </section>
@@ -498,9 +489,12 @@
         <div class="container">
             <h2>What we found</h2>
             <p>
-                Across the two macOS terminals tested, the distribution of per-grapheme
-                deviations is unambiguous. iTerm2 is more compliant but not correct.
-                Terminal.app is dramatically less compliant.
+                The distribution is wide and is not structured by terminal
+                architecture. The best result — Kitty on macOS, at ten deviations
+                in 4,058 sequences — is nearly two orders of magnitude better than
+                the next best, iTerm2. The worst — Hyper at 64.27% — is barely
+                worse than the most common result on Linux, a cluster of four
+                terminals tied at exactly 61.51%.
             </p>
 
             <table>
@@ -508,33 +502,186 @@
                     <tr>
                         <th>Terminal</th>
                         <th>Version</th>
-                        <th class="num">Deviating sequences</th>
-                        <th class="num">Worst deviation</th>
+                        <th class="num">Deviating</th>
+                        <th class="num">Rate</th>
                     </tr>
                 </thead>
                 <tbody>
-                    <tr>
-                        <td>iTerm2</td>
-                        <td>3.6.11</td>
-                        <td class="num">339</td>
-                        <td class="num">-3</td>
-                    </tr>
-                    <tr>
-                        <td>Terminal.app</td>
-                        <td>2.14 (macOS 15)</td>
-                        <td class="num">2,483</td>
-                        <td class="num">+7</td>
-                    </tr>
+                    <tr class="group"><td colspan="4">macOS 26.4.1 — Apple Silicon, bare metal</td></tr>
+                    <tr><td>Kitty</td><td>0.49.2</td><td class="num">10</td><td class="num">0.25%</td></tr>
+                    <tr><td>iTerm2</td><td>3.6.11</td><td class="num">339</td><td class="num">8.35%</td></tr>
+                    <tr><td>Terminal.app</td><td>2.15</td><td class="num">2,483</td><td class="num">61.19%</td></tr>
+                    <tr><td>Hyper</td><td>3.4.1</td><td class="num">2,608</td><td class="num">64.27%</td></tr>
+
+                    <tr class="group"><td colspan="4">Debian 13.7 / XFCE4 — Apple hypervisor VM</td></tr>
+                    <tr><td>Konsole</td><td>25.04.2</td><td class="num">129</td><td class="num">3.18%</td></tr>
+                    <tr><td>Kitty</td><td>0.41.1</td><td class="num">1,631</td><td class="num">40.19%</td></tr>
+                    <tr><td>xterm</td><td>398</td><td class="num">2,489</td><td class="num">61.34%</td></tr>
+                    <tr><td>xfce4-terminal</td><td>1.1.4</td><td class="num">2,496</td><td class="num">61.51%</td></tr>
+                    <tr><td>GNOME Terminal</td><td>3.56.2</td><td class="num">2,496</td><td class="num">61.51%</td></tr>
+                    <tr><td>Alacritty</td><td>0.15.1</td><td class="num">2,496</td><td class="num">61.51%</td></tr>
+                    <tr><td>Terminator</td><td>2.1.4</td><td class="num">2,496</td><td class="num">61.51%</td></tr>
+                    
+                    <tr class="group"><td colspan="4">Debian 13.7 — kernel virtual console (control)</td></tr>
+                    <tr><td>Linux VT</td><td>kernel 6.x</td><td class="num">2,749</td><td class="num">67.74%</td></tr>
                 </tbody>
             </table>
 
+            <h3>The same binary, two versions, two platforms</h3>
             <p>
-                The distribution is bimodal. Negative deviations cluster at
-                <strong>-1</strong> and correspond to wide glyphs the terminal
-                renders correctly but advances by one cell. Positive deviations
-                are integers between <strong>+1</strong> and <strong>+7</strong>
-                and correspond to ZWJ sequences where the terminal sums the
-                widths of the constituent codepoints.
+                The most striking comparison is Kitty against itself. On macOS
+                0.49.2 it deviates on ten sequences out of 4,058. On Debian
+                0.41.1, against the same corpus and the same width library, it
+                deviates on 1,631. The version gap is eight minor releases —
+                Debian stable is deliberately conservative — and the deviation
+                gap is a factor of 163.
+            </p>
+            <p>
+                A follow-up pass installed Noto Color Emoji on the Debian VM and
+                re-ran the measurement. The per-probe time fell from 29.43 ms to
+                12.59 ms, a 2.3× speedup: the terminal was no longer searching
+                for a glyph it did not have, on every paint. The deviation count
+                did not move. It was 1,631 before the install and 1,631 after,
+                to the sequence.
+            </p>
+            <p>
+                This isolates the two properties the earlier draft had run
+                together. The cursor advance the terminal reports is a property
+                of its own Unicode tables, and those tables change with the
+                binary version. The glyph the terminal paints is a property of
+                the font stack. They are independent variables, and a terminal
+                can be wrong on one while being right on the other — Kitty on
+                Debian is wrong on the advance and, after the font install,
+                correct on the paint. Kitty on macOS is correct on both.
+            </p>
+
+            <h3>The four-way cluster</h3>
+            <p>
+                Four Linux terminals report exactly 2,496 deviations: xfce4-terminal,
+                GNOME Terminal, Alacritty, and Terminator. Three of the four are
+                VTE-based; Alacritty is a Rust terminal written from scratch, with
+                no shared lineage. That four such different programs agree to the
+                sequence suggests the failures are being driven by something they
+                consult in common rather than something they each do — the font
+                stack, in short. We have not yet isolated font from terminal by
+                holding one fixed while varying the other, and until we do, the
+                cluster should be treated as evidence about the environment, not
+                about the terminals inside it.
+            </p>
+            <p>
+                The near-neighbour is xterm, at 2,489 — seven sequences different,
+                in the same direction. xterm has no emoji support at all, and no
+                colour emoji font on this system was made available to it; the
+                small gap from the VTE group likely reflects those seven sequences
+                alone.
+            </p>
+
+            <h3>The font stack is necessary but not sufficient</h3>
+            <p>
+                Installing Noto Color Emoji on the Debian VM changed four things
+                and left four things unchanged. Konsole gained colour rendering:
+                ZWJ sequences that had been visibly decomposed became composed.
+                Kitty's per-probe time dropped by more than half. Those are the
+                changes. Kitty's deviation count was identical before and after.
+                Konsole's deviation count was identical before and after. And
+                xfce4-terminal and Alacritty were unchanged in both respects —
+                their rendering did not improve either.
+            </p>
+            <p>
+                The reading is that the advance and the paint are separate
+                observables. The advance is a width-table lookup inside the
+                terminal and is not affected by which fonts are installed.
+                The paint is a font-resolution problem and is affected by
+                nothing else. A terminal that reports the standard's width
+                and paints the standard's glyph is correct. One that paints
+                correctly and reports wrongly is Mode A or B. One that reports
+                correctly and paints wrongly is Mode D. And one that is
+                unchanged by the presence of a colour font it should be using
+                is a different failure entirely.
+            </p>
+            <p>
+                That two of the four terminals we re-tested picked up the font
+                and two did not suggests the fallback chains differ. Kitty and
+                Konsole resolve a newly installed colour font at runtime. The
+                VTE-based terminals and Alacritty did not, even after restart,
+                which points to a fallback path that does not consult a
+                colour font when one becomes available. That is a third class
+                of defect — one that a package dependency would not fix —
+                and we have not isolated it further.
+            </p>
+
+            <h3>Speed and correctness</h3>
+            <p>
+                The fastest terminals in the study are the least correct.
+                Everything under 0.15 ms per probe — the Linux virtual console,
+                Terminal.app, xterm, Alacritty, and Konsole — has a problem.
+                Four of the five deviate on 60% or more of the corpus. The
+                fifth, Konsole, reports correctly and, before the font install,
+                painted incorrectly. None of them is doing honest work in the
+                cursor-position path.
+            </p>
+            <p>
+                The correlation is not a tradeoff between speed and accuracy as
+                such. It is a consequence of what the cursor-position response
+                consults. A terminal that answers in 0.06 ms has not looked at
+                the grapheme — the reply has to come from a cursor model that
+                was already sitting at the last cell boundary, and that model
+                is by construction the terminal's internal width table, which
+                for these terminals predates cluster awareness. Kitty on macOS,
+                at 1.57 ms, is fast enough not to be frame-coupled and slow
+                enough to have consulted a real table. It is also the most
+                correct terminal we tested, by a factor of 163. Fast and correct
+                is possible. Sub-0.15 ms is a different regime.
+            </p>
+            <p>
+                The VTE group's 16.67 ms deserves a note of its own: that is
+                exactly one frame at 60&nbsp;Hz. Those terminals appear to defer
+                the cursor-position reply to the next screen refresh. The
+                answer is then honest but late, and its 61.51% rate is a
+                font-stack result rather than a cursor-path result.
+            </p>
+            <p>
+                Terminal.app and the Linux virtual console — 0.06 and 0.07 ms,
+                61.19% and 67.74% — are the two extremes of the fast-and-wrong
+                regime. We cannot tell from the outside whether the speed is a
+                deliberate battery optimisation or a downstream consequence of
+                a CPR path that never consulted the renderer. Both explanations
+                are consistent with the data; only one of them implies a
+                choice.
+            </p>
+
+            <h3>Konsole and Hyper: the failure the probe cannot see</h3>
+            <p>
+                Konsole reports cursor positions that match what
+                <code>unicode-width</code> predicts for most of the corpus,
+                including ZWJ sequences, yet renders ZWJ sequences as visibly
+                decomposed fragments. The probe sees a compliant terminal; the
+                user sees a broken emoji. Hyper exhibits the same pattern. For
+                both terminals the deviation count is a lower bound on the true
+                failure rate.
+            </p>
+            <p>
+                Konsole's Mode D was resolved by the font install. Before Noto
+                Color Emoji was present, the terminal advanced correctly and
+                painted decomposed fragments; after, it advanced correctly and
+                painted composed glyphs. Its deviation count was unchanged
+                throughout, because the deviation count was never measuring the
+                thing that was wrong. This is the cleanest example in the study
+                of a Mode D failure that has nothing to do with the terminal
+                binary and everything to do with the files it had to work with.
+            </p>
+            <p>
+                Hyper, whose macOS measurements are unaffected by any font
+                experiment we ran, may be a different case: a terminal whose
+                rendering layer structurally cannot compose a cluster the
+                emulation layer has already decided to split across cells.
+                Separating the two would require installing a colour font on
+                the macOS side and re-measuring Hyper, which we have not done.
+            </p>
+            <p>
+                Konsole's 3.18% is the best Linux result in the table. It is also
+                partly an artifact. We report the number because it is what the
+                instrument produces; the caveat belongs beside it.
             </p>
 
             <h3>Mode A — measurement error</h3>
@@ -558,29 +705,62 @@
                 separately. This is what produces the large positive deviations.
             </p>
 
+            <h3>Mode C — the new-codepoint gap</h3>
+            <p>
+                Kitty's ten macOS deviations are all one class: the two base emoji
+                <code>🫹</code> (U+1FAF9) and <code>🫺</code> (U+1FAFA), each
+                paired with the five Fitzpatrick skin tones
+                <code>🏻</code>-<code>🏿</code>. Both sides of the measurement are
+                stale. The width library's Unicode tables do not yet include the
+                codepoints, so it falls back to summing per-codepoint widths and
+                expects three cells. The terminal's font has no glyph for the
+                base, so it renders the whole cluster in a single fallback cell
+                and reports one. The deviation of <strong>-2</strong> is not a
+                correction either party needs to make; it is what a well-behaved
+                terminal reports when it has not yet caught up with the standard,
+                against a width table that has not either. These entries will
+                disappear on their own once both the font and the Unicode tables
+                catch up, and the padding the library applies in the meantime is
+                sufficient to keep layout from drifting.
+            </p>
+
+            <h3>Mode D — rendering failure with a correct report</h3>
+            <p>
+                Konsole and Hyper report cursor positions consistent with
+                <code>unicode-width</code> while rendering ZWJ sequences as
+                separate visible fragments. The cursor advance and the visual
+                disagree, but only the cursor advance is observable through CPR.
+                No correction can be computed, because the report is already
+                correct by the standard's own terms. This is the failure mode the
+                probe is structurally unable to see, and it argues for a
+                different kind of measurement entirely — one that observes the
+                painted cells, not the reported cursor.
+            </p>
+
             <div class="highlight">
                 <p>
-                    <strong>Capability is not uniform within a terminal.</strong>
-                    iTerm2 handles the family emoji
-                    <code>👨‍👩‍👧‍👦</code> correctly — it measures two cells,
-                    matching the visual — but mismeasures <code>🏌🏼‍♀️</code>.
-                    A per-terminal boolean flag is insufficient. The deviation is
-                    per-cluster.
+                    <strong>Capability is not uniform within a terminal, and
+                    not uniform across a platform.</strong> iTerm2 handles the
+                    family emoji <code>👨‍👩‍👧‍👦</code> correctly but mismeasures
+                    <code>🏌🏼‍♀️</code>. Kitty handles both correctly on macOS
+                    but neither on Debian. A per-terminal boolean flag is
+                    insufficient; a per-terminal-version profile is insufficient;
+                    the deviation is per-cluster and the remedy is per-stack.
                 </p>
             </div>
 
             <h3>A note on input</h3>
             <p>
-                Neither terminal correctly produces a complex grapheme when the
-                sequence is inserted through the macOS input widget (the
-                <code>fn</code> key). Both fail to compose the full ZWJ cluster,
-                emitting a fragment of the sequence instead. This is a separate
-                failure mode from the width miscalculation — it is a defect in the
-                path from the input method to the terminal, not in the terminal's
-                layout logic — but it contributes to the same user-visible
-                breakage. It is mentioned here because it argues against any
-                solution that assumes well-formed clusters arrive at the terminal
-                from the system.
+                iTerm2 and Terminal.app do not correctly produce a complex
+                grapheme when the sequence is inserted through the macOS input
+                widget (the <code>fn</code> key). Both fail to compose the full
+                ZWJ cluster, emitting a fragment of the sequence instead. This is
+                a separate failure mode from the width miscalculation — it is a
+                defect in the path from the input method to the terminal, not in
+                the terminal's layout logic — but it contributes to the same
+                user-visible breakage. It is mentioned here because it argues
+                against any solution that assumes well-formed clusters arrive at
+                the terminal from the system.
             </p>
         </div>
     </section>
@@ -588,34 +768,58 @@
     <!-- ========== PROFILES ========== -->
     <section id="profiles">
         <div class="container">
-            <h2>A profile per terminal version</h2>
+            <h2>A profile per delivery stack</h2>
             <p>
-                The failure modes we measured are properties of the terminal
-                <em>binary</em>, not of the user's session. Every user of iTerm2
-                3.6.11 on macOS sees the same deviations. This suggests that the
-                expensive calibration pass — probing thousands of sequences at
-                roughly twenty milliseconds each — need only be performed once
-                per terminal version, and distributed.
+                The macOS results alone suggested a profile could be keyed on the
+                terminal binary: every user of iTerm2 3.6.11 on macOS sees the
+                same deviations, so the expensive calibration pass need only be
+                performed once per terminal version and distributed. The Linux
+                results complicate that conclusion. The same Kitty binary is
+                near-perfect on one platform and 40% wrong on the other. The
+                profile is not a property of the binary; it is a property of the
+                stack the binary sits in.
             </p>
 
             <div class="highlight">
                 <p>
-                    <strong>Do once, distribute many times.</strong> A canonical
-                    repository of profiles, updated when new terminal versions ship
-                    and validated by anyone who runs the calibration, means that
-                    most users never run the probe. The library ships with a bundled
-                    snapshot and consults the live cache only when the running
-                    terminal's fingerprint is not covered.
+                    <strong>Do once, distribute many times.</strong> The right
+                    unit is the delivery stack — terminal name, terminal version,
+                    OS family, and font stack. A profile for "Kitty 0.49.2 on
+                    macOS 26 with Apple Color Emoji" is shareable across every
+                    such installation. A profile for "Kitty on Linux" is not
+                    shareable across distributions, because the distributions do
+                    not agree on fonts.
                 </p>
             </div>
 
             <h3>The fingerprint</h3>
             <p>
-                The profile is keyed on a deliberately coarse fingerprint: terminal
-                name, terminal version, and OS family. It excludes <code>TERM</code>,
-                <code>LC_CTYPE</code>, and window identifiers, which describe the
-                session rather than the binary. A profile for "iTerm2 3.6.11 on
-                macOS" is shareable across every iTerm2 3.6.11 installation.
+                The profile is currently keyed on a deliberately coarse
+                fingerprint: terminal name, terminal version, and OS family. It
+                excludes <code>TERM</code>, <code>LC_CTYPE</code>, and window
+                identifiers, which describe the session rather than the binary.
+                The Linux results show this is too coarse in one direction — it
+                does not distinguish the font stack — and too fine in another.
+            </p>
+            <p>
+                Too coarse on the font stack, because Kitty macOS and Kitty Debian
+                share a terminal name and a version number scheme, and would
+                collide on a profile if the OS family were not also part of the
+                key. They are the same binary; they are not the same delivery
+                system.
+            </p>
+            <p>
+                Too fine, because on Linux the <code>TERM</code>-based fallback
+                collides across unrelated terminals. Alacritty only sets
+                <code>ALACRITTY_SOCKET</code> when its IPC socket is enabled, and
+                falls back to <code>TERM</code> when it is not — which on a
+                default Debian desktop resolves to <code>xterm-256color</code>,
+                the same value reported by several unrelated terminals. Two
+                terminals that share a profile file will not each run their own
+                calibration; one will inherit the other's results. We treat this
+                as a bug to be fixed and not a property of the terminals, and
+                note it here because any distributed profile system will face the
+                same problem in some form.
             </p>
 
             <h3>Human review as a first-class artifact</h3>
@@ -625,44 +829,49 @@
                 correctly but mismeasures it, the probe catches the error and a
                 numeric correction can be applied. When a terminal renders a
                 glyph incorrectly — decomposing a ZWJ sequence into visible
-                fragments — the probe reports a value that is consistent with
-                the (wrong) rendering, and no automatic correction is possible.
+                fragments — the probe may or may not catch it, depending on
+                whether the terminal's cursor model has been aligned to the
+                standard or to its own paint. In the first case a human must
+                decide; in the second, no numeric correction is possible at all.
             </p>
             <p>
-                For those residual cases, a human must look at the terminal and
-                decide. Our implementation includes a review mode that walks every
+                Our implementation includes a review mode that walks every
                 deviating entry, displays the suggested correction and its actual
                 visual effect side by side, and allows the reviewer to accept,
                 strip, or adjust. Reviewed entries are marked and are not
                 re-presented in subsequent sessions. The output is a profile with
                 two layers: what the terminal reported, and what a human decided
                 was correct. Both are valuable; the second is authoritative.
+                Review mode cannot repair Mode D failures, because those failures
+                produce no entries to review.
             </p>
 
             <div class="metrics">
                 <div class="metric">
-                    <div class="value">339</div>
-                    <div class="label">Entries to review — iTerm2</div>
+                    <div class="value">0.25%</div>
+                    <div class="label">Best rate — Kitty, macOS</div>
                 </div>
                 <div class="metric">
-                    <div class="value">2,483</div>
-                    <div class="label">Entries to review — Terminal.app</div>
+                    <div class="value">67.74%</div>
+                    <div class="label">Worst rate — Linux VT</div>
+                </div>                <div class="metric">
+                    <div class="value">4</div>
+                    <div class="label">Terminals tied at 61.51%</div>
                 </div>
                 <div class="metric">
-                    <div class="value">Resumable</div>
-                    <div class="label">Across sessions</div>
-                </div>
-                <div class="metric">
-                    <div class="value">One-time</div>
-                    <div class="label">Per terminal version</div>
+                    <div class="value">2</div>
+                    <div class="label">Probe-invisible failures</div>
                 </div>
             </div>
 
             <p>
-                Two and a half thousand entries is a substantial review pass, but
-                it is a review that a single volunteer performs once for a given
-                terminal version, and that every subsequent user of that version
-                inherits. The economics change when the result is shared.
+                The review workload tracks the deviation count, and the deviation
+                count varies by two and a half orders of magnitude across the
+                terminals we tested. Ten entries is an afternoon's curiosity; two
+                and a half thousand is a substantial pass — but it is a pass that
+                a single volunteer performs once for a given stack, and that
+                every subsequent user of that stack inherits. The economics
+                change when the result is shared.
             </p>
         </div>
     </section>
@@ -678,27 +887,34 @@
                 <code>🏌🏼‍♀️</code> into five visible glyphs and advances by
                 five is self-consistent — the probe reports 5, the visual
                 occupies 5 cells, no correction is needed, and the user sees
-                garbage because the emoji did not compose.
+                garbage because the emoji did not compose. Konsole and Hyper
+                demonstrate the inverse: they advance correctly and paint
+                incorrectly, so the visual overflows into cells the cursor has
+                already left.
             </p>
             <p>
                 No protocol-level query exists that reports how many cells the
                 renderer actually painted. The DECRQCRA sequence — checksum a
-                rectangular area — gets close but is unsupported on both of the
+                rectangular area — gets close, but was unsupported on all of the
                 terminals we tested. It is not a portable solution.
             </p>
 
             <h3>The limits of user-space correction</h3>
             <p>
                 A library that patches width at emit time can compensate for
-                both modes of error on a per-terminal basis. It cannot:
+                Modes A, B, and C on a per-stack basis. It cannot:
             </p>
             <ul>
+                <li>Correct a terminal that reports correctly and renders
+                    incorrectly, because no deviation is recorded to correct.</li>
                 <li>Communicate a grapheme's intended width to a terminal that
                     has not been asked.</li>
                 <li>Prevent a terminal from decomposing a ZWJ sequence into
                     visibly separate glyphs.</li>
                 <li>Handle line-breaking at grapheme boundaries if the terminal
                     itself wraps mid-cluster.</li>
+                <li>Force a terminal's font stack to know about a codepoint it
+                    does not carry.</li>
             </ul>
 
             <blockquote>
@@ -723,6 +939,10 @@
                 <li>A query interface by which an application can ask the terminal
                     for a cluster's width <em>without writing it</em>, allowing
                     layout to be computed before emit.</li>
+                <li>A query interface for the rendered extent of a cluster —
+                    how many cells the terminal painted, as distinct from how
+                    many it advanced by — so that Mode D failures are observable
+                    at all.</li>
             </ol>
 
             <div class="highlight">
@@ -743,24 +963,30 @@
         <div class="container">
             <h2>Conclusion</h2>
             <p>
-                Modern terminals, including those shipping in 2025, do not
-                correctly measure extended grapheme clusters. The failure is
-                per-cluster, not per-terminal; per-terminal-version, not
-                per-session. It cannot be worked around at the protocol level
-                because the protocol does not expose the information needed to
-                distinguish a correct terminal from a consistently incorrect one.
+                Modern terminals, even those shipping in 2026, do not uniformly
+                measure extended grapheme clusters correctly. Across eleven
+                terminals on two operating systems, the deviation rate ranges
+                from 0.25% to 64.27%. The failure is per-cluster, not
+                per-terminal; per-delivery-stack, not per-session. It cannot be
+                worked around at the protocol level, because the protocol does
+                not expose the information needed to distinguish a correct
+                terminal from a consistently incorrect one — nor, in the case of
+                Konsole and Hyper, a terminal that renders correctly from one
+                that renders incorrectly while reporting the same number.
             </p>
             <p>
                 Our contribution is threefold. First, a methodology for
                 characterising terminal behaviour using the standard cursor
                 position report, applied to the full Unicode emoji corpus and
-                validated on the two terminals available to us on macOS. Second,
-                a recognition that the deviations are properties of the terminal
-                binary and are therefore shareable — a profile system that
-                centralises the expensive measurement so that most users never
-                perform it. Third, a demonstration that the residual cases
-                require human review, and a workflow by which that review is
-                incremental, resumable, and produces a durable artifact.
+                validated across eleven terminals and two platforms. Second, a
+                recognition that the deviations are properties of the delivery
+                stack — terminal, font, platform — and are therefore shareable
+                at a coarser granularity than the terminal binary alone; a
+                profile system that centralises the expensive measurement so
+                that most users never perform it. Third, a demonstration that
+                some residual cases require human review, that others are
+                invisible to the probe entirely, and that the second class
+                motivates a different measurement.
             </p>
             <p>
                 The eventual correct answer is a new standard and a reference
@@ -782,11 +1008,21 @@
                 <code>emoji-test.txt</code>.
             </p>
             <p style="margin-top: 1.5rem; font-size: 0.8rem; color: #444;">
-                This page is a lay summary. Measurements reported here reflect
-                iTerm2 3.6.11 and Terminal.app 2.14 on macOS 15, on Apple Silicon,
-                in default configuration. Where this summary and the underlying
-                documents disagree, the documents are authoritative.
-            </p>
+                This page is a lay summary. macOS measurements reflect Kitty
+                0.49.2, iTerm2 3.6.11, Terminal.app 2.15, and Hyper 3.4.1 on
+                macOS 26.4.1, on Apple Silicon, in default configuration. Linux
+                measurements reflect Konsole 25.04.2, Kitty 0.41.1, xterm 398,
+                xfce4-terminal 1.1.4, GNOME Terminal 3.56.2, Alacritty 0.15.1, and
+                Terminator 2.1.4 on Debian 13.7 with the XFCE4 desktop, inside an
+                Apple hypervisor VM, in default configuration. Where this summary
+                and the underlying documents disagree, the documents are
+                authoritative.<br /><br />Linux measurements reflect Konsole 25.04.2, Kitty 0.41.1, xterm
+                398, xfce4-terminal 1.1.4, GNOME Terminal 3.56.2, Alacritty 0.15.1,
+                and Terminator 2.1.4, plus the kernel virtual console as a control,
+                on Debian 13.7 with the XFCE4 desktop, inside an Apple hypervisor
+                VM, in default configuration, and — for Konsole, Kitty,
+                xfce4-terminal, and Alacritty — again after installing Noto
+                Color Emoji.
         </div>
     </footer>
 
