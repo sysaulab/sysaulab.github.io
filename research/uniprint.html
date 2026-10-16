@@ -1,0 +1,794 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Terminal Grapheme Width — Research Overview</title>
+    <meta name="description" content="An assessment of extended grapheme cluster width support in modern terminal emulators, a cursor-probe methodology, and a proposal for shareable terminal profiles.">
+    <style>
+        /* ---------- RESET & BASE ---------- */
+        *, *::before, *::after {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        html {
+            scroll-behavior: smooth;
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+        }
+
+        body {
+            background-color: #000;
+            color: #e8e8e8;
+            font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+            font-size: 17px;
+            line-height: 1.7;
+            font-weight: 400;
+            letter-spacing: 0.01em;
+        }
+
+        /* ---------- TYPOGRAPHY ---------- */
+        h1, h2, h3, h4 {
+            font-weight: 600;
+            line-height: 1.2;
+            letter-spacing: -0.02em;
+            color: #fff;
+        }
+
+        h1 {
+            font-size: clamp(2.2rem, 5vw, 3.6rem);
+            font-weight: 700;
+            letter-spacing: -0.03em;
+        }
+
+        h2 {
+            font-size: clamp(1.6rem, 3.5vw, 2.2rem);
+            margin-bottom: 1rem;
+        }
+
+        h3 {
+            font-size: clamp(1.15rem, 2.5vw, 1.4rem);
+            margin-bottom: 0.5rem;
+        }
+
+        p {
+            margin-bottom: 1.2rem;
+            color: #c8c8c8;
+        }
+
+        a {
+            color: #7eb8ff;
+            text-decoration: none;
+            border-bottom: 1px solid transparent;
+            transition: border-color 0.2s, color 0.2s;
+        }
+
+        a:hover {
+            color: #a8d0ff;
+            border-bottom-color: #a8d0ff;
+        }
+
+        strong {
+            color: #f0f0f0;
+            font-weight: 600;
+        }
+
+        em {
+            color: #d0d0d0;
+        }
+
+        code {
+            font-family: "SF Mono", Menlo, Consolas, monospace;
+            font-size: 0.88em;
+            color: #d8d8d8;
+        }
+
+        /* ---------- LAYOUT ---------- */
+        .container {
+            max-width: 820px;
+            margin: 0 auto;
+            padding: 0 1.5rem;
+        }
+
+        section {
+            padding: 4rem 0;
+        }
+
+        section + section {
+            border-top: 1px solid #1a1a1a;
+        }
+
+        /* ---------- HERO ---------- */
+        .hero {
+            padding: 6rem 0 4rem;
+            text-align: left;
+        }
+
+        .hero .subtitle {
+            font-size: clamp(1.05rem, 2.2vw, 1.3rem);
+            color: #999;
+            margin-top: 1rem;
+            max-width: 640px;
+            font-weight: 400;
+            letter-spacing: 0;
+            line-height: 1.6;
+        }
+
+        .hero .tagline {
+            display: inline-block;
+            font-size: 0.75rem;
+            text-transform: uppercase;
+            letter-spacing: 0.15em;
+            color: #666;
+            margin-bottom: 1.5rem;
+            font-weight: 500;
+        }
+
+        /* ---------- CARDS ---------- */
+        .card-grid {
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 1.25rem;
+            margin-top: 2rem;
+        }
+
+        @media (min-width: 640px) {
+            .card-grid {
+                grid-template-columns: 1fr 1fr;
+            }
+        }
+
+        .card {
+            background: #0d0d0d;
+            border: 1px solid #1e1e1e;
+            border-radius: 8px;
+            padding: 1.5rem;
+            transition: border-color 0.2s, background 0.2s;
+        }
+
+        .card:hover {
+            border-color: #333;
+            background: #111;
+        }
+
+        .card h3 {
+            font-size: 1.1rem;
+            margin-bottom: 0.4rem;
+        }
+
+        .card p {
+            font-size: 0.95rem;
+            margin-bottom: 0;
+            color: #aaa;
+        }
+
+        .card .doc-label {
+            font-size: 0.7rem;
+            text-transform: uppercase;
+            letter-spacing: 0.12em;
+            color: #555;
+            margin-bottom: 0.6rem;
+            font-weight: 500;
+        }
+
+        /* ---------- HIGHLIGHT BOX ---------- */
+        .highlight {
+            background: #0a0f14;
+            border-left: 3px solid #2a5a8a;
+            padding: 1.5rem 1.75rem;
+            margin: 2rem 0;
+            border-radius: 0 6px 6px 0;
+        }
+
+        .highlight p {
+            margin-bottom: 0;
+            color: #b8c8d8;
+        }
+
+        .highlight p + p {
+            margin-top: 0.75rem;
+        }
+
+        /* ---------- QUOTE ---------- */
+        blockquote {
+            border-left: 2px solid #333;
+            padding-left: 1.5rem;
+            margin: 2rem 0;
+            font-style: italic;
+            color: #999;
+        }
+
+        blockquote p {
+            color: #999;
+            margin-bottom: 0;
+        }
+
+        /* ---------- METRIC ROW ---------- */
+        .metrics {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+            gap: 1.5rem;
+            margin: 2.5rem 0;
+        }
+
+        .metric {
+            text-align: left;
+        }
+
+        .metric .value {
+            font-size: 2rem;
+            font-weight: 700;
+            color: #fff;
+            letter-spacing: -0.03em;
+            line-height: 1.1;
+        }
+
+        .metric .label {
+            font-size: 0.8rem;
+            color: #777;
+            margin-top: 0.25rem;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            font-weight: 500;
+        }
+
+        /* ---------- LIST ---------- */
+        ul, ol {
+            margin: 1rem 0 1.5rem 1.25rem;
+            color: #c8c8c8;
+        }
+
+        li {
+            margin-bottom: 0.6rem;
+            padding-left: 0.25rem;
+        }
+
+        li strong {
+            color: #e8e8e8;
+        }
+
+        /* ---------- TABLE ---------- */
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 2rem 0;
+            font-size: 0.92rem;
+        }
+
+        th, td {
+            text-align: left;
+            padding: 0.6rem 0.75rem;
+            border-bottom: 1px solid #1e1e1e;
+            color: #c8c8c8;
+        }
+
+        th {
+            color: #888;
+            font-weight: 500;
+            font-size: 0.78rem;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+        }
+
+        td.num {
+            font-variant-numeric: tabular-nums;
+            text-align: right;
+        }
+
+        /* ---------- DIVIDER ---------- */
+        .divider {
+            width: 40px;
+            height: 2px;
+            background: #333;
+            margin: 1.5rem 0;
+        }
+
+        /* ---------- FOOTER ---------- */
+        footer {
+            padding: 3rem 0 4rem;
+            border-top: 1px solid #1a1a1a;
+            font-size: 0.85rem;
+            color: #555;
+        }
+
+        footer p {
+            color: #555;
+            margin-bottom: 0.5rem;
+        }
+
+        /* ---------- NAV ---------- */
+        nav {
+            padding: 1.5rem 0;
+            border-bottom: 1px solid #1a1a1a;
+        }
+
+        nav .container {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            flex-wrap: wrap;
+            gap: 0.5rem;
+        }
+
+        nav .brand {
+            font-weight: 600;
+            color: #fff;
+            font-size: 0.95rem;
+            letter-spacing: -0.01em;
+        }
+
+        nav .links {
+            display: flex;
+            gap: 1.5rem;
+            font-size: 0.85rem;
+        }
+
+        nav .links a {
+            color: #888;
+            border-bottom: none;
+        }
+
+        nav .links a:hover {
+            color: #fff;
+        }
+
+        /* ---------- RESPONSIVE ---------- */
+        @media (max-width: 600px) {
+            body {
+                font-size: 16px;
+            }
+
+            section {
+                padding: 3rem 0;
+            }
+
+            .hero {
+                padding: 4rem 0 3rem;
+            }
+
+            nav .links {
+                gap: 1rem;
+            }
+
+            .metrics {
+                grid-template-columns: 1fr 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+
+    <!-- ========== NAV ========== -->
+    <nav>
+        <div class="container">
+            <span class="brand">Terminal Grapheme Width</span>
+            <div class="links">
+                <a href="index.html">Back</a>
+                <a href="#what">What</a>
+                <a href="#how">How</a>
+                <a href="#findings">Findings</a>
+                <a href="#profiles">Profiles</a>
+                <a href="#limits">Limits</a>
+            </div>
+        </div>
+    </nav>
+
+    <!-- ========== HERO ========== -->
+    <header class="hero">
+        <div class="container">
+            <span class="tagline">Research Overview</span>
+            <h1>Terminals do not know how wide their own glyphs are.</h1>
+            <p class="subtitle">
+                A modern emoji renders identically across macOS terminals. Its
+                cursor advance does not. This research measures the gap, proposes
+                a shareable profile for each terminal version, and argues that
+                nothing short of a new standard will close it.
+            </p>
+        </div>
+    </header>
+
+    <!-- ========== WHAT ========== -->
+    <section id="what">
+        <div class="container">
+            <h2>What is this about?</h2>
+            <p>
+                A terminal is, in principle, a grid of fixed-width cells. A program
+                writes a sequence of bytes; the terminal advances the cursor by the
+                number of cells that sequence visually occupies. This contract has
+                held for ASCII for fifty years. It has not held for Unicode for the
+                last twenty.
+            </p>
+            <p>
+                The failure is not confined to obscure codepoints. Emoji are among
+                the most frequently emitted non-ASCII characters in interactive
+                software. The sequence
+                <code>🏌🏼‍♀️</code> (U+1F3CC U+1F3FC U+200D U+2640 U+FE0F)
+                renders as a single image in every major terminal. It is
+                <em>measured</em> differently in every one. Some terminals report
+                two cells. Some report five. Some report seven.
+            </p>
+
+            <div class="highlight">
+                <p>
+                    <strong>The core problem:</strong> applications lay out text on
+                    the grid using the cursor model, not the visual. If the terminal's
+                    reported advance disagrees with its rendered glyph, every layout
+                    that follows drifts. The user sees broken borders, misaligned
+                    boxes, and stray half-glyphs.
+                </p>
+            </div>
+
+            <p>
+                Unicode defines grapheme cluster boundaries in UAX&nbsp;#29 and
+                character width via East Asian Width (UAX&nbsp;#11). Neither was
+                designed for how terminals use them. The first is a segmentation
+                property; the second is a per-codepoint legacy table. Nothing in
+                the standard defines the width of an extended grapheme cluster.
+            </p>
+        </div>
+    </section>
+
+    <!-- ========== HOW ========== -->
+    <section id="how">
+        <div class="container">
+            <h2>How we measure</h2>
+            <p>
+                We measure the terminal's cursor advance using the standard Cursor
+                Position Report sequence. The technique is not new — the
+                <code>ucs-detect</code> tool has used it for years — but applying
+                it to the full Unicode emoji corpus, per terminal version, and
+                aggregating the results into a shareable profile, is the part we
+                believe has not been done systematically.
+            </p>
+            <p>
+                The probe enters the alternate screen, disables autowrap, and puts
+                the terminal into raw mode with a short read timeout. For each
+                grapheme cluster of interest:
+            </p>
+            <ol>
+                <li>Move the cursor to column 1 of a reserved row.</li>
+                <li>Write the grapheme.</li>
+                <li>Send <code>ESC [6n</code> and read the reply
+                    <code>ESC [&lt;row&gt;;&lt;col&gt;R</code>.</li>
+                <li>The measured advance is <code>col - 1</code>.</li>
+            </ol>
+            <p>
+                Our corpus is the fully-qualified set from
+                <code>emoji-test.txt</code> (Unicode 16.0), roughly 3,700 sequences,
+                plus the ASCII printable range for baseline verification. Each
+                sequence is segmented with a UAX&nbsp;#29 implementation; we require
+                exactly one cluster per fully-qualified emoji to validate the
+                segmentation library. The expected width is the sum of per-codepoint
+                widths according to <code>unicode-width</code>, which implements
+                UAX&nbsp;#11. We report <code>deviation = measured - expected</code>.
+            </p>
+
+            <div class="metrics">
+                <div class="metric">
+                    <div class="value">~3,700</div>
+                    <div class="label">Emoji sequences probed</div>
+                </div>
+                <div class="metric">
+                    <div class="value">~20 ms</div>
+                    <div class="label">Per probe</div>
+                </div>
+                <div class="metric">
+                    <div class="value">~75 s</div>
+                    <div class="label">Full calibration</div>
+                </div>
+                <div class="metric">
+                    <div class="value">2</div>
+                    <div class="label">macOS terminals tested</div>
+                </div>
+            </div>
+
+            <p>
+                Both terminals were tested on macOS on Apple Silicon, in the default
+                configuration, with the system's own emoji font and no third-party
+                terminal customisation. The measurements reflect the terminal as
+                shipped.
+            </p>
+        </div>
+    </section>
+
+    <!-- ========== FINDINGS ========== -->
+    <section id="findings">
+        <div class="container">
+            <h2>What we found</h2>
+            <p>
+                Across the two macOS terminals tested, the distribution of per-grapheme
+                deviations is unambiguous. iTerm2 is more compliant but not correct.
+                Terminal.app is dramatically less compliant.
+            </p>
+
+            <table>
+                <thead>
+                    <tr>
+                        <th>Terminal</th>
+                        <th>Version</th>
+                        <th class="num">Deviating sequences</th>
+                        <th class="num">Worst deviation</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td>iTerm2</td>
+                        <td>3.6.11</td>
+                        <td class="num">339</td>
+                        <td class="num">−3</td>
+                    </tr>
+                    <tr>
+                        <td>Terminal.app</td>
+                        <td>2.14 (macOS 15)</td>
+                        <td class="num">2,483</td>
+                        <td class="num">+7</td>
+                    </tr>
+                </tbody>
+            </table>
+
+            <p>
+                The distribution is bimodal. Negative deviations cluster at
+                <strong>−1</strong> and correspond to wide glyphs the terminal
+                renders correctly but advances by one cell. Positive deviations
+                are integers between <strong>+1</strong> and <strong>+7</strong>
+                and correspond to ZWJ sequences where the terminal sums the
+                widths of the constituent codepoints.
+            </p>
+
+            <h3>Mode A — measurement error</h3>
+            <p>
+                The terminal renders the cluster correctly — 2 cells wide on
+                screen — but reports a cursor advance of 1. The visual is right;
+                the cursor is behind. This is the dominant mode for VS16
+                sequences and single-codepoint emoji rendered in emoji
+                presentation. It is what produces the −1 deviations.
+            </p>
+
+            <h3>Mode B — clustering error</h3>
+            <p>
+                The terminal sums the widths of the constituent codepoints.
+                <code>🏌🏼‍♀️</code> becomes <code>2 + 2 + 0 + 1 + 0 = 5</code>
+                (or 7, when the base codepoint has East Asian Width Wide and the
+                modifier does too). The cursor advances by the sum. The visual
+                may or may not match — in some terminals the composed glyph
+                renders correctly and the cursor overshoots; in others the
+                terminal decomposes the sequence and renders each codepoint
+                separately. This is what produces the large positive deviations.
+            </p>
+
+            <div class="highlight">
+                <p>
+                    <strong>Capability is not uniform within a terminal.</strong>
+                    iTerm2 handles the family emoji
+                    <code>👨‍👩‍👧‍👦</code> correctly — it measures two cells,
+                    matching the visual — but mismeasures <code>🏌🏼‍♀️</code>.
+                    A per-terminal boolean flag is insufficient. The deviation is
+                    per-cluster.
+                </p>
+            </div>
+
+            <h3>A note on input</h3>
+            <p>
+                Neither terminal correctly produces a complex grapheme when the
+                sequence is inserted through the macOS input widget (the
+                <code>fn</code> key). Both fail to compose the full ZWJ cluster,
+                emitting a fragment of the sequence instead. This is a separate
+                failure mode from the width miscalculation — it is a defect in the
+                path from the input method to the terminal, not in the terminal's
+                layout logic — but it contributes to the same user-visible
+                breakage. It is mentioned here because it argues against any
+                solution that assumes well-formed clusters arrive at the terminal
+                from the system.
+            </p>
+        </div>
+    </section>
+
+    <!-- ========== PROFILES ========== -->
+    <section id="profiles">
+        <div class="container">
+            <h2>A profile per terminal version</h2>
+            <p>
+                The failure modes we measured are properties of the terminal
+                <em>binary</em>, not of the user's session. Every user of iTerm2
+                3.6.11 on macOS sees the same deviations. This suggests that the
+                expensive calibration pass — probing thousands of sequences at
+                roughly twenty milliseconds each — need only be performed once
+                per terminal version, and distributed.
+            </p>
+
+            <div class="highlight">
+                <p>
+                    <strong>Do once, distribute many times.</strong> A canonical
+                    repository of profiles, updated when new terminal versions ship
+                    and validated by anyone who runs the calibration, means that
+                    most users never run the probe. The library ships with a bundled
+                    snapshot and consults the live cache only when the running
+                    terminal's fingerprint is not covered.
+                </p>
+            </div>
+
+            <h3>The fingerprint</h3>
+            <p>
+                The profile is keyed on a deliberately coarse fingerprint: terminal
+                name, terminal version, and OS family. It excludes <code>TERM</code>,
+                <code>LC_CTYPE</code>, and window identifiers, which describe the
+                session rather than the binary. A profile for "iTerm2 3.6.11 on
+                macOS" is shareable across every iTerm2 3.6.11 installation.
+            </p>
+
+            <h3>Human review as a first-class artifact</h3>
+            <p>
+                A cursor-position probe reports the terminal's internal cursor
+                model, not its visual rendering. When a terminal renders a glyph
+                correctly but mismeasures it, the probe catches the error and a
+                numeric correction can be applied. When a terminal renders a
+                glyph incorrectly — decomposing a ZWJ sequence into visible
+                fragments — the probe reports a value that is consistent with
+                the (wrong) rendering, and no automatic correction is possible.
+            </p>
+            <p>
+                For those residual cases, a human must look at the terminal and
+                decide. Our implementation includes a review mode that walks every
+                deviating entry, displays the suggested correction and its actual
+                visual effect side by side, and allows the reviewer to accept,
+                strip, or adjust. Reviewed entries are marked and are not
+                re-presented in subsequent sessions. The output is a profile with
+                two layers: what the terminal reported, and what a human decided
+                was correct. Both are valuable; the second is authoritative.
+            </p>
+
+            <div class="metrics">
+                <div class="metric">
+                    <div class="value">339</div>
+                    <div class="label">Entries to review — iTerm2</div>
+                </div>
+                <div class="metric">
+                    <div class="value">2,483</div>
+                    <div class="label">Entries to review — Terminal.app</div>
+                </div>
+                <div class="metric">
+                    <div class="value">Resumable</div>
+                    <div class="label">Across sessions</div>
+                </div>
+                <div class="metric">
+                    <div class="value">One-time</div>
+                    <div class="label">Per terminal version</div>
+                </div>
+            </div>
+
+            <p>
+                Two and a half thousand entries is a substantial review pass, but
+                it is a review that a single volunteer performs once for a given
+                terminal version, and that every subsequent user of that version
+                inherits. The economics change when the result is shared.
+            </p>
+        </div>
+    </section>
+
+    <!-- ========== LIMITS ========== -->
+    <section id="limits">
+        <div class="container">
+            <h2>Where the instrument fails</h2>
+            <p>
+                The cursor-position report cannot distinguish a terminal that
+                renders correctly from one that renders incorrectly, if both
+                report the same advance. A terminal that decomposes
+                <code>🏌🏼‍♀️</code> into five visible glyphs and advances by
+                five is self-consistent — the probe reports 5, the visual
+                occupies 5 cells, no correction is needed, and the user sees
+                garbage because the emoji did not compose.
+            </p>
+            <p>
+                No protocol-level query exists that reports how many cells the
+                renderer actually painted. The DECRQCRA sequence — checksum a
+                rectangular area — gets close but is unsupported on both of the
+                terminals we tested. It is not a portable solution.
+            </p>
+
+            <h3>The limits of user-space correction</h3>
+            <p>
+                A library that patches width at emit time can compensate for
+                both modes of error on a per-terminal basis. It cannot:
+            </p>
+            <ul>
+                <li>Communicate a grapheme's intended width to a terminal that
+                    has not been asked.</li>
+                <li>Prevent a terminal from decomposing a ZWJ sequence into
+                    visibly separate glyphs.</li>
+                <li>Handle line-breaking at grapheme boundaries if the terminal
+                    itself wraps mid-cluster.</li>
+            </ul>
+
+            <blockquote>
+                <p>
+                    The eventual correct answer is a new standard and a reference
+                    implementation — a uniconsole that treats the grapheme cluster
+                    as a first-class layout unit and exposes it to applications
+                    through a negotiated protocol. Until that exists, empirical
+                    profiling is what works.
+                </p>
+            </blockquote>
+
+            <h3>What a future standard should specify</h3>
+            <ol>
+                <li>A negotiation handshake that reports the terminal's support
+                    level for extended clusters.</li>
+                <li>A derived width property for grapheme clusters, computed
+                    once by the standard and implemented identically in every
+                    conforming terminal.</li>
+                <li>Defined behaviour for cursor positioning within a cluster,
+                    line-breaking at cluster boundaries, and right-edge handling.</li>
+                <li>A query interface by which an application can ask the terminal
+                    for a cluster's width <em>without writing it</em>, allowing
+                    layout to be computed before emit.</li>
+            </ol>
+
+            <div class="highlight">
+                <p>
+                    <strong>The shared lesson:</strong> the terminal is not a
+                    passive substrate. It has a resolution, a semantic limit, and
+                    a guarantee that is narrower than it might appear. The
+                    interesting failures live at those boundaries — and the
+                    boundary between a grapheme cluster and a fixed-width cell
+                    is one of the least examined.
+                </p>
+            </div>
+        </div>
+    </section>
+
+    <!-- ========== CONCLUSION ========== -->
+    <section id="conclusion">
+        <div class="container">
+            <h2>Conclusion</h2>
+            <p>
+                Modern terminals, including those shipping in 2025, do not
+                correctly measure extended grapheme clusters. The failure is
+                per-cluster, not per-terminal; per-terminal-version, not
+                per-session. It cannot be worked around at the protocol level
+                because the protocol does not expose the information needed to
+                distinguish a correct terminal from a consistently incorrect one.
+            </p>
+            <p>
+                Our contribution is threefold. First, a methodology for
+                characterising terminal behaviour using the standard cursor
+                position report, applied to the full Unicode emoji corpus and
+                validated on the two terminals available to us on macOS. Second,
+                a recognition that the deviations are properties of the terminal
+                binary and are therefore shareable — a profile system that
+                centralises the expensive measurement so that most users never
+                perform it. Third, a demonstration that the residual cases
+                require human review, and a workflow by which that review is
+                incremental, resumable, and produces a durable artifact.
+            </p>
+            <p>
+                The eventual correct answer is a new standard and a reference
+                implementation. Until then, profiling is what works.
+            </p>
+        </div>
+    </section>
+
+    <!-- ========== FOOTER ========== -->
+    <footer>
+        <div class="container">
+            <p>
+                <strong>Terminal Grapheme Width</strong> — a research programme by
+                Sylvain Saucier, with an AI collaborator.
+            </p>
+            <p>
+                The profiling library and review tooling are distributed as the
+                <a href="https://github.com/sysaulab/uniprint"><code>uniprint</code></a> crate. Corpus data derived from Unicode 16.0
+                <code>emoji-test.txt</code>.
+            </p>
+            <p style="margin-top: 1.5rem; font-size: 0.8rem; color: #444;">
+                This page is a lay summary. Measurements reported here reflect
+                iTerm2 3.6.11 and Terminal.app 2.14 on macOS 15, on Apple Silicon,
+                in default configuration. Where this summary and the underlying
+                documents disagree, the documents are authoritative.
+            </p>
+        </div>
+    </footer>
+
+</body>
+</html>
