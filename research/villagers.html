@@ -1,0 +1,729 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Villagers — Density in. Waves out.</title>
+    <meta name="description" content="A systems analysis of Wildwood Village. Economic bottlenecks, spatial efficiency, and the hardware limits of endurance.">
+    <style>
+        /* ---------- RESET & BASE ---------- */
+        *, *::before, *::after {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        html {
+            scroll-behavior: smooth;
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+        }
+
+        body {
+            background-color: #000;
+            color: #e8e8e8;
+            font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+            font-size: 17px;
+            line-height: 1.7;
+            font-weight: 400;
+            letter-spacing: 0.01em;
+        }
+
+        /* ---------- TYPOGRAPHY ---------- */
+        h1, h2, h3, h4 {
+            font-weight: 600;
+            line-height: 1.2;
+            letter-spacing: -0.02em;
+            color: #fff;
+        }
+
+        h1 {
+            font-size: clamp(2.2rem, 5vw, 3.6rem);
+            font-weight: 700;
+            letter-spacing: -0.03em;
+        }
+
+        h2 {
+            font-size: clamp(1.6rem, 3.5vw, 2.2rem);
+            margin-bottom: 1rem;
+        }
+
+        h3 {
+            font-size: clamp(1.15rem, 2.5vw, 1.4rem);
+            margin-bottom: 0.5rem;
+        }
+
+        p {
+            margin-bottom: 1.2rem;
+            color: #c8c8c8;
+        }
+
+        a {
+            color: #7eb8ff;
+            text-decoration: none;
+            border-bottom: 1px solid transparent;
+            transition: border-color 0.2s, color 0.2s;
+        }
+
+        a:hover {
+            color: #a8d0ff;
+            border-bottom-color: #a8d0ff;
+        }
+
+        strong {
+            color: #f0f0f0;
+            font-weight: 600;
+        }
+
+        em {
+            color: #d0d0d0;
+        }
+
+        code {
+            font-family: "SF Mono", "Menlo", "Consolas", monospace;
+            font-size: 0.88em;
+            color: #d8d8d8;
+            background: #141414;
+            padding: 0.1em 0.35em;
+            border-radius: 3px;
+            border: 1px solid #1e1e1e;
+        }
+
+        /* ---------- LAYOUT ---------- */
+        .container {
+            max-width: 820px;
+            margin: 0 auto;
+            padding: 0 1.5rem;
+        }
+
+        section {
+            padding: 4rem 0;
+        }
+
+        section + section {
+            border-top: 1px solid #1a1a1a;
+        }
+
+        /* ---------- HERO ---------- */
+        .hero {
+            padding: 6rem 0 4rem;
+            text-align: left;
+        }
+
+        .hero .subtitle {
+            font-size: clamp(1.05rem, 2.2vw, 1.3rem);
+            color: #999;
+            margin-top: 1rem;
+            max-width: 640px;
+            font-weight: 400;
+            letter-spacing: 0;
+            line-height: 1.6;
+        }
+
+        .hero .tagline {
+            display: inline-block;
+            font-size: 0.75rem;
+            text-transform: uppercase;
+            letter-spacing: 0.15em;
+            color: #666;
+            margin-bottom: 1.5rem;
+            font-weight: 500;
+        }
+
+        /* ---------- CARDS ---------- */
+        .card-grid {
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 1.25rem;
+            margin-top: 2rem;
+        }
+
+        @media (min-width: 640px) {
+            .card-grid {
+                grid-template-columns: 1fr 1fr;
+            }
+        }
+
+        .card {
+            background: #0d0d0d;
+            border: 1px solid #1e1e1e;
+            border-radius: 8px;
+            padding: 1.5rem;
+            transition: border-color 0.2s, background 0.2s;
+        }
+
+        .card:hover {
+            border-color: #333;
+            background: #111;
+        }
+
+        .card h3 {
+            font-size: 1.1rem;
+            margin-bottom: 0.4rem;
+        }
+
+        .card p {
+            font-size: 0.95rem;
+            margin-bottom: 0;
+            color: #aaa;
+        }
+
+        .card .doc-label {
+            font-size: 0.7rem;
+            text-transform: uppercase;
+            letter-spacing: 0.12em;
+            color: #555;
+            margin-bottom: 0.6rem;
+            font-weight: 500;
+        }
+
+        /* ---------- HIGHLIGHT BOX ---------- */
+        .highlight {
+            background: #0a0f14;
+            border-left: 3px solid #2a5a8a;
+            padding: 1.5rem 1.75rem;
+            margin: 2rem 0;
+            border-radius: 0 6px 6px 0;
+        }
+
+        .highlight p {
+            margin-bottom: 0;
+            color: #b8c8d8;
+        }
+
+        .highlight p + p {
+            margin-top: 0.75rem;
+        }
+
+        /* ---------- QUOTE ---------- */
+        blockquote {
+            border-left: 2px solid #333;
+            padding-left: 1.5rem;
+            margin: 2rem 0;
+            font-style: italic;
+            color: #999;
+        }
+
+        blockquote p {
+            color: #999;
+            margin-bottom: 0;
+        }
+
+        /* ---------- METRIC ROW ---------- */
+        .metrics {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+            gap: 1.5rem;
+            margin: 2.5rem 0;
+        }
+
+        .metric {
+            text-align: left;
+        }
+
+        .metric .value {
+            font-size: 2rem;
+            font-weight: 700;
+            color: #fff;
+            letter-spacing: -0.03em;
+            line-height: 1.1;
+        }
+
+        .metric .label {
+            font-size: 0.8rem;
+            color: #777;
+            margin-top: 0.25rem;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            font-weight: 500;
+        }
+
+        /* ---------- LIST ---------- */
+        ul, ol {
+            margin: 1rem 0 1.5rem 1.25rem;
+            color: #c8c8c8;
+        }
+
+        li {
+            margin-bottom: 0.6rem;
+            padding-left: 0.25rem;
+        }
+
+        li strong {
+            color: #e8e8e8;
+        }
+
+        /* ---------- TABLE ---------- */
+        .table-wrap {
+            overflow-x: auto;
+            margin: 2rem 0;
+            border: 1px solid #1a1a1a;
+            border-radius: 8px;
+            background: #0a0a0a;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.92rem;
+        }
+
+        th {
+            text-align: left;
+            font-weight: 600;
+            color: #888;
+            font-size: 0.72rem;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            padding: 0.9rem 1.25rem;
+            border-bottom: 1px solid #1e1e1e;
+            white-space: nowrap;
+        }
+
+        td {
+            padding: 0.85rem 1.25rem;
+            border-bottom: 1px solid #141414;
+            color: #c0c0c0;
+            vertical-align: top;
+        }
+
+        tr:last-child td {
+            border-bottom: none;
+        }
+
+        td:first-child {
+            color: #e8e8e8;
+            white-space: nowrap;
+            font-weight: 500;
+        }
+
+        td code {
+            font-size: 0.85em;
+        }
+
+        /* ---------- DIVIDER ---------- */
+        .divider {
+            width: 40px;
+            height: 2px;
+            background: #333;
+            margin: 1.5rem 0;
+        }
+
+        /* ---------- FOOTER ---------- */
+        footer {
+            padding: 3rem 0 4rem;
+            border-top: 1px solid #1a1a1a;
+            font-size: 0.85rem;
+            color: #555;
+        }
+
+        footer p {
+            color: #555;
+            margin-bottom: 0.5rem;
+        }
+
+        /* ---------- NAV ---------- */
+        nav {
+            padding: 1.5rem 0;
+            border-bottom: 1px solid #1a1a1a;
+        }
+
+        nav .container {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            flex-wrap: wrap;
+            gap: 0.5rem;
+        }
+
+        nav .brand {
+            font-weight: 600;
+            color: #fff;
+            font-size: 0.95rem;
+            letter-spacing: -0.01em;
+        }
+
+        nav .links {
+            display: flex;
+            gap: 1.5rem;
+            font-size: 0.85rem;
+        }
+
+        nav .links a {
+            color: #888;
+            border-bottom: none;
+        }
+
+        nav .links a:hover {
+            color: #fff;
+        }
+
+        /* ---------- RESPONSIVE ---------- */
+        @media (max-width: 600px) {
+            body {
+                font-size: 16px;
+            }
+
+            section {
+                padding: 3rem 0;
+            }
+
+            .hero {
+                padding: 4rem 0 3rem;
+            }
+
+            nav .links {
+                gap: 1rem;
+            }
+
+            .metrics {
+                grid-template-columns: 1fr 1fr;
+            }
+
+            th, td {
+                padding: 0.7rem 1rem;
+            }
+        }
+    </style>
+</head>
+<body>
+
+    <!-- ========== NAV ========== -->
+    <nav>
+        <div class="container">
+            <span class="brand">Villagers</span>
+            <div class="links">
+                <a href="index.html">Back</a>
+                <a href="#what">What</a>
+                <a href="#why">Why</a>
+                <a href="#how">How</a>
+                <a href="#strategy">Strategy</a>
+                <a href="#limits">Limits</a>
+                <a href="#history">History</a>
+            </div>
+        </div>
+    </nav>
+
+    <!-- ========== HERO ========== -->
+    <header class="hero">
+        <div class="container">
+            <span class="tagline">Systems Analysis — Wildwood Village</span>
+            <h1>Density in. Waves out.</h1>
+            <p class="subtitle">
+                Space is the only multiplier that matters. Write your defense as a
+                geometric barrier, and let the sheer volume of fire do the work
+                an Aura was never going to do anyway.
+            </p>
+        </div>
+    </header>
+
+    <!-- ========== WHAT ========== -->
+    <section id="what">
+        <div class="container">
+            <h2>What is Villagers?</h2>
+            <p>
+                <em>Wildwood Village</em> is a survival tower-defense game. You build
+                a base, gather resources, and defend against waves of enemies. You
+                press Space to gather. You build towers.
+            </p>
+            <p>
+                It exists because tower-defense games have spent twenty years adding
+                complex aura systems and synergistic buffs, forgetting the one thing
+                that actually survives the exponential scaling of a 100-wave run:
+                <strong>the enemy should die before it reaches the wall.</strong>
+            </p>
+
+            <div class="highlight">
+                <p>
+                    <strong>The core idea:</strong> a defense is not a central fortress.
+                    It is a perimeter. Space efficiency beats percentage multipliers.
+                    A dense ring of towers on the spawn point is worth more than a
+                    perfectly buffed core sitting in the middle of the map.
+                </p>
+            </div>
+
+            <p>
+                There are no Auras in the maximalist endgame. There are no Quarries
+                to extend range, no Lumber Camps to boost damage. There is pure,
+                unadulterated density. The constraint is the weapon.
+            </p>
+        </div>
+    </section>
+
+    <!-- ========== WHY ========== -->
+    <section id="why">
+        <div class="container">
+            <h2>Why it exists</h2>
+            <p>
+                Most tower-defense games have no concept of <em>"scarcity shifts."</em>
+                They hand you resources at a steady pace and let you build until the
+                map is full. They tell a lie with an economic curve, and it costs you
+                the run at Wave 70.
+            </p>
+            <p>
+                Villagers has the concept. The economy is a moving bottleneck. You
+                start starving for Wood. Then Stone becomes the wall. And finally,
+                the <strong>Food/Attrition Crisis</strong> hits. Because Farms and
+                player regeneration consume Food per HP healed, massive waves turn
+                your food supply into a literal combat health pool. A single bad
+                wave at 97 can drain 6,500 Food and collapse your economy through
+                starvation.
+            </p>
+            <p>
+                The point is not to survive the wave. The point is to take so little
+                structural damage that your farms never have to heal anything. To
+                commit to a <strong>structure</strong> before you touch a single buff.
+                If your kill zones don't make sense as geometry, they won't make
+                sense as a defense, and no Aura will save them.
+            </p>
+        </div>
+    </section>
+
+    <!-- ========== HOW ========== -->
+    <section id="how">
+        <div class="container">
+            <h2>How it works</h2>
+            <p>
+                The math is brutally simple. It requires four buff buildings to
+                double (2x) the power of a single tower. But if you replace those
+                four buff buildings with four additional towers, you get a 5x
+                increase in total firepower (the original tower plus four new ones).
+            </p>
+
+            <div class="metrics">
+                <div class="metric">
+                    <div class="value">1:4</div>
+                    <div class="label">Buff-to-Tower Ratio</div>
+                </div>
+                <div class="metric">
+                    <div class="value">5x</div>
+                    <div class="label">Density Power Delta</div>
+                </div>
+                <div class="metric">
+                    <div class="value">6,500</div>
+                    <div class="label">Food lost in one wave</div>
+                </div>
+                <div class="metric">
+                    <div class="value">100</div>
+                    <div class="label">Practical Wave Limit</div>
+                </div>
+            </div>
+
+            <h3>The rules</h3>
+            <ul>
+                <li><strong>Pods form a perimeter.</strong> Each cluster of towers overlaps to create a continuous kill zone. If there is a gap, the wave will find it.</li>
+                <li><strong>A buff building is a trap.</strong> It consumes physical tiles that could be used for more towers. The math is unforgiving.</li>
+                <li><strong>Enemies spawn</strong> in a ring roughly 520–700 pixels from the Town Center. Build directly on top of it to deny them movement.</li>
+                <li><strong>Overlapping fire</strong> creates a shotgun effect, saturating enemies with crossfire the moment they enter the radius.</li>
+                <li><strong>Auras remain viable</strong> in early-game resource crunches or incomplete outer pods, but they are mathematically inferior in the late game.</li>
+            </ul>
+
+            <h3>Where Auras fit</h3>
+            <p>
+                Despite the late-game dominance of density, Auras remain strategically
+                viable in two specific scenarios: <strong>Early Hard Mode</strong>, when
+                resources are too constrained to build a full 5-tower pod, and
+                <strong>Incomplete Periphery Pods</strong>, acting as a temporary force
+                multiplier until the full tower block is constructed.
+            </p>
+
+            <div class="highlight">
+                <p>
+                    <strong>Space efficiency is free.</strong> By replacing aura buildings
+                    with densely packed Lv4 Towers, players maximize their damage-per-tile.
+                    The constraint of the map becomes the multiplier.
+                </p>
+            </div>
+        </div>
+    </section>
+
+    <!-- ========== STRATEGY ========== -->
+    <section id="strategy">
+        <div class="container">
+            <h2>The Strategy</h2>
+            <p>
+                Traditional defensive play — turtling around a central core — eventually
+                fails under the weight of massive late-game spawns. The optimal strategic
+                configuration shifts to proactive area denial.
+            </p>
+
+            <div class="table-wrap">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Phase</th>
+                            <th>Action</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td>Spawn-Camping</td>
+                            <td>Construct dense tower pods at the periphery, right on the spawn ring, so enemies aggro instantly upon spawning.</td>
+                        </tr>
+                        <tr>
+                            <td>Wave Splitting</td>
+                            <td>A central base allows waves to converge into a single unkillable deathball. Perimeter pods split the wave into smaller, manageable engagements.</td>
+                        </tr>
+                        <tr>
+                            <td>Ablative Armor</td>
+                            <td>Place non-defensive structures (Houses, Storages) at the extreme edges of the map to absorb aggro and buy time for the kill zones.</td>
+                        </tr>
+                        <tr>
+                            <td>Player Body-Block</td>
+                            <td>Stand in the gaps. With the Aegis (62% reduction), you tank the brutes while the towers behind you shoot through you.</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <p>
+                Enemies that overflow the perimeter are auto-aggroed so new
+                spawns are always visible. Manual body-blocking is there for the
+                player when a gap runs long.
+            </p>
+        </div>
+    </section>
+
+    <!-- ========== LIMITS ========== -->
+    <section id="limits">
+        <div class="container">
+            <h2>The Engine Limits</h2>
+            <p>
+                There is a <strong>Wave 150 threshold</strong>. The game's difficulty
+                ceiling is not exclusively dictated by game math, but by the rendering
+                and logic engine.
+            </p>
+            <p>
+                The collision detection function (<code>separateEnemies()</code>)
+                calculates distance checks for every enemy against every other enemy.
+                At 1,500+ enemies, this O(N²) complexity causes severe CPU strain.
+                A* pathfinding algorithms become exponentially heavier as the grid
+                fills with units and structures.
+            </p>
+
+            <div class="card-grid">
+                <div class="card">
+                    <div class="doc-label">The Math</div>
+                    <h3>Exponential scaling</h3>
+                    <p>Enemy HP scales at <code>1 + (waveNum * 0.12)</code>, and damage at
+                    <code>1 + (waveNum * 0.05)</code>. By Wave 150, a Brute carries 1,600 HP
+                    and hits for 110 damage per swing. The mathematical difficulty scales
+                    indefinitely.</p>
+                </div>
+                <div class="card">
+                    <div class="doc-label">The Engine</div>
+                    <h3>Frame-rate collapse</h3>
+                    <p>High-level stress testing reveals that the theoretical mathematical
+                    difficulty is eclipsed by a hard hardware limit around Wave 150 due
+                    to collision checks and floating damage text rendering.</p>
+                </div>
+            </div>
+
+            <div class="highlight">
+                <p>
+                    <strong>A note on documentation:</strong> The theoretical "infinite"
+                    scaling hits a "practical" wall at Wave 100–150. For game developers,
+                    the lesson is clear: balance your economic curves, encourage spatial
+                    thinking, but ensure your collision detection algorithm is
+                    <code>O(N log N)</code> before you let players spawn 200 enemies at once.
+                </p>
+            </div>
+        </div>
+    </section>
+
+    <!-- ========== HISTORY ========== -->
+    <section id="history">
+        <div class="container">
+            <h2>Archaeology</h2>
+            <p>
+                The evolution of the maximalist strategy went through several distinct
+                phases. The first two are worth recording, because the difference between
+                them and the final solution is the whole point.
+            </p>
+
+            <h3>The Turtle</h3>
+            <p>
+                The first. A central fortress. Massive walls. Let them come to you.
+                It absorbed damage and hoped the DPS was high enough before the core
+                fell. It worked, and it was forgotten, by Wave 69 when the core
+                finally collapsed under the weight of the deathball.
+            </p>
+
+            <h3>The Saturation</h3>
+            <p>
+                The second. The map is physically full. The economy is maxed. The
+                auras are overlapping to the point of diminishing returns. You have
+                hit the practical wall of infrastructure. A private language of
+                defense dies with the mood that invented it.
+            </p>
+
+            <h3>Villagers</h3>
+            <p>
+                This one. It replaced the Auras with pure density, deleted every
+                buff building in the center, and added exactly one thing the
+                predecessors never had: a perimeter. <code>Pod { towers, farms }</code>.
+                Everything else is a rounding of what was already there.
+            </p>
+
+            <blockquote>
+                <p>
+                    The first two were built on a laptop during a long weekend, half
+                    a drink in, annoyed at the exponential scaling of Wave 70. That is
+                    the whole origin story. It is not a dramatic one. It is, on
+                    reflection, the correct one.
+                </p>
+            </blockquote>
+        </div>
+    </section>
+
+    <!-- ========== DESIGN ========== -->
+    <section id="design">
+        <div class="container">
+            <h2>Design Notes</h2>
+
+            <h3>Timing</h3>
+            <p>
+                The wave takes 5 seconds to wipe. The enemies spend their entire
+                lifespan walking toward the nearest tower, but they die before they
+                ever get in melee range. These numbers are not tuned to be noticed.
+                They are tuned to be finished before the player starts worrying
+                about the next wave.
+            </p>
+
+            <h3>State</h3>
+            <p>
+                The engine holds a dense grid of towers and a massive array of enemies.
+                Each pod carries its own aggro radius and the sheer list of entities.
+                Animating the crossfire is what makes persistence free. Enemies were
+                never allowed to move, so they never needed to be kited.
+            </p>
+
+            <h3>Wrapping</h3>
+            <p>
+                The wave wraps around the perimeter. No mid-wave breaks. The player
+                is the one exception, and only when a brute needs to be kited away
+                from a collapsing gap.
+            </p>
+        </div>
+    </section>
+
+    <!-- ========== FOOTER ========== -->
+    <footer>
+        <div class="container">
+            <p>
+                <a href="https://sysaulab.github.io/games/village.html"><strong>Villagers</strong> — a systems analysis of Wildwood Village.
+            </p>
+            <p>
+                Copyright (c) 2026. See the game license file for the full text.
+            </p>
+            <p style="margin-top: 1.5rem; font-size: 0.8rem; color: #444;">
+                This page is a systems analysis. The game engine contains the
+                precise rules, the supported mechanics, and the design
+                notes. Where this analysis and the source code disagree, the
+                source code is authoritative.
+            </p>
+        </div>
+    </footer>
+
+</body>
+</html>

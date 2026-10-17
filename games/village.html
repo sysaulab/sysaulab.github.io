@@ -211,6 +211,18 @@
   #saveChip:hover{background:rgba(30,45,28,.95)}
   #saveChip.pulse{background:rgba(96,180,72,.95);
     border-color:#a8e08a;transform:scale(1.06)}
+
+  /* ---- Building upgrade panel (bottom-left) ---- */
+  #bldPanel{position:absolute;bottom:96px;left:16px;background:rgba(16,22,14,.94);
+    border:1px solid rgba(200,230,160,.4);border-radius:12px;padding:12px 14px;
+    display:none;pointer-events:auto;box-shadow:0 8px 30px rgba(0,0,0,.6);min-width:250px}
+  #bldPanel.show{display:block}
+  #bldPanel h4{font-size:11px;letter-spacing:.13em;text-transform:uppercase;
+    color:#d8e8a8;margin-bottom:9px;font-weight:700}
+  #bldPanel .lvl-row{font-size:10.5px;color:#a8c888;margin-bottom:8px;
+    padding-bottom:8px;border-bottom:1px solid rgba(200,230,160,.18);
+    line-height:1.5;font-variant-numeric:tabular-nums}
+  #bldPanel .lvl-row .lbl{opacity:.6}
 </style>
 </head>
 <body>
@@ -280,6 +292,18 @@
     </div>
   </div>
 
+  <div id="bldPanel">
+    <h4>🔨 Building — Upgrade</h4>
+    <div class="lvl-row" id="bldLevelRow"></div>
+    <div class="fg-row" style="margin-bottom:0">
+      <div class="fg-info">
+        <b id="bldName">House Lv1</b>
+        <small id="bldInfo">Pop cap +2</small>
+      </div>
+      <button class="fg-btn" id="bldUpgradeBtn">Upgrade</button>
+    </div>
+  </div>
+
   <div id="perf"></div>
 </div>
 
@@ -317,7 +341,8 @@
       <p><b>WASD</b> move &nbsp;·&nbsp; <b>SPACE</b> gather &nbsp;·&nbsp; <b>1–8</b> build &nbsp;·&nbsp; <b>X</b> sell</p>
       <p><b>Lumber</b> boosts tower damage · <b>Quarry</b> boosts range · <b>Storage</b> boosts fire rate &amp; villager carry.</p>
       <p><b>Farms</b> heal nearby buildings · <b>Forges</b> give global damage to towers &amp; villagers.</p>
-      <p>Villagers clear obstacles in their path — no need to babysit them.</p>
+      <p>Stand near any building to <b>upgrade it with wood</b> — each level boosts its aura and HP.</p>
+      <p>Villagers clear obstacles in their path — no need to babysit them. Enemies must chop through trees and rocks too.</p>
     </div>
     <div class="keyhint">H heal · X sell · M mute · N music · F perf</div>
   </div>
@@ -658,6 +683,38 @@ const BUILD_DEFS={
 };
 const TOWN_DEF={name:'Town Center', w:4,h:4, color:'#c9a45f', roof:'#a07f3e', hp:9999};
 
+/* ---- Wood-fuelled upgrades for non-tower buildings ----------------
+   levels[1] = cost/effect for going from Lv1 -> Lv2
+   levels[2] = cost/effect for going from Lv2 -> Lv3
+   hp[]      = max HP at each level (index 0 == Lv1)
+   ------------------------------------------------------------------ */
+const BUILD_UPGRADES={
+  house:  { maxLevel:3, hp:[70,120,190],
+            levels:[ null,
+              { cost:{wood:30},               desc:'+2 pop cap' },
+              { cost:{wood:70,stone:20},      desc:'+2 pop cap' } ] },
+  farm:   { maxLevel:3, hp:[55,100,160],
+            levels:[ null,
+              { cost:{wood:25},               desc:'+1 food · +2 HP/s aura' },
+              { cost:{wood:55,stone:25},      desc:'+1 food · +2 HP/s aura' } ] },
+  storage:{ maxLevel:3, hp:[70,120,190],
+            levels:[ null,
+              { cost:{wood:40},               desc:'+25% fire rate · +4 carry' },
+              { cost:{wood:90,stone:30},      desc:'+25% fire rate · +4 carry' } ] },
+  lumber: { maxLevel:3, hp:[70,120,190],
+            levels:[ null,
+              { cost:{wood:45},               desc:'+25% tower damage' },
+              { cost:{wood:100,stone:30},     desc:'+25% tower damage' } ] },
+  quarry: { maxLevel:3, hp:[70,120,190],
+            levels:[ null,
+              { cost:{wood:45,stone:30},      desc:'+30 tower range' },
+              { cost:{wood:100,stone:60},     desc:'+30 tower range' } ] },
+  forge:  { maxLevel:3, hp:[90,150,230],
+            levels:[ null,
+              { cost:{wood:40,stone:25},      desc:'+5% global damage' },
+              { cost:{wood:90,stone:55},      desc:'+5% global damage' } ] },
+};
+
 const AURA_DEFS={
   lumber:  { radius:170, dmgBonus:0.25,  label:'+25% tower damage' },
   quarry:  { radius:170, rangeBonus:30,  label:'+30 tower range' },
@@ -762,7 +819,6 @@ let waveNum=0;
 let nextWaveT=firstWaveDelaySeconds();
 let painting=false, lastPaintTile=-1;
 let nearTower=null;
-//let deliveryPt={x:0,y:0};
 
 let gameState='menu';
 let perfOn=false, perfAccum=0, perfFrames=0;
@@ -779,14 +835,18 @@ function genWorld(){
 
   const cx=WN/2, cy=WN/2;
 
+  /* ---- Terrain: a broad continent with scattered lakes.
+     No island falloff at the edges, so the land runs to the
+     horizon and resources are plentiful. ---- */
   for(let y=0;y<WN;y++){
     for(let x=0;x<WN;x++){
       const i=y*WN+x;
-      let n=fbm(x*0.075, y*0.075, 1);
+      const e=fbm(x*0.075, y*0.075, 1);
+      const l=fbm(x*0.042+310, y*0.042+170, 5);
+      let n = e*0.70 + l*0.42 + 0.03;
       const d=Math.hypot(x-cx,y-cy)/(WN*0.5);
-      n+=Math.max(0,0.42-d)*1.15;
-      n-=Math.max(0,d-0.80)*3.2;
-      tiles[i]= n<0.415 ? T_WATER : T_GRASS;
+      n += Math.max(0,0.34-d)*0.90;   // keep the town's clearing dry
+      tiles[i]= n<0.45 ? T_WATER : T_GRASS;
       tileVar[i]=hash2(x*13+1,y*7+3);
     }
   }
@@ -800,6 +860,7 @@ function genWorld(){
       }
     }
   }
+  /* ---- Denser resource scatter ---- */
   for(let y=2;y<WN-2;y++){
     for(let x=2;x<WN-2;x++){
       const i=y*WN+x;
@@ -808,16 +869,16 @@ function genWorld(){
       const forest=fbm(x*0.10+50, y*0.10+50, 2);
       const rocky =fbm(x*0.11+90, y*0.11+90, 3);
       const r=hash2(x*3+7,y*5+11);
-      if(forest>0.545 && r<0.62)       addNode('tree',x,y);
-      else if(rocky>0.585 && r<0.42)   addNode('rock',x,y);
-      else if(r>0.945)                 addNode('bush',x,y);
+      if(forest>0.530 && r<0.62)       addNode('tree',x,y);
+      else if(rocky>0.560 && r<0.50)   addNode('rock',x,y);
+      else if(r>0.920)                 addNode('bush',x,y);
     }
   }
   const tx=Math.floor(cx)-2, ty=Math.floor(cy)-2;
   townCenter={ kind:'bld', type:'town', tx, ty, w:4, h:4,
                x:tx*TS, y:ty*TS, ySort:(ty+4)*TS, cd:5,
                hp:TOWN_DEF.hp, maxHp:TOWN_DEF.hp, flash:0,
-               lastDamageT:-999, regenAccum:0 };
+               lastDamageT:-999, regenAccum:0, level:1 };
   buildings.push(townCenter);
   occupy(townCenter);
   clearNodesIn(tx,ty,4,4);
@@ -868,7 +929,6 @@ function findDropoffFor(v){
   return best;
 }
 function findDropoffPoint(b, fromX, fromY){
-  /* Walkable tile adjacent to the building, nearest to (fromX, fromY). */
   let best=null, bestD=1e9;
   for(let ty=b.ty-1; ty<=b.ty+b.h; ty++){
     for(let tx=b.tx-1; tx<=b.tx+b.w; tx++){
@@ -950,6 +1010,7 @@ function collideAt(x,y,r,soft){
   }
   return false;
 }
+/* Enemies are stopped by water, buildings AND solid nodes (trees/rocks). */
 function collideEnemyAt(x,y,r){
   const x0=Math.floor((x-r)/TS), x1=Math.floor((x+r)/TS);
   const y0=Math.floor((y-r)/TS), y1=Math.floor((y+r)/TS);
@@ -959,6 +1020,8 @@ function collideEnemyAt(x,y,r){
       const i=ty*WN+tx;
       if(tiles[i]===T_WATER) return true;
       if(bldAt[i]) return true;
+      const n=nodeAt[i];
+      if(n && n.alive && NODE_DEFS[n.type].solid) return true;
     }
   }
   return false;
@@ -971,6 +1034,18 @@ function getBuildingAt(x,y,r){
       if(tx<0||ty<0||tx>=WN||ty>=WN) continue;
       const b=bldAt[ty*WN+tx];
       if(b) return b;
+    }
+  }
+  return null;
+}
+function getNodeAt(x,y,r){
+  const x0=Math.floor((x-r)/TS), x1=Math.floor((x+r)/TS);
+  const y0=Math.floor((y-r)/TS), y1=Math.floor((y+r)/TS);
+  for(let ty=y0;ty<=y1;ty++){
+    for(let tx=x0;tx<=x1;tx++){
+      if(tx<0||ty<0||tx>=WN||ty>=WN) continue;
+      const n=nodeAt[ty*WN+tx];
+      if(n && n.alive && NODE_DEFS[n.type].solid) return n;
     }
   }
   return null;
@@ -1110,12 +1185,6 @@ function hasLineOfSight(x0,y0,x1,y1,r,soft){
   return true;
 }
 
-/* ------------------------------------------------------------
-   Opportunistic mining helper
-   Samples along the ray from the villager toward (tx, ty) and
-   returns the first solid node it finds. Lets villagers mine
-   whatever is standing between them and their goal.
-   ------------------------------------------------------------ */
 function nodeBlockingDirection(v, tx, ty){
   const dx = tx - v.x, dy = ty - v.y;
   const d = Math.hypot(dx, dy);
@@ -1149,7 +1218,6 @@ function villagerPathMove(v, targetX, targetY, dt, speedMul){
   const noPath = !v.path || v.path.length===0 || v.pathIdx>=v.path.length;
 
   if(targetChanged || noPath){
-    /* ---- Bigger A* budget so long paths across a dense village succeed ---- */
     v.path = findTilePath(vtx, vty, gtx, gty, 2200, false);
     v.pathIdx = 1;
     v.pathTargetX = gtx;
@@ -1193,7 +1261,12 @@ function villagerPathMove(v, targetX, targetY, dt, speedMul){
    ============================================================ */
 function resCap(){ return 200+150*buildings.filter(b=>b.type==='storage').length; }
 function countType(t){ return buildings.filter(b=>b.type===t).length; }
-function popCap(){ return 5+2*countType('house'); }
+function sumLevels(t){
+  let s=0;
+  for(const b of buildings) if(b.type===t) s += (b.level||1);
+  return s;
+}
+function popCap(){ return 5 + 2*sumLevels('house'); }
 function pop(){ return villagers.length+1; }
 function getFood(){ return foodFloat; }
 function addRes(type,n){
@@ -1209,7 +1282,7 @@ function harvestMultiplier(){ return 1 + player.weaponLv*0.18; }
 const VILLAGER_BASE_CARRY = 8;
 const VILLAGER_CARRY_PER_STORAGE = 4;
 function villagerCarryCap(){
-  return VILLAGER_BASE_CARRY + VILLAGER_CARRY_PER_STORAGE * countType('storage');
+  return VILLAGER_BASE_CARRY + VILLAGER_CARRY_PER_STORAGE * sumLevels('storage');
 }
 
 function lowestResourceType(){
@@ -1229,8 +1302,12 @@ function nodeTypeForResource(res){
    AURA SYSTEM
    ============================================================ */
 function recomputeTowerBuffs(){
-  const forgeCount = buildings.filter(b=>b.type==='forge').length;
-  const globalDmg = Math.min(forgeCount*0.05, 0.30);
+  let globalDmg = 0;
+  for(const b of buildings){
+    if(b.type!=='forge') continue;
+    globalDmg += AURA_DEFS.forge.globalDmg * (b.level||1);
+  }
+  globalDmg = Math.min(globalDmg, 0.45);
 
   for(const t of buildings){
     if(t.type!=='tower') continue;
@@ -1242,16 +1319,17 @@ function recomputeTowerBuffs(){
       if(b===t) continue;
       const A = AURA_DEFS[b.type];
       if(!A || A.radius===0) continue;
+      const lv = b.level||1;
       const bcx=b.x+b.w*TS/2, bcy=b.y+b.h*TS/2;
       if(Math.hypot(bcx-cx, bcy-cy) < A.radius){
-        if(A.dmgBonus)   t.buffDmg   += A.dmgBonus;
-        if(A.rangeBonus) t.buffRange += A.rangeBonus;
-        if(A.rateBonus)  t.buffRate  += A.rateBonus;
+        if(A.dmgBonus)   t.buffDmg   += A.dmgBonus*lv;
+        if(A.rangeBonus) t.buffRange += A.rangeBonus*lv;
+        if(A.rateBonus)  t.buffRate  += A.rateBonus*lv;
       }
     }
-    t.buffDmg   = safe(Math.min(t.buffDmg, 1.00), 0);
-    t.buffRange = safe(Math.min(t.buffRange, 90), 0);
-    t.buffRate  = safe(Math.min(t.buffRate, 0.75), 0);
+    t.buffDmg   = safe(Math.min(t.buffDmg, 1.50), 0);
+    t.buffRange = safe(Math.min(t.buffRange, 120), 0);
+    t.buffRate  = safe(Math.min(t.buffRate, 1.00), 0);
     t.globalDmg = safe(globalDmg, 0);
   }
 }
@@ -1263,6 +1341,19 @@ function farmInRangeOf(b){
     if(Math.hypot(bcx-fcx, bcy-fcy) < AURA_DEFS.farm.radius) return true;
   }
   return false;
+}
+/* Strongest farm aura covering this building (scales with farm level). */
+function farmHealRateFor(b){
+  const bcx=b.x+b.w*TS/2, bcy=b.y+b.h*TS/2;
+  let best=0;
+  for(const f of buildings){
+    if(f.type!=='farm') continue;
+    const fcx=f.x+f.w*TS/2, fcy=f.y+f.h*TS/2;
+    if(Math.hypot(bcx-fcx, bcy-fcy) < AURA_DEFS.farm.radius){
+      best = Math.max(best, FARM_HEAL_RATE*(f.level||1));
+    }
+  }
+  return best;
 }
 
 /* ============================================================
@@ -1299,19 +1390,23 @@ function updateHealing(dt){
   } else { player.regenAccum = 0; }
 
   for(const b of buildings){
-    if(buildingIsHealing(b)){
-      const want = Math.min(FARM_HEAL_RATE*dt, b.maxHp - b.hp);
-      const cost = want * FOOD_PER_HP;
-      if(foodFloat >= cost){
-        foodFloat -= cost;
-        b.hp += want;
-        b.regenAccum = (b.regenAccum||0) + want;
-        if(b.regenAccum >= 1){
-          addFloat(b.x + b.w*TS/2, b.y - 14, '+1', '#88e0ff');
-          b.regenAccum -= 1;
-        }
+    if(b.type==='town' || b.hp<=0 || b.hp>=b.maxHp ||
+       state.t-(b.lastDamageT||-999) <= REGEN_DELAY){
+      b.regenAccum = 0; continue;
+    }
+    const rate = farmHealRateFor(b);
+    if(rate<=0 || foodFloat<=0){ b.regenAccum = 0; continue; }
+    const want = Math.min(rate*dt, b.maxHp - b.hp);
+    const cost = want * FOOD_PER_HP;
+    if(foodFloat >= cost){
+      foodFloat -= cost;
+      b.hp += want;
+      b.regenAccum = (b.regenAccum||0) + want;
+      if(b.regenAccum >= 1){
+        addFloat(b.x + b.w*TS/2, b.y - 14, '+1', '#88e0ff');
+        b.regenAccum -= 1;
       }
-    } else { b.regenAccum = 0; }
+    }
   }
 }
 
@@ -1324,6 +1419,28 @@ function refundFor(type){
   const out={};
   for(const k in def.cost){
     const r=Math.floor(def.cost[k]*SELL_REFUND_RATIO);
+    if(r>0) out[k]=r;
+  }
+  return out;
+}
+/* Base cost + every upgrade paid, refunded at ⅔. */
+function refundForBuilding(b){
+  const def=BUILD_DEFS[b.type];
+  if(!def) return null;
+  const total={};
+  for(const k in def.cost) total[k]=(total[k]||0)+def.cost[k];
+  const U=BUILD_UPGRADES[b.type];
+  if(U){
+    const lv=b.level||1;
+    for(let i=1;i<lv;i++){
+      const step=U.levels[i];
+      if(!step) continue;
+      for(const k in step.cost) total[k]=(total[k]||0)+step.cost[k];
+    }
+  }
+  const out={};
+  for(const k in total){
+    const r=Math.floor(total[k]*SELL_REFUND_RATIO);
     if(r>0) out[k]=r;
   }
   return out;
@@ -1349,7 +1466,7 @@ function roadTileAtMouse(){
 }
 function sellBuilding(b){
   if(!b || b.type==='town') return false;
-  const refund=refundFor(b.type);
+  const refund=refundForBuilding(b);
   if(!refund) return false;
   const cap=resCap();
   for(const k in refund){
@@ -1525,7 +1642,8 @@ function tryPlace(){
             hp:def.hp, maxHp:def.hp, flash:0,
             lastDamageT:-999, regenAccum:0,
             fireCd:Math.random()*TOWER_LEVELS[0].cd,
-            buffDmg:0, buffRange:0, buffRate:0, globalDmg:0 };
+            buffDmg:0, buffRange:0, buffRate:0, globalDmg:0,
+            level:1 };
   if(buildMode==='tower'){
     b.level=1;
     b.hp=b.maxHp=TOWER_LEVELS[0].hp;
@@ -1552,6 +1670,42 @@ function selectBuild(type){
 }
 
 /* ============================================================
+   BUILDING UPGRADES (wood-fuelled, non-tower)
+   ============================================================ */
+function findNearestUpgradableBuilding(){
+  let best=null, bd=125;
+  for(const b of buildings){
+    if(b.type==='town' || b.type==='tower' || b.type==='road') continue;
+    if(!BUILD_UPGRADES[b.type]) continue;
+    const cx=b.x+b.w*TS/2, cy=b.y+b.h*TS/2;
+    const d=Math.hypot(cx-player.x, cy-player.y);
+    if(d<bd){ bd=d; best=b; }
+  }
+  return best;
+}
+function upgradeBuildingAt(b){
+  if(gameState!=='playing' || !b) return;
+  const U=BUILD_UPGRADES[b.type];
+  if(!U) return;
+  const lv=b.level||1;
+  if(lv>=U.maxLevel) return;
+  const step=U.levels[lv];
+  if(!step) return;
+  if(!canAffordCost(step.cost)) return;
+  payCost(step.cost);
+  b.level=lv+1;
+  const newMax=U.hp[b.level-1];
+  const delta=Math.max(0, newMax-b.maxHp);
+  b.maxHp=newMax;
+  b.hp=Math.min(newMax, b.hp+delta);
+  recomputeTowerBuffs();
+  addFloat(b.x+b.w*TS/2, b.y-24, 'Lv'+b.level+'!', '#c8f0a8');
+  sfx('upgrade');
+  refreshBldPanel();
+  refreshForgeAndTowerPanels();
+}
+
+/* ============================================================
    VILLAGERS
    ============================================================ */
 const VILLAGER_COLORS=[
@@ -1560,7 +1714,6 @@ const VILLAGER_COLORS=[
   {body:'#6fae5a',skin:'#f2cba0',hair:'#8a6a3a'},
   {body:'#b58ad6',skin:'#e0a878',hair:'#2a1a10'},
 ];
-
 
 /* A walkable spot next to a random house, or null if none can be found. */
 function findHouseRespawnSpot(){
@@ -1573,7 +1726,6 @@ function findHouseRespawnSpot(){
   if(!spot) spot = findWalkableSpotNear(baseX, baseY, 220);
   return spot;
 }
-
 
 function spawnVillager(){
   let spot = findHouseRespawnSpot();
@@ -1594,7 +1746,6 @@ function spawnVillager(){
   villagers.push(v);
   addFloat(v.x,v.y,'A villager arrived!','#8ee06a');
 }
-/* ---- Bigger search range: find resources from farther away ---- */
 function nodeBadForVillager(v, n){
   if(!v.badNodes) return false;
   const t = v.badNodes.get(n);
@@ -1654,12 +1805,10 @@ const VILLAGER_DMG=8;
 const VILLAGER_ATK_RANGE=70;
 const VILLAGER_ATK_CD=1.2;
 
-/* Villagers inherit the hero's forged weapon & shield upgrades. */
 function heroWeaponDamage(){
   return player.weaponLv>0 ? WEAPON_LEVELS[player.weaponLv-1].damage : 3;
 }
 function villagerDamage(){
-  // keep the villager's own base of 8, then add the weapon's upgrade delta
   return VILLAGER_DMG + (heroWeaponDamage() - 3);
 }
 function villagerDamageReduction(){
@@ -1673,7 +1822,6 @@ function updateVillager(v,dt){
   if(v.swingT>0) v.swingT-=dt;
   v.retarget-=dt;
 
-  /* --- Nudge out of solid nodes (rare, but possible) --- */
   if(collideAt(v.x, v.y, v.r, false)){
     for(let rad=4; rad<=64; rad+=4){
       let done=false;
@@ -1687,7 +1835,6 @@ function updateVillager(v,dt){
     }
   }
 
-  /* --- Stuck detection (skip while gathering — standing still is expected) --- */
   v._stuckCD-=dt;
   if(v._stuckCD<=0){
     v._stuckCD=0.5;
@@ -1741,8 +1888,6 @@ function updateVillager(v,dt){
         }
 
         if(v._hardStuckT >= 6.0){
-          /* Last resort: release any claim and respawn at a random house
-             instead of piling up around the town center. */
           if(v.target && v.target.claimed===v) v.target.claimed=null;
 
           const oldX=v.x, oldY=v.y;
@@ -1758,7 +1903,7 @@ function updateVillager(v,dt){
           v.path    = null;
           v.pathIdx = 0;
           v.target  = null;
-          v.dropoffBuilding = null;   // re-pick nearest drop-off from new spot
+          v.dropoffBuilding = null;
           v.dropoffPoint    = null;
           if(v.state!=='return') v.state='seek';
           v._hardStuckT = 0;
@@ -1772,8 +1917,6 @@ function updateVillager(v,dt){
     }
   }
 
-  /* --- Opportunistic mining: if we're blocked while seeking, mine the
-         solid node directly between us and our target --- */
   if(!v.moving && v.state==='seek' && v.target && v.target.alive){
     const dTarget = Math.hypot(v.target.x-v.x, v.target.y-v.y);
     if(dTarget > 32){
@@ -1788,7 +1931,6 @@ function updateVillager(v,dt){
     }
   }
 
-  /* --- Threat / flee --- */
   const threat = findNearestEnemy(v.x, v.y, 130);
   if(threat && v.hp < v.maxHp*0.35){
     v.state='flee';
@@ -1811,7 +1953,6 @@ function updateVillager(v,dt){
     }
   }
 
-  /* --- Auto-attack --- */
   if(v.state!=='flee' && v.atkCd<=0){
     const t = findNearestEnemy(v.x, v.y, VILLAGER_ATK_RANGE);
     if(t){
@@ -1827,7 +1968,6 @@ function updateVillager(v,dt){
 
   const roadMul = isOnRoad(v.x,v.y) ? 1.4 : 1;
 
-  /* ---------- SEEK ---------- */
   if(v.state==='seek'){
     if(v.carry>0){ v.state='return'; v.path=null; return; }
 
@@ -1863,7 +2003,6 @@ function updateVillager(v,dt){
     else villagerPathMove(v, v.target.x, v.target.y, dt, roadMul);
     v.bob+=dt*8;
   }
-  /* ---------- GATHER ---------- */
   else if(v.state==='gather'){
     if(!v.target || !v.target.alive){
       if(v.target && v.target.claimed===v) v.target.claimed=null;
@@ -1880,19 +2019,17 @@ function updateVillager(v,dt){
 
     v.timer += dt*rate/def.gatherTime;
     v.bob += dt*10;
-        if(v.timer>=1){
+    if(v.timer>=1){
       v.timer=0;
       damageNode(v.target);
       v.carry += def.amount;
 
       if(v.carry >= villagerCarryCap()){
-        // Carry full — head home.
         if(v.target && v.target.claimed===v) v.target.claimed=null;
         v.target=null;
         v.state='return';
         v.path=null;
       } else if(!v.target || !v.target.alive){
-        // Node exhausted but we still have carry room — pick another.
         if(v.target && v.target.claimed===v) v.target.claimed=null;
         v.target=null;
         v.state='seek';
@@ -1901,7 +2038,6 @@ function updateVillager(v,dt){
       }
     }
   }
-  /* ---------- RETURN ---------- */
   else if(v.state==='return'){
     if(!v.dropoffBuilding || buildings.indexOf(v.dropoffBuilding)<0){
       v.dropoffBuilding = findDropoffFor(v);
@@ -1909,7 +2045,6 @@ function updateVillager(v,dt){
       v.path = null; v.pathIdx = 0;
     }
 
-    /* No buildings at all → just deposit where we are. */
     if(!v.dropoffBuilding){
       if(v.carry>0 && v.carryType){
         addRes(v.carryType, v.carry);
@@ -1925,7 +2060,6 @@ function updateVillager(v,dt){
       v.path = null; v.pathIdx = 0;
     }
 
-    /* Building is boxed in with no adjacent walkable tile → deposit here. */
     if(!v.dropoffPoint){
       if(v.carry>0 && v.carryType){
         addRes(v.carryType, v.carry);
@@ -1975,8 +2109,9 @@ function damageVillager(v, dmg){
 /* ============================================================
    NODES
    ============================================================ */
-function damageNode(n){
-  n.hp--;
+function damageNode(n, amount){
+  if(!n || !n.alive) return;
+  n.hp -= (amount===undefined ? 1 : amount);
   n.shake=0.28;
   if(n.hp<=0){
     n.alive=false;
@@ -2021,7 +2156,7 @@ function spawnEnemy(type){
   let x=townCenter.x+64+Math.cos(ang)*dist;
   let y=townCenter.y+64+Math.sin(ang)*dist;
   x=clamp(x,30,WPX-30); y=clamp(y,30,WPX-30);
-  for(let tries=0; tries<10 && collideEnemyAt(x,y,def.r); tries++){
+  for(let tries=0; tries<40 && collideEnemyAt(x,y,def.r); tries++){
     x=clamp(x + (Math.random()-0.5)*80, 30, WPX-30);
     y=clamp(y + (Math.random()-0.5)*80, 30, WPX-30);
   }
@@ -2053,19 +2188,30 @@ function pickEnemyTarget(e){
   }
   return bestB || player;
 }
+/* Returns { b: blocking building, n: blocking solid node } */
 function moveEnemy(e, tx, ty, dt){
   const dx=tx-e.x, dy=ty-e.y;
   const d=Math.hypot(dx,dy)||1;
   const step=Math.min(e.speed*dt, d);
   const nx=dx/d*step, ny=dy/d*step;
-  let blockedBld=null;
+  let blockedBld=null, blockedNode=null;
+
   const nxT=e.x+nx;
   if(!collideEnemyAt(nxT, e.y, e.r)) e.x=nxT;
-  else { const b=getBuildingAt(nxT, e.y, e.r); if(b && b.type!=='town') blockedBld=b; }
+  else {
+    const b=getBuildingAt(nxT, e.y, e.r);
+    if(b && b.type!=='town') blockedBld=b;
+    else { const n=getNodeAt(nxT, e.y, e.r); if(n) blockedNode=n; }
+  }
+
   const nyT=e.y+ny;
   if(!collideEnemyAt(e.x, nyT, e.r)) e.y=nyT;
-  else { const b=getBuildingAt(e.x, nyT, e.r); if(b && b.type!=='town' && !blockedBld) blockedBld=b; }
-  return blockedBld;
+  else {
+    const b=getBuildingAt(e.x, nyT, e.r);
+    if(b && b.type!=='town' && !blockedBld) blockedBld=b;
+    else if(!blockedNode){ const n=getNodeAt(e.x, nyT, e.r); if(n) blockedNode=n; }
+  }
+  return { b:blockedBld, n:blockedNode };
 }
 function updateEnemy(e, dt){
   if(e.dead) return;
@@ -2073,6 +2219,21 @@ function updateEnemy(e, dt){
   if(e.attackCd>0) e.attackCd-=dt;
   e.bob += dt*6;
   e.retarget -= dt;
+
+  /* Safety: if we somehow ended up inside a solid tile, crawl out. */
+  if(collideEnemyAt(e.x, e.y, e.r)){
+    for(let rad=6; rad<=96; rad+=8){
+      let done=false;
+      for(let a=0; a<10; a++){
+        const ang=a*TAU/10;
+        const nx=e.x+Math.cos(ang)*rad;
+        const ny=e.y+Math.sin(ang)*rad;
+        if(!collideEnemyAt(nx,ny,e.r)){ e.x=nx; e.y=ny; done=true; break; }
+      }
+      if(done) break;
+    }
+  }
+
   if(e.retarget<=0){
     e.retarget=0.9;
     e.target=pickEnemyTarget(e);
@@ -2099,9 +2260,15 @@ function updateEnemy(e, dt){
     }
   } else {
     const blocked=moveEnemy(e, tx, ty, dt);
-    if(blocked && e.attackCd<=0){
-      e.attackCd=e.cd;
-      damageBuilding(blocked, e.damage);
+    if(e.attackCd<=0){
+      if(blocked.b){
+        e.attackCd=e.cd;
+        damageBuilding(blocked.b, e.damage);
+      } else if(blocked.n){
+        /* Trees & rocks stand in the way — hack through them. */
+        e.attackCd = Math.max(0.35, e.cd*0.6);
+        damageNode(blocked.n, e.type==='brute' ? 2 : 1);
+      }
     }
   }
 }
@@ -2409,12 +2576,14 @@ function resetGame(){
 
   forgePanel.classList.remove('show');
   towerPanel.classList.remove('show');
+  bldPanel.classList.remove('show');
   updateSellChip();
   updateHintText();
   recomputeTowerBuffs();
 
   updateUI();
   refreshForgeAndTowerPanels();
+  refreshBldPanel();
 }
 function startGame(){
   getAC();
@@ -2511,16 +2680,12 @@ document.getElementById('btnContinue').addEventListener('click', ()=>{
   }
 });
 
-/* Ctrl+S to save during play */
 window.addEventListener('keydown', (e)=>{
   if((e.ctrlKey || e.metaKey) && e.code === 'KeyS'){
     e.preventDefault();
     if(gameState === 'playing') saveGame(false);
   }
 }, { capture: true });
-
-/* Autosave whenever a new wave spawns */
-function autosave(){ saveGame(true); }
 
 /* ============================================================
    UPDATE
@@ -2575,7 +2740,7 @@ function update(dt){
     if(b.flash>0) b.flash-=dt;
     if(b.type==='farm'){
       b.cd-=dt;
-      if(b.cd<=0){ b.cd=7; addRes('food',1); }
+      if(b.cd<=0){ b.cd=7; addRes('food', b.level||1); }
     }
     if(b.type==='town'){
       b.cd-=dt;
@@ -2654,7 +2819,7 @@ function update(dt){
   if(uiTimer<=0){ uiTimer=0.15; updateUI(); }
 
   panelTimer-=dt;
-  if(panelTimer<=0){ panelTimer=0.12; refreshForgeAndTowerPanels(); }
+  if(panelTimer<=0){ panelTimer=0.12; refreshForgeAndTowerPanels(); refreshBldPanel(); }
 }
 
 /* ============================================================
@@ -2780,7 +2945,7 @@ function render(){
       ctx.lineWidth=2.5;
       ctx.strokeRect(x+1, y+1, w-2, h-2);
       const def=BUILD_DEFS[b.type];
-      const refund=refundFor(b.type);
+      const refund=refundForBuilding(b);
       const lines=['Sell '+def.name, refundText(refund)];
       ctx.font='bold 12px ui-sans-serif,sans-serif';
       let maxW=0;
@@ -3124,6 +3289,17 @@ function drawBuilding(b){
     ctx.fillStyle='#e05a5a';
     ctx.fillRect(x+4, y-8, barW*clamp(b.hp/b.maxHp,0,1), barH);
   }
+
+  /* Level pips for upgraded non-tower buildings */
+  if(b.type!=='town' && b.type!=='tower' && (b.level|0) > 1){
+    const n = Math.min(3, b.level|0);
+    for(let i=0;i<n;i++){
+      ctx.fillStyle='rgba(0,0,0,.5)';
+      ctx.beginPath(); ctx.arc(x+8+i*7, y-15, 3.4, 0, TAU); ctx.fill();
+      ctx.fillStyle='#ffe08a';
+      ctx.beginPath(); ctx.arc(x+8+i*7, y-15, 2.3, 0, TAU); ctx.fill();
+    }
+  }
 }
 
 function drawPerson(p, colors){
@@ -3358,11 +3534,22 @@ const towerAuraRow=document.getElementById('towerAuraRow');
 const towerUpgradeBtn=document.getElementById('towerUpgradeBtn');
 const foodChip=document.getElementById('foodChip');
 const perfEl=document.getElementById('perf');
+
+const bldPanel=document.getElementById('bldPanel');
+const bldName=document.getElementById('bldName');
+const bldInfo=document.getElementById('bldInfo');
+const bldLevelRow=document.getElementById('bldLevelRow');
+const bldUpgradeBtn=document.getElementById('bldUpgradeBtn');
+
 perfEl.style.display='none';
 
 fgWeaponBtn.addEventListener('click', forgeWeapon);
 fgShieldBtn.addEventListener('click', forgeShield);
 towerUpgradeBtn.addEventListener('click', upgradeTower);
+bldUpgradeBtn.addEventListener('click', ()=>{
+  const b=findNearestUpgradableBuilding();
+  if(b) upgradeBuildingAt(b);
+});
 
 const _domCache={};
 function setText(el, key, val){
@@ -3458,6 +3645,42 @@ function buildBar(){
   sellBtn.addEventListener('click',()=>toggleSellMode());
   buildbar.appendChild(sellBtn);
   refreshBuildBar();
+}
+
+/* ---- Building upgrade panel ---- */
+function refreshBldPanel(){
+  if(gameState!=='playing'){
+    if(_domCache._bldShown){ _domCache._bldShown=false; bldPanel.classList.remove('show'); }
+    return;
+  }
+  const b=findNearestUpgradableBuilding();
+  if(!b){
+    if(_domCache._bldShown){ _domCache._bldShown=false; bldPanel.classList.remove('show'); }
+    return;
+  }
+  if(!_domCache._bldShown){ _domCache._bldShown=true; bldPanel.classList.add('show'); }
+
+  const U=BUILD_UPGRADES[b.type];
+  const def=BUILD_DEFS[b.type];
+  const lv=b.level||1;
+
+  setText(bldName,'bldName', `${def.name} Lv${lv}`);
+  setText(bldLevelRow,'bldLevelRow',
+    `HP ${Math.round(b.hp)} / ${b.maxHp} · Level ${lv} of ${U.maxLevel}`);
+
+  if(lv>=U.maxLevel){
+    setText(bldInfo,'bldInfo','Fully upgraded — maximum level');
+    setText(bldUpgradeBtn,'bldUpgradeBtn','MAX');
+    if(_domCache._bldBtn!==false){ _domCache._bldBtn=false; bldUpgradeBtn.disabled=true; }
+  } else {
+    const step=U.levels[lv];
+    const costStr=Object.entries(step.cost)
+      .map(([k,v])=>`${v} ${k[0].toUpperCase()+k.slice(1)}`).join(' · ');
+    setText(bldInfo,'bldInfo', `${step.desc} — ${costStr}`);
+    setText(bldUpgradeBtn,'bldUpgradeBtn',`Upgrade Lv${lv+1}`);
+    const aff=canAffordCost(step.cost);
+    if(_domCache._bldBtn!==aff){ _domCache._bldBtn=aff; bldUpgradeBtn.disabled=!aff; }
+  }
 }
 
 function refreshForgeAndTowerPanels(){
@@ -3739,7 +3962,7 @@ function loadGame(){
         lastDamageT: b.ldt, regenAccum:0,
         fireCd: b.fcd,
         buffDmg:b.bd, buffRange:b.br, buffRate:b.bf, globalDmg:b.gd,
-        level: b.lv,
+        level: b.lv || 1,
       };
       if(b.t === 'tower') bld.level = b.lv || 1;
       buildings.push(bld);
@@ -3751,7 +3974,7 @@ function loadGame(){
       townCenter = { kind:'bld', type:'town', tx, ty, w:4, h:4,
                      x:tx*TS, y:ty*TS, ySort:(ty+4)*TS, cd:5,
                      hp:TOWN_DEF.hp, maxHp:TOWN_DEF.hp, flash:0,
-                     lastDamageT:-999, regenAccum:0 };
+                     lastDamageT:-999, regenAccum:0, level:1 };
       buildings.push(townCenter);
       occupy(townCenter);
     }
@@ -3809,6 +4032,7 @@ function loadGame(){
     updateHintText();
     updateUI();
     refreshForgeAndTowerPanels();
+    refreshBldPanel();
 
     getAC();
     startMusic();
