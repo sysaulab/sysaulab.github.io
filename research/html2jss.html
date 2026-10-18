@@ -3,8 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>JavaScript Stream — A Client-Side CMS, 2002</title>
-    <meta name="description" content="A 2002 project that assembled web pages entirely in the browser by compiling each fragment into a script — before XMLHttpRequest existed.">
+    <title>JavaScript Stream — The Query String Was the File Path</title>
+    <meta name="description" content="A 2002 URL scheme that packed a directory tree into a query string two characters at a time — and was unfriendly to search engines on every layer before SEO existed as a field.">
     <link href="../text.css" rel="stylesheet">
 </head>
 <body>
@@ -17,8 +17,7 @@
                 <a href="index.html">Back</a>
                 <a href="#what">What</a>
                 <a href="#how">How</a>
-                <a href="#toolkit">Toolkit</a>
-                <a href="#boundaries">Boundaries</a>
+                <a href="#seo">SEO</a>
                 <a href="#status">Status</a>
             </div>
         </div>
@@ -28,14 +27,15 @@
     <header class="hero">
         <div class="container">
             <span class="tagline">Project Retrospective</span>
-            <h1>A CMS that ran in the browser before the browser could fetch.</h1>
+            <h1>The query string was the file path.</h1>
             <p class="subtitle">
-                In 2002 there was no XMLHttpRequest. A page could not ask the server
-                for data. This project compiled every fragment of a site — header,
-                menu, content, footer — into a script, and let the browser's parser
-                assemble the page. The result was a content management system that
-                ran entirely on the client, routed by a query string, and cached
-                fragment by fragment.
+                The JavaScript Stream loader had no router table and no URL
+                rewriting. It had a string, a rule about length, and a parser
+                that counted characters. Every two characters were a directory;
+                the last three, if the length was odd, were a file. The scheme
+                was compact, trivial to implement, and — in ways that would not
+                have a name until a decade later — hostile to search engines on
+                almost every layer.
             </p>
         </div>
     </header>
@@ -43,205 +43,272 @@
     <!-- ========== WHAT ========== -->
     <section id="what">
         <div class="container">
-            <h2>What it was</h2>
+            <h2>What the scheme was</h2>
             <p>
-                The problem was ordinary: a site has parts that repeat — a header,
-                a menu, a footer — and one part that changes — the content. The
-                usual answers in 2002 were server-side includes, CGI, or framesets.
-                Server-side includes required a server that supported them. CGI
-                required a process. Framesets required giving up bookmarks, the
-                back button, and any hope of a clean URL.
+                The loader read <code>location.search</code> — everything after the
+                <code>?</code> — and sliced it into two-character segments. If the
+                total length was <strong>even</strong>, every segment was a
+                directory, and the file was the default <code>index.jss</code>. If
+                the length was <strong>odd</strong>, the last three characters were
+                the file name, and every pair before them was a directory. One
+                character of parity decided the structure of the whole path.
             </p>
+
+            <table>
+                <thead>
+                    <tr>
+                        <th>Query</th>
+                        <th>Length</th>
+                        <th>Segments</th>
+                        <th>Resolves to</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td><code>?en</code></td>
+                        <td>2, even</td>
+                        <td><code>en</code></td>
+                        <td><code>/en/index.jss</code></td>
+                    </tr>
+                    <tr>
+                        <td><code>?fr</code></td>
+                        <td>2, even</td>
+                        <td><code>fr</code></td>
+                        <td><code>/fr/index.jss</code></td>
+                    </tr>
+                    <tr>
+                        <td><code>?enwe</code></td>
+                        <td>4, even</td>
+                        <td><code>en</code>, <code>we</code></td>
+                        <td><code>/en/we/index.jss</code></td>
+                    </tr>
+                    <tr>
+                        <td><code>?enadd</code></td>
+                        <td>5, odd</td>
+                        <td><code>en</code>, file <code>add</code></td>
+                        <td><code>/en/add.jss</code></td>
+                    </tr>
+                    <tr>
+                        <td><code>?enweadd</code></td>
+                        <td>7, odd</td>
+                        <td><code>en</code>, <code>we</code>, file <code>add</code></td>
+                        <td><code>/en/we/add.jss</code></td>
+                    </tr>
+                    <tr>
+                        <td><code>?enwefoob</code></td>
+                        <td>8, even</td>
+                        <td><code>en</code>, <code>we</code>, <code>fo</code>, <code>ob</code></td>
+                        <td><code>/en/we/fo/ob/index.jss</code></td>
+                    </tr>
+                </tbody>
+            </table>
+
             <p>
-                This project took a fourth route. Instead of assembling the page on
-                the server, it compiled each fragment into a JavaScript file — a
-                <strong>JSS</strong>, for JavaScript Stream — whose only job is to
-                write its own markup into the document. A small loader in the page
-                read the query string and emitted the script tags in order.
+                The examples make the rule clear. <code>?enwe</code> loads the
+                index of the <code>en/we</code> directory. <code>?enweadd</code>
+                loads <code>add.jss</code> from the same directory. The difference
+                between “a directory” and “a file” is one character of length —
+                and the difference between the two URLs is three characters at
+                the end.
             </p>
 
             <div class="highlight">
                 <p>
-                    <strong>The core idea:</strong> the browser already knows how to
-                    fetch and execute scripts. If every fragment of a page is a
-                    script, then the browser's own parser becomes the include
-                    mechanism, the scheduler, and the cache — with no server
-                    involvement beyond serving static files.
+                    <strong>The core idea:</strong> the query string is not a set
+                    of key-value parameters. It is a path, compressed two
+                    characters per segment, with a parity bit at the end to say
+                    whether the last segment is a directory or a file. The router
+                    is not a table. The router is arithmetic on the string's
+                    length.
                 </p>
             </div>
-
-            <p>
-                The author was Sylvain Saucier, and the code was written in C++ as
-                a command-line compiler called <code>html2jss</code>: point it at
-                a fragment, get a JSS back. The project is dated 2002 and released
-                under a BSD 3-clause licence.
-            </p>
         </div>
     </section>
 
     <!-- ========== HOW ========== -->
     <section id="how">
         <div class="container">
-            <h2>How it worked</h2>
+            <h2>How it parsed, and why it existed</h2>
             <p>
-                The loader was a handful of lines. It read the query string, chose
-                the content fragment, and wrote four script tags. The order was
-                explicit, because the author wrote it that way:
-            </p>
-
-<pre><code>&lt;script&gt;
-  var page = location.search.slice(1) || "home";
-  document.write('&lt;script src="header.jss"&gt;&lt;\/script&gt;');
-  document.write('&lt;script src="menu.jss"&gt;&lt;\/script&gt;');
-  document.write('&lt;script src="content/' + page + '.jss"&gt;&lt;\/script&gt;');
-  document.write('&lt;script src="footer.jss"&gt;&lt;\/script&gt;');
-&lt;/script&gt;</code></pre>
-
-            <p>
-                Each JSS was a stream of <code>document.write</code> calls. The
-                header script wrote the header markup, the menu script wrote the
-                menu, and so on. A fragment could itself emit more script tags,
-                so the include tree could nest. The name “stream” was literal:
-                the page was assembled as a sequence of writes, not as a single
-                monolithic document.
+                The parser was a handful of lines. Strip the <code>?</code>. Check
+                the length modulo 2. If even, walk the string in pairs and emit a
+                directory for each; append <code>index.jss</code>. If odd, walk all
+                but the last three in pairs; take the last three as the file name;
+                append <code>.jss</code>. Then write the script tag. There was no
+                URL decoding, no query-string parsing, no key-value splitting, no
+                escaping. The string <em>was</em> the path.
             </p>
             <p>
-                It worked for a reason that has since disappeared. In IE3, Netscape 3,
-                and the browsers that followed them, an external script was
-                <strong>synchronous and blocking</strong>. The parser stopped, fetched
-                the file, executed it, and only then continued. A <code>document.write</code>
-                issued during parsing was spliced into the token stream and executed
-                in place. Ordering was free. There were no callbacks, no promises,
-                no state machine — the parser was the orchestrator.
+                The scheme existed because the alternative was expensive. In 2002,
+                path-based routing meant server configuration — rewrite rules,
+                <code>mod_rewrite</code>, custom 404 handlers — or a server-side
+                script that generated the loader HTML per request. The project was
+                static files on a static host. A query-string router that ran
+                entirely in the browser meant the server never had to know the
+                site's structure at all.
             </p>
             <p>
-                The one sharp edge was escaping. Any <code>&lt;/script&gt;</code>
-                inside the emitted markup had to be written as
-                <code>&lt;\/script&gt;</code>, or the parser would end the outer
-                script early. That is the kind of detail a compiler exists to
-                handle, and presumably <code>html2jss</code> did.
+                It also made the loader <strong>identical for every URL</strong>.
+                One HTML file, one inline script, one set of fragment files. The
+                server served one shell and a tree of <code>.jss</code> files. The
+                client assembled the page. That is the whole architecture, and the
+                URL scheme was the smallest possible router that could express it.
+            </p>
+            <p>
+                The parity trick is genuinely clever. It encodes two different
+                path shapes — “directory path with default file” and “directory
+                path with explicit file” — into a single string, with one bit of
+                information (the length modulo 2) distinguishing them. No
+                separator, no extension, no reserved character. Just count the
+                characters.
             </p>
 
             <div class="metrics">
                 <div class="metric">
-                    <div class="value">0</div>
-                    <div class="label">XMLHttpRequests</div>
+                    <div class="value">2</div>
+                    <div class="label">Characters per directory</div>
                 </div>
                 <div class="metric">
-                    <div class="value">4</div>
-                    <div class="label">Fragments per page</div>
+                    <div class="value">3</div>
+                    <div class="label">Characters per file name</div>
                 </div>
                 <div class="metric">
                     <div class="value">1</div>
-                    <div class="label">Query-string parameter</div>
+                    <div class="label">Bit of parity, whole structure</div>
                 </div>
                 <div class="metric">
-                    <div class="value">2002</div>
-                    <div class="label">Year of the project</div>
+                    <div class="value">0</div>
+                    <div class="label">Server-side routing rules</div>
                 </div>
             </div>
 
             <p>
-                The caching behaviour fell out for free. Header, menu, and footer
-                were the same files on every page, so the browser cached them once
-                and reused them. Only <code>content/&lt;page&gt;.jss</code> changed.
-                That is fragment-level caching with a query-string router — the
-                same shape as a modern edge-side include, minus the edge.
+                The grammar that fell out is tighter than it first appears.
+                Directory names are <em>exactly</em> two characters — not “up to
+                two.” File names are <em>exactly</em> three characters, or the
+                default <code>index</code>. That rules out a great many names:
+                <code>?enwefile</code> does not load <code>file.jss</code> from
+                <code>en/we</code>; it loads <code>le/index.jss</code> from
+                <code>en/we/fi</code>, because eight is even. To get a file
+                called <code>file</code>, you would need it to be three
+                characters, or you would need to treat it as a directory and
+                serve <code>file/index.jss</code> — which the parity rule then
+                forbids, because <code>file</code> is four characters and a
+                directory segment is two. The scheme is a tiny filesystem with
+                fixed-width names, and every name outside the width is
+                unreachable.
             </p>
         </div>
     </section>
 
-    <!-- ========== TOOLKIT ========== -->
-    <section id="toolkit">
+    <!-- ========== SEO ========== -->
+    <section id="seo">
         <div class="container">
-            <h2>The toolkit</h2>
+            <h2>Why it was hostile to search engines</h2>
             <p>
-                The project was small and conventional for its time: a C++ compiler,
-                a loader, a fragment layout, and a set of install scripts for the
-                Windows platforms of the day.
+                In 2002, search engine optimisation was not yet a field with a
+                name. Google was four years old. The vocabulary for describing
+                why a site was uncrawlable — client-side rendering, duplicate
+                content, canonical URLs, per-page metadata — did not exist. The
+                project was not failing at SEO. It was failing at problems that
+                would later be given SEO names. It was unfriendly on every layer
+                at once.
             </p>
 
-            <div class="card-grid">
-                <div class="card">
-                    <div class="doc-label">Compiler</div>
-                    <h3><code>html2jss</code></h3>
-                    <p>Takes an HTML fragment and emits a JSS: a script that writes
-                    that fragment back into the document. C++, command-line, one
-                    job per invocation.</p>
-                </div>
-                <div class="card">
-                    <div class="doc-label">Loader</div>
-                    <h3>The page shell</h3>
-                    <p>A small inline script that reads <code>location.search</code>,
-                    chooses the content fragment, and writes the four script tags
-                    in order.</p>
-                </div>
-                <div class="card">
-                    <div class="doc-label">Layout</div>
-                    <h3>Header, menu, content, footer</h3>
-                    <p>Four JSS fragments per page. The first three are shared and
-                    cached; the fourth is selected by the query string.</p>
-                </div>
-                <div class="card">
-                    <div class="doc-label">Install</div>
-                    <h3>Platform scripts</h3>
-                    <p>Batch files for the Windows platforms of 2002 — Win95 through
-                    XP — wrapping the compiler invocation for the local toolchain.</p>
-                </div>
-            </div>
-        </div>
-    </section>
-
-    <!-- ========== BOUNDARIES ========== -->
-    <section id="boundaries">
-        <div class="container">
-            <h2>Where the design met its edges</h2>
+            <h3>One shell, every URL</h3>
             <p>
-                The architecture was coherent, but it had a narrow set of assumptions,
-                and each one is a boundary worth naming.
+                The server returned the same HTML for every query string. The
+                loader was inline, the fragments were fetched by script tags, and
+                the page source contained no content — only the loader. A crawler
+                fetching <code>?en</code>, <code>?fr</code>, <code>?enwe</code>,
+                and <code>?enweadd</code> received identical bytes four times.
+                That is the purest form of duplicate content: not similar pages,
+                but literally the same page, distinguished only by a string the
+                server never saw.
             </p>
 
-            <h3>Silent failure</h3>
+            <h3>Crawlers did not run JavaScript</h3>
             <p>
-                A missing fragment was a 404 on a script tag, and a 404 on a script
-                tag is silent. The page rendered with a blank region and no error.
-                There was no error surface unless the compiler emitted a fallback
-                write, and there was no way for the loader to know which fragment
-                had failed.
+                No major crawler in 2002 executed JavaScript. The content existed
+                only after the loader ran and the fragments loaded. To a crawler,
+                the site was an empty HTML shell with a script tag. Every page on
+                the site was empty in exactly the same way.
             </p>
 
-            <h3>One shot only</h3>
+            <h3>Query strings were demoted or ignored</h3>
             <p>
-                <code>document.write</code> after the document has finished loading
-                wipes the page. The design was therefore strictly one-shot: the
-                loader had to run during parsing, and nothing could be reloaded
-                dynamically afterwards. That was acceptable in 2002 and is
-                incompatible with how pages are built now.
+                Crawlers of the era treated <code>?</code> as a signal of dynamic
+                content — session IDs, tracking parameters, search results — and
+                many either ignored query-string URLs entirely or ranked them
+                lower. The scheme was built on the assumption that the query
+                string was the only thing a static host could vary. That
+                assumption was correct for the host and fatal for the crawler.
             </p>
 
-            <h3>Invisible to crawlers</h3>
+            <h3>No per-page title or metadata</h3>
             <p>
-                Search engines of the era did not execute scripts. A site built this
-                way was, to a crawler, an empty page with a few script tags. The
-                content existed only for browsers that ran JavaScript.
+                The shell had one <code>&lt;title&gt;</code> for the whole site.
+                There was no per-page title, no description, no keywords, no
+                headings that varied by URL — because the HTML did not vary by
+                URL. Even a crawler that somehow reached the content would have
+                found no metadata to index it under.
             </p>
 
-            <h3>Ordering by accident</h3>
+            <h3>No descriptive URLs</h3>
             <p>
-                The four fragments assembled in the right order only because script
-                loads were synchronous and blocking. Add <code>async</code> or
-                <code>defer</code> — or move to a browser that treats script loading
-                differently — and the guarantee disappears. The design depended on
-                a parser behaviour that was never promised to last.
+                Two-character directory segments carry no keywords.
+                <code>?enweadd</code> does not read as “add a page in English,
+                Western Europe section.” It reads as eight characters. Even if a
+                crawler had indexed the URL text, there was nothing in it to
+                index. The same is true for anchor text: every link on the site
+                was a query string, so the link graph — the thing crawlers use
+                to understand what a page is about — carried no information at
+                all.
+            </p>
+
+            <h3>No crawlable site structure</h3>
+            <p>
+                A crawler builds a map of a site by following links. Here, links
+                were query strings pointing at script files that assembled pages
+                the crawler could not execute. The “site” as a graph did not
+                exist. Each URL was an island with no content and no outgoing
+                links the crawler could follow.
+            </p>
+
+            <h3>No status signal for missing content</h3>
+            <p>
+                A missing fragment was a 404 on a <code>&lt;script&gt;</code> tag,
+                and a 404 on a script tag is silent. The page URL itself always
+                returned 200, because the shell always existed. The server had no
+                way to say “this page does not exist,” and the browser had no way
+                to surface it. A crawler could not distinguish a valid URL from
+                an invalid one — both returned the same shell with the same
+                status.
+            </p>
+
+            <h3>Parity was invisible to humans</h3>
+            <p>
+                This one is not a crawler problem but a usability problem that
+                compounded it. <code>?enwe</code> and <code>?enweadd</code> differ
+                only in length. Nothing in the URL visually signals whether it
+                points at a directory or a file. A human sharing a link had to
+                trust that the character count was right; a typo of one character
+                silently changed the target from <code>/en/we/add.jss</code> to
+                <code>/en/we/ad/d/index.jss</code> or to a 404. The encoding was
+                compact and the parser was trivial, but the URL did not explain
+                itself.
             </p>
 
             <div class="highlight">
                 <p>
-                    <strong>The shared lesson:</strong> in each case, the browser was
-                    not a passive renderer. It had a fetch model, an execution order,
-                    and a caching policy — and the design lived or died on the exact
-                    shape of those guarantees. The interesting failures live at the
-                    boundaries.
+                    <strong>The shared lesson:</strong> every layer of the scheme
+                    was optimised for the constraints of 2002 — static hosting, no
+                    server routing, no XMLHttpRequest, no JavaScript execution in
+                    crawlers. Each optimisation was correct for its constraint.
+                    Each one also removed a signal that search engines would later
+                    depend on. The scheme did not fail at SEO. It succeeded at a
+                    different problem, and the cost was paid in a currency that
+                    did not yet have a name.
                 </p>
             </div>
         </div>
@@ -252,39 +319,42 @@
         <div class="container">
             <h2>What this is — and what it is not</h2>
             <p>
-                This is a historical artifact and a demonstration of an idea. The
-                concept — client-side composition from cached fragments, routed by
-                a query string — survives in modern form as ES modules, dynamic
-                <code>import()</code>, and fragment-level caching. The implementation
-                does not survive as a recommendation: <code>document.write</code> is
-                the wrong tool today, and the browser guarantees it relied on are
-                gone.
+                This is a compact, working URL scheme for a client-side include
+                system. It encoded a directory tree in a query string with two
+                characters per segment, one bit of parity, and no server
+                involvement. The parser was a few lines. The scheme was
+                unambiguous. For the architecture it served — static fragments,
+                client-side assembly, no server routing — it was exactly enough.
             </p>
             <p>
-                The source itself needs work before it will build again. The files
-                are encoded in Windows-1252 rather than UTF-8 — the French comments
-                carry the accented bytes that break a modern decoder — and they need
-                conversion before a current compiler will read them cleanly. The
-                build scripts reference <code>html2jss.cc</code>, but the source file
-                is <code>html2jss.cpp</code>, so the invocation as written would not
-                find its input.
+                It is also the earliest form of a problem that would be named a
+                decade later. A single-page application with client-side routing,
+                query-string URLs, no server-side rendering, and no per-page
+                metadata has the same crawlability problems this scheme had. The
+                modern solutions — server-side rendering, prerendering,
+                hydration, the History API, canonical URLs, per-route metadata —
+                all address the same underlying issue: a crawler that does not
+                execute the client's code sees the same empty shell for every
+                URL. This project ran into that wall in 2002, before the wall had
+                a name.
             </p>
             <p>
-                Two of the install scripts — <code>win32-gcc.bat</code> and
-                <code>win32-bcc32.bat</code> — are byte-identical. The second was
-                evidently copied from the first and never edited, so the Borland
-                build path is a placeholder rather than a working script. The
-                documentation folder promised by the README is not present in the
-                recovered tree.
+                It is not, and was never meant to be, a search-friendly scheme.
+                The project was a CMS for a static host, built by someone who
+                wanted fragment-level caching and bookmarkable URLs without a
+                server. It got both. The cost was every signal a search engine
+                would eventually need, paid before anyone was keeping score.
             </p>
 
             <div class="highlight">
                 <p>
-                    <strong>The honest summary:</strong> the idea was sound for its
-                    moment, the implementation was small and direct, and the
-                    constraints that made it work are exactly the constraints that
-                    make it unwise now. That is not a criticism. It is what a
-                    decade looks like in software.
+                    <strong>The honest summary:</strong> the URL scheme was a
+                    small, correct solution to the problem it was built for. It
+                    was SEO-unfriendly on nine distinct layers, and it predated
+                    the field by enough that no one could have told you which
+                    nine. That is not a criticism of the design. It is what
+                    building for the constraints in front of you looks like when
+                    the constraints later change.
                 </p>
             </div>
         </div>
@@ -294,18 +364,21 @@
     <footer>
         <div class="container">
             <p>
-                <strong>JavaScript Stream</strong> — a client-side content management
-                system by Sylvain Saucier, 2002. Released under a BSD 3-clause licence.
+                <strong>JavaScript Stream</strong> — a client-side content
+                management system by Sylvain Saucier, 2002. Released under a BSD
+                3-clause licence.
             </p>
             <p>
-                This page is a retrospective summary. The original source, README,
-                and licence are the authoritative record. Where this summary and
-                the source disagree, the source is correct.
+                This page is a focused retrospective on the URL scheme. The
+                broader project — the loader, the fragments, the compiler — is
+                covered in the companion overview. Where this summary and the
+                source disagree, the source is correct.
             </p>
             <p style="margin-top: 1.5rem; font-size: 0.8rem; color: #444;">
-                Written as a companion piece to the Software-Defined Entropy
-                research overview, in the same tone: measured, honest about limits,
-                and careful about what a result does and does not claim.
+                Written as a companion piece to the JavaScript Stream overview,
+                the SoftLed retrospective, and the Software-Defined Entropy
+                research overview, in the same tone: measured, honest about
+                limits, and careful about what a design does and does not claim.
             </p>
         </div>
     </footer>
