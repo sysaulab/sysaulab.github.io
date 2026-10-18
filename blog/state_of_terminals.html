@@ -1,0 +1,580 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>State of the Terminals 2026 — A Field Guide</title>
+    <meta name="description" content="A plain-language survey of the terminal emulator landscape as of October 2026: Unicode correctness, the performance divide, graphics protocols, the userspace console, and the first credible shared core.">
+    <link href="../text.css" rel="stylesheet">
+</head>
+<body>
+    <!-- ========== NAV ========== -->
+    <nav>
+        <div class="container">
+            <span class="brand">State of the Terminals 2026</span>
+            <div class="links">
+                <a href="index.html">Back</a>
+                <a href="#what">What</a>
+                <a href="#unicode">Unicode</a>
+                <a href="#performance">Performance</a>
+                <a href="#graphics">Graphics</a>
+                <a href="#console">Console</a>
+                <a href="#core">Common Core</a>
+                <a href="#limits">Limits</a>
+            </div>
+        </div>
+    </nav>
+
+    <!-- ========== HERO ========== -->
+    <header class="hero">
+        <div class="container">
+            <span class="tagline">A Field Guide — October 2026</span>
+            <h1>The terminal is no longer a solved problem.</h1>
+            <p class="subtitle">
+                For decades the terminal emulator was treated as infrastructure:
+                boring, stable, and finished. In 2026 it is once again a site of
+                genuine technical contention. Unicode correctness has exposed
+                architectural debts, the Linux console is leaving the kernel, and
+                the first credible attempt at a shared core is being embedded in
+                editors, IDEs, and game engines.
+            </p>
+        </div>
+    </header>
+
+    <!-- ========== WHAT ========== -->
+    <section id="what">
+        <div class="container">
+            <h2>What changed?</h2>
+            <p>
+                The terminal emulator used to be a glass teletype. The interesting
+                work happened in the shell, the multiplexer, or the editor. That
+                consensus has collapsed. Three forces are driving the change:
+                <strong>Unicode correctness</strong>, <strong>the userspace
+                console</strong>, and <strong>the extraction of a reusable
+                core</strong>.
+            </p>
+            <p>
+                None of these is finished. But together they have turned the
+                terminal from a solved problem into an active frontier — one where
+                the assumptions of the 1990s are being tested against the text of
+                the 2020s.
+            </p>
+
+            <div class="highlight">
+                <p>
+                    <strong>The core tension:</strong> a terminal is a grid of
+                    fixed-width cells. Human language is not. Everything difficult
+                    about modern terminal emulation follows from that mismatch —
+                    and from the fact that applications and terminals have
+                    historically disagreed about where one “character” ends and
+                    the next begins.
+                </p>
+            </div>
+
+            <div class="metrics">
+                <div class="metric">
+                    <div class="value">5</div>
+                    <div class="label">Terminals in the 2026 shootout</div>
+                </div>
+                <div class="metric">
+                    <div class="value">1</div>
+                    <div class="label">Shared core (libghostty)</div>
+                </div>
+                <div class="metric">
+                    <div class="value">2</div>
+                    <div class="label">Graphics protocols</div>
+                </div>
+                <div class="metric">
+                    <div class="value">1</div>
+                    <div class="label">Console leaving the kernel</div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- ========== UNICODE ========== -->
+    <section id="unicode">
+        <div class="container">
+            <h2>The Unicode reckoning</h2>
+            <p>
+                The defining technical problem of the modern terminal is not speed
+                or GPU acceleration. It is the question of what, precisely,
+                constitutes a “character” on a fixed-width grid. For decades,
+                terminals and applications relied on <strong>wcwidth()</strong> — a
+                standard that maps a Unicode code point to one or two terminal
+                cells. wcwidth() is simple, predictable, and, for a growing share
+                of the world’s text, wrong.
+            </p>
+            <p>
+                Emoji ZWJ sequences, regional-indicator flags, skin-tone modifiers,
+                and variation selectors all violate the assumption that a character
+                is a single code point with a single width. The result, when
+                terminals guess wrong, is cursor misalignment, overwritten text,
+                and unreliable input.
+            </p>
+
+            <div class="card-grid">
+                <div class="card">
+                    <div class="doc-label">The Protocol</div>
+                    <h3>DEC Private Mode 2027</h3>
+                    <p>
+                        Mode 2027 tells the terminal to measure <strong>extended
+                        grapheme clusters</strong> — perceived user characters —
+                        rather than individual code points. It is implemented by
+                        kitty, foot, WezTerm, Contour, and Ghostty, and negotiated
+                        with a bounded DECRQM probe: the application asks, the
+                        terminal answers, and only authoritative evidence enables
+                        the mode.[reference:0]
+                    </p>
+                    <p style="margin-top: 0.75rem;">
+                        Mode 2027 is not a complete solution. It is a flag, not a
+                        Unicode version negotiation. But it is the first shared
+                        protocol for grapheme correctness, and it is already the
+                        de facto standard among the new leaders.
+                    </p>
+                </div>
+
+                <div class="card">
+                    <div class="doc-label">The Winners</div>
+                    <h3>Ghostty, Kitty, WezTerm, foot</h3>
+                    <p>
+                        <strong>Ghostty</strong>, Mitchell Hashimoto’s Zig
+                        implementation, reached 1.0 in late 2024 and shipped 1.3.0
+                        in March 2026 with “full Unicode 17 support” and proper
+                        rendering of complex scripts such as Devanagari.[reference:1]
+                        It is consistently described as Unicode-correct, with only
+                        occasional edge cases in rare combining sequences.[reference:2]
+                    </p>
+                    <p style="margin-top: 0.75rem;">
+                        <strong>Kitty</strong> and <strong>WezTerm</strong> match
+                        Ghostty in practical correctness. Kitty has contributed a
+                        published text-splitting algorithm and remains the reference
+                        for grapheme-aware terminal behavior. foot, the Wayland-native
+                        C terminal, implements mode 2027 and punches far above its
+                        weight on performance.
+                    </p>
+                </div>
+
+                <div class="card">
+                    <div class="doc-label">The Laggards</div>
+                    <h3>VTE and Konsole</h3>
+                    <p>
+                        <strong>libvte</strong> — the engine behind GNOME Terminal
+                        and a vast family of derivatives — remains the most visible
+                        holdout. As of early 2026, sakura (VTE) was still listed as
+                        “no” for UAX #29 grapheme segmentation and keycap support,
+                        with a Unicode version lagging at 15.1.[reference:3] A
+                        work-in-progress branch exists, but the maintainers are
+                        candid: unconditional grapheme clustering can corrupt
+                        display in applications that have not opted in.
+                    </p>
+                    <p style="margin-top: 0.75rem;">
+                        <strong>Konsole</strong> sits in an awkward middle ground.
+                        It is praised for KDE integration and stability, but its
+                        Unicode support lags, and its handling of DEC private mode
+                        queries is non-standard. For users who want both correct
+                        emoji rendering and native KDE integration, there is
+                        currently no perfect answer.
+                    </p>
+                </div>
+
+                <div class="card">
+                    <div class="doc-label">Why It Matters</div>
+                    <h3>The measurement problem</h3>
+                    <p>
+                        Mode 2027 is not just about emoji. It is about the
+                        relationship between what the terminal thinks a cell is and
+                        what the application thinks a cell is. When the two
+                        disagree, every row after the disagreement is shifted, and
+                        the cursor lands in the wrong place.
+                    </p>
+                    <p style="margin-top: 0.75rem;">
+                        The library sharp-vision describes the design philosophy
+                        bluntly: its own width tables are <em>capability-unaware by
+                        design</em>. Mode 2027 exists so that an authoritative
+                        terminal can be told to agree with those tables — not the
+                        other way around.[reference:4]
+                    </p>
+                </div>
+            </div>
+
+            <div class="highlight">
+                <p>
+                    <strong>The state of play in October 2026:</strong> the
+                    protocol exists, the leaders implement it, and the laggards are
+                    visibly behind. The remaining work is not invention — it is
+                    adoption, fallback behavior, and the long tail of applications
+                    that still assume wcwidth() is king.
+                </p>
+            </div>
+        </div>
+    </section>
+
+    <!-- ========== PERFORMANCE ========== -->
+    <section id="performance">
+        <div class="container">
+            <h2>The performance divide</h2>
+            <p>
+                The second axis of competition is raw performance, and the 2026
+                benchmarks tell a more complicated story than the marketing
+                suggests. GPU-accelerated terminals dominate throughput and frame
+                rate, but the fastest terminal on input latency is not
+                GPU-accelerated at all.
+            </p>
+
+            <blockquote>
+                <p>
+                    foot, which renders everything on the CPU, beats every GPU
+                    terminal on both latency and raw I/O: 251 ms against roughly
+                    400 for the others on the same 11 MB file.
+                </p>
+            </blockquote>
+
+            <p>
+                The numbers, from an independent July 2026 benchmark run on a
+                ThinkPad T430 under Hyprland, are worth reading closely:
+                <strong>foot</strong> leads on input latency (15.0 ms) and file
+                throughput (251 ms); <strong>Alacritty</strong> is close behind on
+                latency (16.7 ms); <strong>Kitty</strong> produces the highest
+                sustained frame rate (273 FPS) but trails on raw I/O (401 ms);
+                <strong>WezTerm</strong> is roughly three times slower than the pack
+                on the same file dump (1246 ms).[reference:5]
+            </p>
+            <p>
+                Memory tells a clearer story. foot idles at 35–43 MB; Alacritty
+                around 40–75 MB; Kitty around 85–91 MB; WezTerm 110–130 MB; and
+                Ghostty 170–229 MB depending on the source and machine.[reference:6]
+                Electron-based terminals can balloon past 2 GB after a few hours of
+                use.
+            </p>
+
+            <div class="highlight">
+                <p>
+                    <strong>The lesson:</strong> “GPU-accelerated” is not
+                    synonymous with “fast.” Event-loop efficiency, input handling,
+                    and frame scheduling matter more than the presence of a
+                    fragment shader. foot’s author obsessed over frame scheduling
+                    under the Wayland presentation-time protocol, which removes a
+                    full compositor frame of lag.[reference:7]
+                </p>
+            </div>
+
+            <p>
+                For interactive use, all five terminals are now fast enough that
+                the differences rarely matter. The most upvoted reply in a
+                114-comment r/linuxquestions thread points out that if output
+                scrolls fast enough for the terminal to be the bottleneck, it is
+                too fast to read anyway. Startup time, memory footprint, and
+                correctness are the differences people actually feel.[reference:8]
+            </p>
+        </div>
+    </section>
+
+    <!-- ========== GRAPHICS ========== -->
+    <section id="graphics">
+        <div class="container">
+            <h2>Graphics: Sixel and Kitty diverge</h2>
+            <p>
+                The terminal is no longer content to be text-only. Two graphics
+                protocols are competing for mindshare, and they represent different
+                philosophies: <strong>Sixel</strong> is the older, more widely
+                implemented standard; the <strong>Kitty Graphics Protocol</strong>
+                is the modern challenger.
+            </p>
+
+            <div class="card-grid">
+                <div class="card">
+                    <div class="doc-label">Sixel</div>
+                    <h3>Ubiquity over sophistication</h3>
+                    <p>
+                        Sixel is supported by foot, WezTerm, Konsole, mlterm,
+                        Windows Terminal (1.22+), and xterm with the right
+                        configuration.[reference:9] Its strength is reach: a terminal
+                        that supports Sixel can display images without requiring a
+                        specific modern implementation.
+                    </p>
+                    <p style="margin-top: 0.75rem;">
+                        Its weakness is quality. Sixel is palette-based and limited
+                        to roughly 2.5 million target pixels in some
+                        implementations.[reference:10] It is the pragmatic default,
+                        not the aspirational target.
+                    </p>
+                </div>
+
+                <div class="card">
+                    <div class="doc-label">Kitty Graphics</div>
+                    <h3>Quality over reach</h3>
+                    <p>
+                        The Kitty Graphics Protocol supports truecolor RGBA,
+                        transparency, animation, chunked transmission, and Unicode
+                        placeholders. It is natively supported by Kitty, Ghostty,
+                        and WezTerm, with Konsole 22.04+ also implementing
+                        it.[reference:11]
+                    </p>
+                    <p style="margin-top: 0.75rem;">
+                        The ecosystem handles fragmentation gracefully. Tools like
+                        <code>slk</code> probe for Kitty graphics first, fall back
+                        to Sixel for known terminals or DA1 responders, and use
+                        Unicode half-block mosaics as the final fallback.[reference:12]
+                    </p>
+                </div>
+
+                <div class="card">
+                    <div class="doc-label">The Split</div>
+                    <h3>Why it persists</h3>
+                    <p>
+                        Sixel’s head start and broad compatibility make it the
+                        safe choice for tools that need to work everywhere. The
+                        Kitty protocol’s technical superiority makes it the target
+                        for tools that control both ends of the connection.
+                    </p>
+                    <p style="margin-top: 0.75rem;">
+                        A terminal that supports both — as WezTerm does — is
+                        currently the safest choice for graphics-heavy workflows.
+                        The split is unlikely to resolve soon; the protocols serve
+                        different constraints.
+                    </p>
+                </div>
+
+                <div class="card">
+                    <div class="doc-label">What Changed in 2026</div>
+                    <h3>Windows Terminal joins the party</h3>
+                    <p>
+                        Windows Terminal 1.22 added Sixel support and grapheme
+                        clustering with mode 2027 queries, bringing the Microsoft
+                        console into the modern era alongside its Unix
+                        counterparts.[reference:13]
+                    </p>
+                    <p style="margin-top: 0.75rem;">
+                        The graphics race is no longer a Unix-only story. The
+                        protocol split now spans Windows, macOS, and Linux, and the
+                        fallback chains have become correspondingly more complex.
+                    </p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- ========== CONSOLE ========== -->
+    <section id="console">
+        <div class="container">
+            <h2>The quiet revolution: the console leaves the kernel</h2>
+            <p>
+                Perhaps the most consequential change in the 2026 terminal
+                landscape is happening not in a window, but <em>below</em> the
+                graphical session. The Linux kernel’s frame-buffer console
+                (<strong>fbcon</strong>) has been the default virtual terminal for
+                decades. It is a terminal emulator living inside the kernel, and by
+                common consensus it is a liability.
+            </p>
+            <p>
+                In December 2025, Fedora’s Engineering and Steering Committee
+                approved a change for Fedora 44 to replace fbcon with
+                <strong>kmscon</strong>, a userspace console built on Kernel Mode
+                Setting (KMS).[reference:14] The rationale is blunt: fbcon is “not well
+                maintained,” lost scrolling support after a CVE, and requires a
+                legacy fbdev emulation layer that modern GPU drivers no longer
+                use.[reference:15]
+            </p>
+
+            <div class="highlight">
+                <p>
+                    <strong>What kmscon brings:</strong> better keyboard support,
+                    scrolling, Pango font rendering, and better Unicode handling on
+                    the pre-graphical login screen. It can be installed without any
+                    graphical library — only libdrm — so it works on non-graphical
+                    server installations.[reference:16]
+                </p>
+            </div>
+
+            <p>
+                The transition is deliberately cautious. fbcon remains compiled
+                into the kernel as an emergency fallback, and if kmscon fails to
+                launch, the system falls back to getty/fbcon.[reference:17] But the
+                direction is clear. Fedora 44 shipped kmscon by default, and other
+                distributions are watching closely. KMSCON 9.3, released in
+                January 2026, added mouse support by default and a variety of
+                fixes.[reference:18]
+            </p>
+            <p>
+                The deeper significance is philosophical: the console should be a
+                userspace program, subject to the same security model and update
+                cadence as the rest of the system. The terminal you see when you
+                press <code>Ctrl+Alt+F2</code> is finally being dragged out of the
+                kernel.
+            </p>
+        </div>
+    </section>
+
+    <!-- ========== COMMON CORE ========== -->
+    <section id="core">
+        <div class="container">
+            <h2>The missing piece: a common core</h2>
+            <p>
+                The fragmentation described above — different Unicode conformance
+                levels, divergent graphics protocols, incompatible performance
+                profiles — points to a structural problem: every terminal emulator
+                reimplements the same core logic. The VT parser, the screen state
+                machine, the Unicode segmentation tables, and the width
+                calculations are duplicated across dozens of codebases, with
+                predictably uneven results.
+            </p>
+            <p>
+                In 2026, the most promising development on this front is
+                <strong>libghostty-vt</strong>, a zero-dependency C and Zig library
+                extracted from Ghostty’s proven core. It parses VT sequences,
+                manages terminal state, and manages renderer state, without
+                requiring libc. It is explicitly designed to be embedded in other
+                terminals, editors, and applications.[reference:19]
+            </p>
+
+            <div class="card-grid">
+                <div class="card">
+                    <div class="doc-label">The Demo</div>
+                    <h3>Ghostling</h3>
+                    <p>
+                        Ghostling is a reference implementation: a single C file
+                        using the Raylib graphics library that shows how little code
+                        is needed to build a functional terminal emulator on top of
+                        libghostty-vt. It already covers 24-bit colors, Unicode
+                        support, mouse tracking, the Kitty keyboard protocol, and
+                        scrollback with text reflow.[reference:20]
+                    </p>
+                </div>
+
+                <div class="card">
+                    <div class="doc-label">The Adoption</div>
+                    <h3>Neovim and beyond</h3>
+                    <p>
+                        A Neovim pull request proposes embedding libghostty-vt to
+                        get proper reflow on terminal resize — replacing the current
+                        hard word wrap that stays even when the window widens.[reference:21]
+                        Community bindings already exist for Odin, Electron, Godot,
+                        and Obsidian, plus a WASM build that runs a true Ghostty
+                        terminal inside a note-taking app.[reference:22]
+                    </p>
+                </div>
+
+                <div class="card">
+                    <div class="doc-label">The Significance</div>
+                    <h3>Raising the floor</h3>
+                    <p>
+                        If libghostty succeeds, it could do for terminals what
+                        SQLite did for databases: provide a small, correct,
+                        embeddable core that raises the floor for every application
+                        that needs terminal emulation. Konsole could keep its KDE
+                        integration while swapping in a better engine. A future
+                        kmscon could adopt the same core.
+                    </p>
+                </div>
+
+                <div class="card">
+                    <div class="doc-label">The Caveat</div>
+                    <h3>Not a finished product</h3>
+                    <p>
+                        libghostty-vt is not yet feature-complete. The Kitty
+                        Graphics Protocol and OSC clipboard support are on the
+                        roadmap but not yet available via the API. Windows support
+                        exists at the library level but has not been fully tested in
+                        Ghostling itself.[reference:23]
+                    </p>
+                    <p style="margin-top: 0.75rem;">
+                        It is a foundation, not a drop-in replacement for a mature
+                        terminal emulator.
+                    </p>
+                </div>
+            </div>
+
+            <div class="highlight">
+                <p>
+                    <strong>The historical parallel:</strong> libvterm proved the
+                    architectural concept — an abstract VT parser with
+                    callback-driven rendering — but it predates modern Unicode
+                    protocols and has slowed in development. libghostty-vt’s
+                    advantage is that it comes from a terminal with a demonstrated
+                    commitment to Unicode correctness and is designed for embedding
+                    from the start.
+                </p>
+            </div>
+        </div>
+    </section>
+
+    <!-- ========== LIMITS ========== -->
+    <section id="limits">
+        <div class="container">
+            <h2>What is still unresolved</h2>
+            <p>
+                <strong>VTE’s path.</strong> The `wip/egmont/emoji-sequences`
+                branch is a positive sign, but GNOME Terminal and its derivatives
+                remain Unicode-poor relative to Ghostty, Kitty, and Windows
+                Terminal. If the gap persists through 2027, it will become a
+                visible user-experience problem for a large share of Linux desktop
+                users.[reference:24]
+            </p>
+            <p>
+                <strong>Readline and line editors.</strong> The terminal can be
+                perfectly grapheme-aware and the line editor can still move the
+                cursor into the middle of a ZWJ sequence. Readline operates at a
+                different layer: it decides what “delete” means and where the
+                cursor goes. Mode 2027 does not fix that. A cluster-aware readline
+                remains an open problem outside the terminal’s control.
+            </p>
+            <p>
+                <strong>The console’s Unicode story.</strong> kmscon brings
+                scrolling, fonts, and userspace maintainability, but it is not yet
+                grapheme-cluster-aware in the mode 2027 sense. It is the correct
+                host for that logic, but the logic still needs to arrive.
+            </p>
+            <p>
+                <strong>Mode 2027’s limits.</strong> The mode is a flag, not a
+                feature matrix. Terminals with similar capabilities do not always
+                respond to queries consistently. The only practical way to know
+                what a terminal supports is to test it — which is why libraries
+                like sharp-vision use a bounded DECRQM probe and fall back to their
+                own Unicode tables when the probe fails.[reference:25]
+            </p>
+
+            <div class="highlight">
+                <p>
+                    <strong>What would make it real:</strong> universal mode 2027
+                    adoption, a cluster-aware line editor, a kmscon backend that
+                    inherits the same Unicode tables as the graphical terminals, and
+                    a shared core that makes correctness the default rather than a
+                    per-project achievement. The pieces exist. The integration does
+                    not.
+                </p>
+            </div>
+
+            <p>
+                In the end, the state of the terminals in 2026 is best described
+                as <em>belatedly rebuilt</em>. The protocol for Unicode
+                correctness is here. The console is leaving the kernel. The core is
+                being extracted. What remains is the unglamorous work of adoption,
+                fallback, and the long tail of applications that still assume the
+                terminal is a dumb glass teletype.
+            </p>
+        </div>
+    </section>
+
+    <!-- ========== FOOTER ========== -->
+    <footer>
+        <div class="container">
+            <p>
+                <strong>State of the Terminals 2026</strong> — a field guide
+                compiled from public benchmarks, release notes, protocol
+                specifications, and distribution change proposals as of 18 October
+                2026.
+            </p>
+            <p>
+                The terminal landscape changes quickly. Where this page and a
+                primary source disagree, the primary source is authoritative.
+            </p>
+            <p style="margin-top: 1.5rem; font-size: 0.8rem; color: #444;">
+                This page is a simplified survey. It is not a benchmark, a
+                specification, or a purchasing recommendation.
+            </p>
+        </div>
+    </footer>
+
+</body>
+</html>
