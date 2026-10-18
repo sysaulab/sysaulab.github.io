@@ -1,0 +1,314 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>JavaScript Stream — A Client-Side CMS, 2002</title>
+    <meta name="description" content="A 2002 project that assembled web pages entirely in the browser by compiling each fragment into a script — before XMLHttpRequest existed.">
+    <link href="../text.css" rel="stylesheet">
+</head>
+<body>
+
+    <!-- ========== NAV ========== -->
+    <nav>
+        <div class="container">
+            <span class="brand">JavaScript Stream</span>
+            <div class="links">
+                <a href="index.html">Back</a>
+                <a href="#what">What</a>
+                <a href="#how">How</a>
+                <a href="#toolkit">Toolkit</a>
+                <a href="#boundaries">Boundaries</a>
+                <a href="#status">Status</a>
+            </div>
+        </div>
+    </nav>
+
+    <!-- ========== HERO ========== -->
+    <header class="hero">
+        <div class="container">
+            <span class="tagline">Project Retrospective</span>
+            <h1>A CMS that ran in the browser before the browser could fetch.</h1>
+            <p class="subtitle">
+                In 2002 there was no XMLHttpRequest. A page could not ask the server
+                for data. This project compiled every fragment of a site — header,
+                menu, content, footer — into a script, and let the browser's parser
+                assemble the page. The result was a content management system that
+                ran entirely on the client, routed by a query string, and cached
+                fragment by fragment.
+            </p>
+        </div>
+    </header>
+
+    <!-- ========== WHAT ========== -->
+    <section id="what">
+        <div class="container">
+            <h2>What it was</h2>
+            <p>
+                The problem was ordinary: a site has parts that repeat — a header,
+                a menu, a footer — and one part that changes — the content. The
+                usual answers in 2002 were server-side includes, CGI, or framesets.
+                Server-side includes required a server that supported them. CGI
+                required a process. Framesets required giving up bookmarks, the
+                back button, and any hope of a clean URL.
+            </p>
+            <p>
+                This project took a fourth route. Instead of assembling the page on
+                the server, it compiled each fragment into a JavaScript file — a
+                <strong>JSS</strong>, for JavaScript Stream — whose only job is to
+                write its own markup into the document. A small loader in the page
+                read the query string and emitted the script tags in order.
+            </p>
+
+            <div class="highlight">
+                <p>
+                    <strong>The core idea:</strong> the browser already knows how to
+                    fetch and execute scripts. If every fragment of a page is a
+                    script, then the browser's own parser becomes the include
+                    mechanism, the scheduler, and the cache — with no server
+                    involvement beyond serving static files.
+                </p>
+            </div>
+
+            <p>
+                The author was Sylvain Saucier, and the code was written in C++ as
+                a command-line compiler called <code>html2jss</code>: point it at
+                a fragment, get a JSS back. The project is dated 2002 and released
+                under a BSD 3-clause licence.
+            </p>
+        </div>
+    </section>
+
+    <!-- ========== HOW ========== -->
+    <section id="how">
+        <div class="container">
+            <h2>How it worked</h2>
+            <p>
+                The loader was a handful of lines. It read the query string, chose
+                the content fragment, and wrote four script tags. The order was
+                explicit, because the author wrote it that way:
+            </p>
+
+<pre><code>&lt;script&gt;
+  var page = location.search.slice(1) || "home";
+  document.write('&lt;script src="header.jss"&gt;&lt;\/script&gt;');
+  document.write('&lt;script src="menu.jss"&gt;&lt;\/script&gt;');
+  document.write('&lt;script src="content/' + page + '.jss"&gt;&lt;\/script&gt;');
+  document.write('&lt;script src="footer.jss"&gt;&lt;\/script&gt;');
+&lt;/script&gt;</code></pre>
+
+            <p>
+                Each JSS was a stream of <code>document.write</code> calls. The
+                header script wrote the header markup, the menu script wrote the
+                menu, and so on. A fragment could itself emit more script tags,
+                so the include tree could nest. The name “stream” was literal:
+                the page was assembled as a sequence of writes, not as a single
+                monolithic document.
+            </p>
+            <p>
+                It worked for a reason that has since disappeared. In IE3, Netscape 3,
+                and the browsers that followed them, an external script was
+                <strong>synchronous and blocking</strong>. The parser stopped, fetched
+                the file, executed it, and only then continued. A <code>document.write</code>
+                issued during parsing was spliced into the token stream and executed
+                in place. Ordering was free. There were no callbacks, no promises,
+                no state machine — the parser was the orchestrator.
+            </p>
+            <p>
+                The one sharp edge was escaping. Any <code>&lt;/script&gt;</code>
+                inside the emitted markup had to be written as
+                <code>&lt;\/script&gt;</code>, or the parser would end the outer
+                script early. That is the kind of detail a compiler exists to
+                handle, and presumably <code>html2jss</code> did.
+            </p>
+
+            <div class="metrics">
+                <div class="metric">
+                    <div class="value">0</div>
+                    <div class="label">XMLHttpRequests</div>
+                </div>
+                <div class="metric">
+                    <div class="value">4</div>
+                    <div class="label">Fragments per page</div>
+                </div>
+                <div class="metric">
+                    <div class="value">1</div>
+                    <div class="label">Query-string parameter</div>
+                </div>
+                <div class="metric">
+                    <div class="value">2002</div>
+                    <div class="label">Year of the project</div>
+                </div>
+            </div>
+
+            <p>
+                The caching behaviour fell out for free. Header, menu, and footer
+                were the same files on every page, so the browser cached them once
+                and reused them. Only <code>content/&lt;page&gt;.jss</code> changed.
+                That is fragment-level caching with a query-string router — the
+                same shape as a modern edge-side include, minus the edge.
+            </p>
+        </div>
+    </section>
+
+    <!-- ========== TOOLKIT ========== -->
+    <section id="toolkit">
+        <div class="container">
+            <h2>The toolkit</h2>
+            <p>
+                The project was small and conventional for its time: a C++ compiler,
+                a loader, a fragment layout, and a set of install scripts for the
+                Windows platforms of the day.
+            </p>
+
+            <div class="card-grid">
+                <div class="card">
+                    <div class="doc-label">Compiler</div>
+                    <h3><code>html2jss</code></h3>
+                    <p>Takes an HTML fragment and emits a JSS: a script that writes
+                    that fragment back into the document. C++, command-line, one
+                    job per invocation.</p>
+                </div>
+                <div class="card">
+                    <div class="doc-label">Loader</div>
+                    <h3>The page shell</h3>
+                    <p>A small inline script that reads <code>location.search</code>,
+                    chooses the content fragment, and writes the four script tags
+                    in order.</p>
+                </div>
+                <div class="card">
+                    <div class="doc-label">Layout</div>
+                    <h3>Header, menu, content, footer</h3>
+                    <p>Four JSS fragments per page. The first three are shared and
+                    cached; the fourth is selected by the query string.</p>
+                </div>
+                <div class="card">
+                    <div class="doc-label">Install</div>
+                    <h3>Platform scripts</h3>
+                    <p>Batch files for the Windows platforms of 2002 — Win95 through
+                    XP — wrapping the compiler invocation for the local toolchain.</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- ========== BOUNDARIES ========== -->
+    <section id="boundaries">
+        <div class="container">
+            <h2>Where the design met its edges</h2>
+            <p>
+                The architecture was coherent, but it had a narrow set of assumptions,
+                and each one is a boundary worth naming.
+            </p>
+
+            <h3>Silent failure</h3>
+            <p>
+                A missing fragment was a 404 on a script tag, and a 404 on a script
+                tag is silent. The page rendered with a blank region and no error.
+                There was no error surface unless the compiler emitted a fallback
+                write, and there was no way for the loader to know which fragment
+                had failed.
+            </p>
+
+            <h3>One shot only</h3>
+            <p>
+                <code>document.write</code> after the document has finished loading
+                wipes the page. The design was therefore strictly one-shot: the
+                loader had to run during parsing, and nothing could be reloaded
+                dynamically afterwards. That was acceptable in 2002 and is
+                incompatible with how pages are built now.
+            </p>
+
+            <h3>Invisible to crawlers</h3>
+            <p>
+                Search engines of the era did not execute scripts. A site built this
+                way was, to a crawler, an empty page with a few script tags. The
+                content existed only for browsers that ran JavaScript.
+            </p>
+
+            <h3>Ordering by accident</h3>
+            <p>
+                The four fragments assembled in the right order only because script
+                loads were synchronous and blocking. Add <code>async</code> or
+                <code>defer</code> — or move to a browser that treats script loading
+                differently — and the guarantee disappears. The design depended on
+                a parser behaviour that was never promised to last.
+            </p>
+
+            <div class="highlight">
+                <p>
+                    <strong>The shared lesson:</strong> in each case, the browser was
+                    not a passive renderer. It had a fetch model, an execution order,
+                    and a caching policy — and the design lived or died on the exact
+                    shape of those guarantees. The interesting failures live at the
+                    boundaries.
+                </p>
+            </div>
+        </div>
+    </section>
+
+    <!-- ========== STATUS ========== -->
+    <section id="status">
+        <div class="container">
+            <h2>What this is — and what it is not</h2>
+            <p>
+                This is a historical artifact and a demonstration of an idea. The
+                concept — client-side composition from cached fragments, routed by
+                a query string — survives in modern form as ES modules, dynamic
+                <code>import()</code>, and fragment-level caching. The implementation
+                does not survive as a recommendation: <code>document.write</code> is
+                the wrong tool today, and the browser guarantees it relied on are
+                gone.
+            </p>
+            <p>
+                The source itself needs work before it will build again. The files
+                are encoded in Windows-1252 rather than UTF-8 — the French comments
+                carry the accented bytes that break a modern decoder — and they need
+                conversion before a current compiler will read them cleanly. The
+                build scripts reference <code>html2jss.cc</code>, but the source file
+                is <code>html2jss.cpp</code>, so the invocation as written would not
+                find its input.
+            </p>
+            <p>
+                Two of the install scripts — <code>win32-gcc.bat</code> and
+                <code>win32-bcc32.bat</code> — are byte-identical. The second was
+                evidently copied from the first and never edited, so the Borland
+                build path is a placeholder rather than a working script. The
+                documentation folder promised by the README is not present in the
+                recovered tree.
+            </p>
+
+            <div class="highlight">
+                <p>
+                    <strong>The honest summary:</strong> the idea was sound for its
+                    moment, the implementation was small and direct, and the
+                    constraints that made it work are exactly the constraints that
+                    make it unwise now. That is not a criticism. It is what a
+                    decade looks like in software.
+                </p>
+            </div>
+        </div>
+    </section>
+
+    <!-- ========== FOOTER ========== -->
+    <footer>
+        <div class="container">
+            <p>
+                <strong>JavaScript Stream</strong> — a client-side content management
+                system by Sylvain Saucier, 2002. Released under a BSD 3-clause licence.
+            </p>
+            <p>
+                This page is a retrospective summary. The original source, README,
+                and licence are the authoritative record. Where this summary and
+                the source disagree, the source is correct.
+            </p>
+            <p style="margin-top: 1.5rem; font-size: 0.8rem; color: #444;">
+                Written as a companion piece to the Software-Defined Entropy
+                research overview, in the same tone: measured, honest about limits,
+                and careful about what a result does and does not claim.
+            </p>
+        </div>
+    </footer>
+
+</body>
+</html>

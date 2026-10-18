@@ -1,0 +1,432 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SoftLed — Animation as Data, Engine as Loop</title>
+    <meta name="description" content="A 2012 firmware project that turned PWM LED animation into a chain of keyframes, driven by a single 100 Hz loop on a Maple board.">
+    <link href="../text.css" rel="stylesheet">
+</head>
+<body>
+
+    <!-- ========== NAV ========== -->
+    <nav>
+        <div class="container">
+            <span class="brand">SoftLed</span>
+            <div class="links">
+                <a href="index.html">Back</a>
+                <a href="#what">What</a>
+                <a href="#how">How</a>
+                <a href="#pieces">Pieces</a>
+                <a href="#boundaries">Boundaries</a>
+                <a href="#status">Status</a>
+            </div>
+        </div>
+    </nav>
+
+    <!-- ========== HERO ========== -->
+    <header class="hero">
+        <div class="container">
+            <span class="tagline">Project Retrospective</span>
+            <h1>Animation as data, engine as loop.</h1>
+            <p class="subtitle">
+                In 2012 a Maple board — ARM, Arduino-compatible — could drive ten
+                PWM LEDs. The obvious way to make them pulse was to put
+                <code>delay()</code> calls in the sketch. This project did something
+                else: it made each animation a chain of keyframes, and let a single
+                100 Hz loop walk every LED through its own chain. The animation
+                became data. The engine became a loop.
+            </p>
+        </div>
+    </header>
+
+    <!-- ========== WHAT ========== -->
+    <section id="what">
+        <div class="container">
+            <h2>What it was</h2>
+            <p>
+                The board was a LeafLabs Maple: an STM32F103, ARM Cortex-M3, with an
+                Arduino-compatible API but its own hardware calls —
+                <code>SerialUSB</code>, <code>BOARD_LED_PIN</code>, a <code>PWM</code>
+                mode constant, <code>pwmWrite</code>, <code>toggleLED</code>. The
+                project was called <strong>SoftLed 0.1 Alpha</strong>, written by
+                Sylvain Saucier in January 2012.
+            </p>
+            <p>
+                The problem it solved is ordinary. A microcontroller has a handful
+                of PWM pins. You want to fade LEDs up and down, pulse them, make
+                them breathe, chain one effect into another. The naive approach is
+                to write each animation as a sequence of <code>pwmWrite</code> calls
+                interleaved with <code>delay</code>:
+            </p>
+
+<pre><code>pwmWrite(led, 128);
+delay(500);
+pwmWrite(led, 255);
+delay(500);</code></pre>
+
+            <p>
+                That blocks everything else. Only one animation can run at a time.
+                Ten LEDs mean ten seconds of dead CPU. The animation is a script,
+                and the script is the system.
+            </p>
+
+            <div class="highlight">
+                <p>
+                    <strong>The core idea:</strong> separate the animation from the
+                    execution. An animation is a chain of steps — each step is a
+                    target value, a duration, and a pointer to the next step. The
+                    engine is a single loop that, every ten milliseconds, checks
+                    whether each LED's current step has expired, and either advances
+                    to the next step or interpolates the current value toward the
+                    goal. No delays. No blocking. Ten LEDs, ten animations, one loop.
+                </p>
+            </div>
+
+            <p>
+                The animation is a linked list. The engine is an interpreter. The
+                serial protocol is a way to edit the list from a host. That is the
+                whole design.
+            </p>
+        </div>
+    </section>
+
+    <!-- ========== HOW ========== -->
+    <section id="how">
+        <div class="container">
+            <h2>How it worked</h2>
+            <p>
+                A <strong>program step</strong> is three numbers:
+                <code>{ target, wait, next }</code>. Fade to <code>target</code> over
+                <code>wait</code> milliseconds, then jump to step <code>next</code>.
+                Program zero is special: it means “stay where you are, load nothing
+                new.” A program chain is a linked list of steps. Because
+                <code>next</code> is an index, chains can loop — 1 → 2 → 1 gives a
+                pulse — or terminate — → 0 gives a one-shot fade that stays.
+            </p>
+            <p>
+                The setup in the source defines six programs. Two of them form a
+                pulse loop; two form a breathing loop; two are one-shot fades to
+                full and to off:
+            </p>
+
+<pre><code>Program 1: 65535 ──250ms──▶ 2      ┐
+Program 2: 0     ──250ms──▶ 1      ┘  500ms pulse, full to off
+
+Program 3: 55535 ──750ms──▶ 4      ┐
+Program 4: 10000 ──750ms──▶ 3      ┘  1.5s breathing, 15% to 85%
+
+Program 5: 65535 ──60s────▶ 0          one-shot fade to full, stay
+Program 6: 0     ──60s────▶ 0          one-shot fade to off, stay</code></pre>
+
+            <p>
+                An <strong>LED</strong> is <code>{ pin, program, value, goal, deadline }</code>.
+                Adding an LED registers its pin, sets its initial goal and program
+                pointer, and starts it at value zero. From then on the loop drives
+                it. An LED is just a cursor into a program chain.
+            </p>
+            <p>
+                The loop — <code>_led_update</code>, scheduled every 10 ms — is the
+                whole engine:
+            </p>
+
+<pre><code>for each LED:
+    if time &gt;= deadline:
+        value = goal
+        if program &gt; 0:
+            next = Progs.next[program - 1]
+            if next &gt; 0:
+                deadline = time + Progs.wait[next - 1]
+                goal     = Progs.target[next - 1]
+            program = next
+    else:
+        value = map(time, last_time, deadline, last_value, goal)
+    pwmWrite(pin, value)
+last_time = time</code></pre>
+
+            <p>
+                Two things are worth noticing. First, interpolation and program
+                advance are the same mechanism. One branch handles “deadline
+                reached” and jumps to the next program; the other handles “deadline
+                not reached” and interpolates. There is no separate animation
+                engine — the loop is the engine. Second, the interpolation uses
+                <em>absolute</em> timestamps at both ends: the last tick and the
+                deadline. A skipped tick does not break the animation, because the
+                next tick catches up. The fade is a function of time, not of
+                iterations.
+            </p>
+            <p>
+                The protocol is ASCII, fixed-width, and terminated with
+                <code>#</code>. Six commands, in three pairs — get, set, add, for
+                each of LED and program:
+            </p>
+
+<pre><code>GL#                              get LEDs          (stub)
+GP#                              get programs      (stub)
+
+SLlllgggggddddddddddppppp#       set LED           (26 chars)
+SPpppppgggggddddddddddnnnnn#     set program       (28 chars)
+
+ALnnngggggddddddddddppppp#       add LED           (26 chars)
+APgggggddddddddddnnnnn#          add program       (23 chars)</code></pre>
+
+            <p>
+                <code>n</code> is a pin, <code>l</code> an LED index, <code>p</code>
+                a program index, <code>g</code> a goal value (0–65535), and
+                <code>d</code> a duration in milliseconds. The commands are
+                human-readable and human-typeable. You can drive the whole system
+                from a serial terminal.
+            </p>
+            <p>
+                There is one asymmetry worth flagging because the source flags it
+                too. <code>AL</code> takes a <strong>pin</strong>, because the LED
+                index is assigned by the firmware as LEDs are added.
+                <code>SL</code> takes an <strong>LED index</strong>, not a pin. The
+                comments carry the warning — <code>!NOT THE LED PIN!</code> on
+                set, <code>!WILL NOT BECOME THE LED NUMBER!</code> on add — because
+                the author knew it was a trap. Add by pin, remember the index, set
+                by index.
+            </p>
+
+            <div class="metrics">
+                <div class="metric">
+                    <div class="value">10</div>
+                    <div class="label">Maximum LEDs</div>
+                </div>
+                <div class="metric">
+                    <div class="value">100</div>
+                    <div class="label">Maximum program steps</div>
+                </div>
+                <div class="metric">
+                    <div class="value">100 Hz</div>
+                    <div class="label">Update rate</div>
+                </div>
+                <div class="metric">
+                    <div class="value">6</div>
+                    <div class="label">Commands in the protocol</div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- ========== PIECES ========== -->
+    <section id="pieces">
+        <div class="container">
+            <h2>The pieces</h2>
+            <p>
+                The firmware is small and conventional for its moment: three
+                libraries, a task table, and a serial command parser.
+            </p>
+
+            <div class="card-grid">
+                <div class="card">
+                    <div class="doc-label">Animation</div>
+                    <h3><code>led_lib.pde</code></h3>
+                    <p>The program and LED databases, the update loop, and the
+                    add/set/get wrappers. This is the engine: program chaining,
+                    linear interpolation, PWM output.</p>
+                </div>
+                <div class="card">
+                    <div class="doc-label">Control</div>
+                    <h3><code>control_lib.pde</code></h3>
+                    <p>The serial command parser. Reads characters into a buffer,
+                    recognizes <code>#</code>, looks up the command pair, dispatches
+                    through a function table, resets.</p>
+                </div>
+                <div class="card">
+                    <div class="doc-label">Setup</div>
+                    <h3><code>softled.pde</code></h3>
+                    <p>Constants, data structures, the command table, the task
+                    table, and the user configuration section where the example
+                    programs and LEDs are defined.</p>
+                </div>
+                <div class="card">
+                    <div class="doc-label">Scheduler</div>
+                    <h3><code>Tasks</code></h3>
+                    <p>One task, ten milliseconds, <code>_led_update</code>.
+                    Extensible in principle — <code>MAXTASK</code> is a constant —
+                    but used with exactly one entry.</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- ========== BOUNDARIES ========== -->
+    <section id="boundaries">
+        <div class="container">
+            <h2>Where the design met its edges</h2>
+            <p>
+                The model is clean. The implementation is small, direct, and — in
+                a few places — one byte past the end of an array. These are the
+                interesting parts, because they show what a parser written for a
+                cooperative host looks like when the host is not always
+                cooperative.
+            </p>
+
+            <h3>Two off-by-one bounds checks</h3>
+            <p>
+                The command buffer is <code>uint8 command[32]</code>, valid indices
+                0–31. Incoming characters are stored with
+                <code>command[++command[0]] = SerialUSB.read();</code> — pre-increment
+                the length counter, write at that index. The overflow check is
+                <code>if (command[0] &gt; COMMAND_LENGTH) resetcommand();</code>,
+                which runs <em>after</em> the write and is off by one: at
+                <code>command[0] = 32</code> the code writes <code>command[32]</code>
+                (one past the end) and the check still passes, because
+                <code>32 &gt; 32</code> is false. The next character writes
+                <code>command[33]</code> and only then resets. Two bytes past the
+                buffer, every time a long command arrives without a <code>#</code>.
+                The fix is <code>&gt;=</code> and checking before the write.
+            </p>
+            <p>
+                The command lookup loops have the same shape. The bound is
+                <code>xb &gt; CMD_REF_0_SIZE</code>, but the array has size
+                <code>CMD_REF_0_SIZE</code>, so valid indices stop one lower. And
+                because <code>||</code> evaluates left to right, the code reads
+                <code>_com_ref_0[xb]</code> <em>before</em> checking the bound. On a
+                failed lookup it reads two elements past the end of the table before
+                exiting. Reordering the operands, or using <code>&gt;=</code>,
+                would prevent it.
+            </p>
+
+            <h3>A helper that looks pure and is not</h3>
+            <p>
+                <code>atoint()</code> converts a fixed-width ASCII field to an
+                integer. It uses the global <code>xb</code> as its digit-place
+                multiplier. It works — callers reset <code>xb</code> before use, and
+                <code>resetcommand()</code> zeroes it afterwards — but it means a
+                helper that reads like a pure function is mutating shared state. Any
+                future caller that needed <code>xb</code> to survive across an
+                <code>atoint()</code> call would be quietly wrong.
+            </p>
+
+            <h3>Truncated parameters</h3>
+            <p>
+                <code>SP</code> parses the program index with five digits — up to
+                99,999 — and passes it to <code>Progs.set</code>, whose first
+                parameter is <code>uint8</code>. Same for the program argument of
+                <code>AL</code>. With <code>MAXPROGRAM = 100</code> the truncation is
+                harmless in practice, but nothing in the parser rejects an index
+                that exceeds the table.
+            </p>
+
+            <h3>Getters that do nothing</h3>
+            <p>
+                <code>GP#</code> and <code>GL#</code> call <code>Progs.get()</code>
+                and <code>Leds.get()</code>, which are empty stubs. The source
+                comments call them “BUGGY AT THE MOMENT” and “BROKEN NOW”. The
+                command table has room for read-back, and the protocol reserves
+                slots for it, but read-back was never finished. There is no way to
+                ask the board what state it is in.
+            </p>
+
+            <h3>A return value nobody reads</h3>
+            <p>
+                <code>control()</code> returns 1 when it has executed a command, and
+                its comment says this is to “allow only 1 task to be launched every
+                loop.” But <code>loop()</code> calls <code>control()</code> and
+                ignores the return value, then unconditionally runs the task list.
+                The return value documents an intent the caller does not honour. In
+                practice it does not matter — <code>control()</code> returns as soon
+                as it executes one command, so the intent is satisfied anyway — but
+                the code claims a guarantee it does not enforce.
+            </p>
+
+            <h3>The arithmetic of time</h3>
+            <p>
+                <code>map(_time, Leds.time, Leds.deadline[xb], ...)</code> divides by
+                <code>(deadline - Leds.time)</code>. If an LED is set with
+                <code>wait = 0</code>, <code>deadline</code> equals <code>millis()</code>
+                and the next tick goes through the program branch, skipping the
+                division — unless the tick lands exactly on the deadline. Rare, but
+                not excluded. Separately, <code>millis()</code> wraps every ~49.7
+                days; the code compares raw values, so after a wrap every LED
+                believes its deadline is in the far past and jumps to its goal. A
+                run longer than seven weeks would reveal both.
+            </p>
+
+            <h3>Comments that do not match the code</h3>
+            <p>
+                The example serial strings in the source comments are not all
+                faithful. Several of the <code>AL</code> examples omit the trailing
+                <code>#</code> that the parser requires. The comment for program 4
+                repeats the target value from program 3 — <code>55535</code> instead
+                of <code>10000</code>. These are documentation bugs, not code bugs,
+                but they are the kind that cost an hour to a reader who trusts the
+                comment over the call.
+            </p>
+
+            <div class="highlight">
+                <p>
+                    <strong>The shared lesson:</strong> each of these is a place
+                    where a design that is correct under cooperative assumptions
+                    becomes fragile under adversarial ones. A command parser is an
+                    input parser, and input parsers need bounds checks that are
+                    right by one, not approximately right. The rest of the system —
+                    the program model, the interpolation, the loop — is sound. The
+                    edges are where the bugs live.
+                </p>
+            </div>
+        </div>
+    </section>
+
+    <!-- ========== STATUS ========== -->
+    <section id="status">
+        <div class="container">
+            <h2>What this is — and what it is not</h2>
+            <p>
+                This is a working firmware for a specific board (Maple, 2012) that
+                implements a general model: a chain of keyframes, a per-LED program
+                pointer, and a single loop that does both interpolation and program
+                advance. It ran on real hardware. The example chains in
+                <code>setup()</code> — pulse, breathe, fade-to-stay — are the
+                expected use cases, and they work.
+            </p>
+            <p>
+                It is not a finished product. The getters are stubs. The parser has
+                two off-by-one bugs in its bounds checks — the kind that do not fail
+                visibly on a small command set with cooperative input, which is why
+                they survived. The protocol has no framing, no checksum, no
+                acknowledgement, and no error reporting. The global scratch variable
+                is fragile. The comments drift from the code in several places.
+            </p>
+            <p>
+                It is also, structurally, an early statement of a pattern.
+                Animation as data, engine as loop — the same shape appears in
+                modern LED libraries, usually with the same separation between
+                timeline and driver. This project did it in a few hundred lines for
+                a board with 20 KB of RAM and no floating point.
+            </p>
+
+            <div class="highlight">
+                <p>
+                    <strong>The honest summary:</strong> the model was right, the
+                    implementation was good enough to demonstrate it, and the
+                    constraints that made it necessary — 8-bit microcontrollers, no
+                    dynamic allocation, one loop — are the constraints that make the
+                    pattern clear. Modern microcontrollers have room for a heavier
+                    engine, and mostly that is what people use. But the shape is the
+                    same, and it started here.
+                </p>
+            </div>
+        </div>
+    </section>
+
+    <!-- ========== FOOTER ========== -->
+    <footer>
+        <div class="container">
+            <p>
+                <strong>SoftLed 0.1 Alpha</strong> — PWM LED animation for the
+                LeafLabs Maple, by Sylvain Saucier, January 2012.
+            </p>
+            <p>
+                This page is a retrospective summary. The original source is the
+                authoritative record. Where this summary and the source disagree,
+                the source is correct — including where the source's own comments
+                disagree with its code.
+            </p>
+        </div>
+    </footer>
+
+</body>
+</html>
