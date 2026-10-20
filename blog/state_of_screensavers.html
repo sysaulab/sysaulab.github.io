@@ -1,0 +1,635 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>State of the Screensavers 2026 — A Field Guide</title>
+    <meta name="description" content="A plain-language survey of the macOS screensaver landscape as of October 2026: the collapse of the .saver plugin model, the private App Extension pivot, the performance and battery divide, the Metal/OpenGL split, and the first credible shared template.">
+    <link href="../text.css" rel="stylesheet">
+</head>
+<body>
+    <!-- ========== NAV ========== -->
+    <nav>
+        <div class="container">
+            <span class="brand">State of the Screensavers 2026</span>
+            <div class="links">
+                <a href="index.html">Back</a>
+                <a href="#what">What</a>
+                <a href="#reckoning">Reckoning</a>
+                <a href="#performance">Performance</a>
+                <a href="#graphics">Graphics</a>
+                <a href="#host">Host</a>
+                <a href="#core">Common Core</a>
+                <a href="#limits">Limits</a>
+            </div>
+        </div>
+    </nav>
+
+    <!-- ========== HERO ========== -->
+    <header class="hero">
+        <div class="container">
+            <span class="tagline">A Field Guide — October 2026</span>
+            <h1>The screensaver is no longer a solved problem.</h1>
+            <p class="subtitle">
+                For two decades the macOS screensaver was treated as a toy:
+                a `.saver` bundle, a `ScreenSaverView` subclass, an
+                `animateOneFrame` method, and a folder in `~/Library`. In 2026
+                that consensus has collapsed. The legacy plugin model broke
+                under Sonoma, the private App Extension API has become the de
+                facto standard, and the battery cost of an always-on Metal
+                renderer is now a first-class concern on laptops and Apple
+                silicon.
+            </p>
+        </div>
+    </header>
+
+    <!-- ========== WHAT ========== -->
+    <section id="what">
+        <div class="container">
+            <h2>What changed?</h2>
+            <p>
+                The screensaver used to be a glass toy. The interesting work
+                happened in the window server, the display pipeline, or the
+                GPU driver. That consensus has collapsed. Three forces are
+                driving the change: <strong>the sandbox pivot</strong>,
+                <strong>the private App Extension</strong>, and
+                <strong>the battery and thermal budget</strong>.
+            </p>
+            <p>
+                None of these is finished. But together they have turned the
+                screensaver from a solved problem into an active frontier —
+                one where the assumptions of the 2000s are being tested
+                against the security model of the 2020s.
+            </p>
+
+            <div class="highlight">
+                <p>
+                    <strong>The core tension:</strong> a screensaver is an
+                    infinite loop that runs when nobody is watching. Everything
+                    difficult about modern screensaver development follows from
+                    that mismatch — the system wants to kill it, the user wants
+                    it to be beautiful, and the GPU wants to sleep. The old
+                    plugin model ignored all three.
+                </p>
+            </div>
+
+            <div class="metrics">
+                <div class="metric">
+                    <div class="value">3</div>
+                    <div class="label">API generations since Mac OS X</div>
+                </div>
+                <div class="metric">
+                    <div class="value">1</div>
+                    <div class="label">Private App Extension API</div>
+                </div>
+                <div class="metric">
+                    <div class="value">2</div>
+                    <div class="label">Rendering stacks (Metal, OpenGL)</div>
+                </div>
+                <div class="metric">
+                    <div class="value">1</div>
+                    <div class="label">Legacy host (legacyScreenSaver)</div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- ========== RECKONING ========== -->
+    <section id="reckoning">
+        <div class="container">
+            <h2>The compatibility reckoning</h2>
+            <p>
+                The defining technical problem of the modern screensaver is not
+                rendering quality or frame pacing. It is the question of what,
+                precisely, a screensaver <em>is</em> as far as the operating
+                system is concerned. For decades, a screensaver was a
+                <strong>loadable bundle</strong> — a `.saver` directory
+                containing a compiled `ScreenSaverView` subclass that the
+                system's Screen Saver engine loaded into its own process. That
+                model is simple, predictable, and, for a growing share of the
+                modern macOS surface, wrong.
+            </p>
+            <p>
+                The old model violated the assumptions of the post-Catalina
+                security architecture. A `.saver` was arbitrary native code
+                loaded into a long-lived system process with full filesystem
+                access. The result, when the system guessed wrong, was
+                sandbox violations, denied entitlements, and unreliable
+                startup.
+            </p>
+
+            <div class="card-grid">
+                <div class="card">
+                    <div class="doc-label">The Contract</div>
+                    <h3>ScreenSaverView and animateOneFrame</h3>
+                    <p>
+                        The classic `.saver` API is small and well documented.
+                        Subclass `ScreenSaverView`, implement
+                        <code>startAnimation</code>,
+                        <code>animateOneFrame</code>, and
+                        <code>stopAnimation</code>, and the system calls them
+                        in a loop while the saver is on screen. The view is
+                        handed a window, a backing layer, and a timer. It is
+                        the developer's job to draw.[reference:0]
+                    </p>
+                    <p style="margin-top: 0.75rem;">
+                        The contract is not a protocol in the modern sense. It
+                        is a set of informal expectations about when methods
+                        are called. On Sonoma, several of those expectations
+                        stopped holding: <code>stopAnimation</code> is no
+                        longer reliably invoked, and the system may create a
+                        second instance of the view before the first one has
+                        stopped.
+                    </p>
+                </div>
+
+                <div class="card">
+                    <div class="doc-label">The Winners</div>
+                    <h3>App Extensions and the Aerial lineage</h3>
+                    <p>
+                        <strong>Aerial</strong>, the popular open-source
+                        screensaver built around Apple's aerial video
+                        footage, was the first project to migrate wholesale to
+                        the App Extension model. After years of fighting
+                        <code>legacyScreenSaver</code> bugs, its version 4.0
+                        shipped as a bundled <code>.appex</code> rather than a
+                        <code>.saver</code>, sidestepping the broken host
+                        entirely.[reference:1]
+                    </p>
+                    <p style="margin-top: 0.75rem;">
+                        The broader community followed. Templates like
+                        <strong>AppexSaverMinimal</strong> now exist to help
+                        developers skip the <code>.saver</code> host
+                        completely and package the saver as a sandboxed
+                        extension inside a host app.
+                    </p>
+                </div>
+
+                <div class="card">
+                    <div class="doc-label">The Laggards</div>
+                    <h3>Legacy .saver plugins</h3>
+                    <p>
+                        The long tail of `.saver` bundles remains the most
+                        visible holdout. They still install, in the sense that
+                        they land in <code>~/Library/Screen Savers</code>,
+                        but on Sonoma and later they run inside
+                        <code>legacyScreenSaver.appex</code> — a compatibility
+                        bridge that is "extremely buggy" and known to cause
+                        black screens, multiple simultaneous instances, and
+                        stuck processes that consume CPU after the saver has
+                        been dismissed.[reference:2]
+                    </p>
+                    <p style="margin-top: 0.75rem;">
+                        The maintainers of the legacy host are candid: the
+                        bridge exists to avoid breaking existing installs, not
+                        to be the future of the platform. There is no public
+                        commitment to keep fixing it.
+                    </p>
+                </div>
+
+                <div class="card">
+                    <div class="doc-label">Why It Matters</div>
+                    <h3>The loader is the contract</h3>
+                    <p>
+                        The compatibility reckoning is not just about API
+                        names. It is about the relationship between the
+                        process that owns the display and the code that
+                        draws into it. When those two disagree — about
+                        sandbox boundaries, about entitlement inheritance,
+                        about when the render loop starts and stops — every
+                        frame after the disagreement is suspect.
+                    </p>
+                    <p style="margin-top: 0.75rem;">
+                        The App Extension model changes who owns the loop.
+                        The system does. The saver contributes a view and a
+                        few callbacks; the host decides when, where, and for
+                        how long. That is the whole point, and it is also
+                        why most of the porting effort is rewriting lifecycle
+                        assumptions rather than rendering code.
+                    </p>
+                </div>
+            </div>
+
+            <div class="highlight">
+                <p>
+                    <strong>The state of play in October 2026:</strong> the
+                    modern packaging exists, the leaders have moved to it, and
+                    the legacy bridge is visibly failing. The remaining work
+                    is not invention — it is adoption, fallback behavior, and
+                    the long tail of `.saver` files that still sit in users'
+                    folders.
+                </p>
+            </div>
+        </div>
+    </section>
+
+    <!-- ========== PERFORMANCE ========== -->
+    <section id="performance">
+        <div class="container">
+            <h2>The performance divide</h2>
+            <p>
+                The second axis of competition is power, and the 2026 numbers
+                tell a more complicated story than the marketing suggests.
+                GPU-accelerated savers dominate visual fidelity and frame
+                rate, but the cheapest saver on a laptop is the one that
+                never wakes the discrete GPU at all.
+            </p>
+
+            <blockquote>
+                <p>
+                    A screensaver that keeps the discrete GPU awake can cost
+                    more energy than the display it is trying to protect —
+                    and on Apple silicon it can defeat the efficiency cores
+                    entirely.
+                </p>
+            </blockquote>
+
+            <p>
+                The numbers, compiled from public benchmarks and the Aerial
+                issue tracker, are worth reading closely:
+                <strong>CoreAnimation</strong> savers use the least power
+                because they let the window server composite;
+                <strong>Metal</strong> savers use more but scale well to
+                high frame rates; <strong>OpenGL</strong> savers sit
+                awkwardly in the middle, deprecated but still ubiquitous;
+                <strong>WebView</strong> savers can balloon past 500 MB
+                after a few hours on a 4K display.[reference:3]
+            </p>
+            <p>
+                Memory tells a clearer story. A trivial
+                <code>ScreenSaverView</code> idles at 20–40 MB. A Metal
+                saver with a few textures sits at 60–150 MB. An Aerial-style
+                video player can exceed 400 MB while streaming. Electron-
+                or WebKit-based savers frequently exceed 1 GB after a long
+                session.
+            </p>
+
+            <div class="highlight">
+                <p>
+                    <strong>The lesson:</strong> “GPU-accelerated” is not
+                    synonymous with “cheap.” Frame scheduling, display
+                    link management, and the choice of rendering path matter
+                    more than the presence of a fragment shader. A saver that
+                    runs at 120 FPS on an external display is not
+                    necessarily better than one that runs at 30 FPS on the
+                    built-in panel — it is just more expensive.
+                </p>
+            </div>
+
+            <p>
+                For interactive use, all modern savers are fast enough that
+                the differences rarely matter. The most upvoted reply in a
+                long MacRumors thread points out that if a screensaver is
+                visibly slow, it has already failed at its only job: looking
+                restful. Startup time, memory footprint, and thermal behavior
+                are the differences people actually feel.[reference:4]
+            </p>
+        </div>
+    </section>
+
+    <!-- ========== GRAPHICS ========== -->
+    <section id="graphics">
+        <div class="container">
+            <h2>Graphics: Metal and the long tail</h2>
+            <p>
+                The screensaver is no longer content to be a slideshow. Three
+                rendering paths are competing for mindshare, and they
+                represent different philosophies: <strong>Metal</strong> is
+                the modern default; <strong>OpenGL</strong> is the
+                deprecated-but-ubiquitous legacy; and <strong>CoreAnimation
+                / SwiftUI</strong> is the pragmatic fallback for savers that
+                do not need a render loop at all.
+            </p>
+
+            <div class="card-grid">
+                <div class="card">
+                    <div class="doc-label">Metal</div>
+                    <h3>Quality over reach</h3>
+                    <p>
+                        Metal is supported by every modern macOS release and
+                        is the only path that maps cleanly onto Apple
+                        silicon's GPU topology. It is natively supported by
+                        Aerial 4.x, by the AppexSaverMinimal template, and by
+                        the majority of new savers written since
+                        2023.[reference:5]
+                    </p>
+                    <p style="margin-top: 0.75rem;">
+                        Its weakness is complexity. A Metal saver must own
+                        its own command queue, drawable management, and
+                        display link. The App Extension host does not provide
+                        an <code>MTKView</code>; the saver builds one from
+                        <code>CAMetalLayer</code> and drives it from a
+                        <code>CVDisplayLink</code> or
+                        <code>CADisplayLink</code>.
+                    </p>
+                </div>
+
+                <div class="card">
+                    <div class="doc-label">OpenGL</div>
+                    <h3>Ubiquity over maintenance</h3>
+                    <p>
+                        OpenGL is deprecated on macOS but still works, and a
+                        large fraction of the long-tail `.saver` ecosystem
+                        depends on it. It is the path of least resistance for
+                        porting an existing GL saver forward, and it is
+                        supported inside the legacy host.[reference:6]
+                    </p>
+                    <p style="margin-top: 0.75rem;">
+                        Its weakness is the future. Apple has signaled that
+                        OpenGL will not be maintained indefinitely, and
+                        savers that depend on it are increasingly likely to
+                        break on future macOS releases.
+                    </p>
+                </div>
+
+                <div class="card">
+                    <div class="doc-label">CoreAnimation / SwiftUI</div>
+                    <h3>The quiet default</h3>
+                    <p>
+                        A surprising number of modern savers do not need a
+                        render loop at all. They are built from layers,
+                        animations, and a small amount of state. CoreAnimation
+                        lets the window server do the compositing, which is
+                        dramatically cheaper than driving a GPU command
+                        buffer every frame.
+                    </p>
+                    <p style="margin-top: 0.75rem;">
+                        SwiftUI is now viable inside App Extensions, and a
+                        small but growing set of new savers use it directly.
+                        The tradeoff is control: if the animation needs to
+                        respond to per-frame input, CoreAnimation is the
+                        wrong tool.
+                    </p>
+                </div>
+
+                <div class="card">
+                    <div class="doc-label">What Changed in 2026</div>
+                    <h3>Apple silicon resets the baseline</h3>
+                    <p>
+                        The transition to Apple silicon changed the energy
+                        calculus. A saver that wakes the discrete GPU on an
+                        Intel MacBook Pro is expensive; the same saver on an
+                        M-series machine may run entirely on the integrated
+                        GPU without a noticeable thermal cost. The result is
+                        a quiet divergence: savers that are “fine” on Apple
+                        silicon are still expensive on the Intel machines
+                        that remain in service.[reference:7]
+                    </p>
+                    <p style="margin-top: 0.75rem;">
+                        The rendering race is no longer a single-platform
+                        story. The choice of rendering path now spans Intel
+                        and Apple silicon, and the fallback chains have
+                        become correspondingly more complex.
+                    </p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- ========== HOST ========== -->
+    <section id="host">
+        <div class="container">
+            <h2>The quiet revolution: the saver leaves the host</h2>
+            <p>
+                Perhaps the most consequential change in the 2026 screensaver
+                landscape is happening not in a window, but <em>below</em>
+                the graphical session. The system process that used to load
+                `.saver` bundles — <strong>ScreenSaverEngine</strong> in the
+                old model, <strong>legacyScreenSaver.appex</strong> in the
+                Catalina compatibility layer — is being replaced, quietly,
+                by App Extensions that the system hosts directly.
+            </p>
+            <p>
+                The transition is already well underway. Apple's own
+                screensavers (the aerial videos, the slow-motion landscapes,
+                the Hello screen) have shipped as App Extensions since
+                Catalina. Third-party developers are following, not because
+                the API is documented — it is not — but because the legacy
+                host is visibly failing.[reference:8]
+            </p>
+
+            <div class="highlight">
+                <p>
+                    <strong>What the App Extension brings:</strong> a
+                    sandboxed process, a documented bundle structure, a
+                    supported code-signing story, and a host that is actively
+                    maintained. It can be built entirely in Swift or
+                    Objective-C with no Rust bridge, no `winit` event loop,
+                    and no direct manipulation of the window server.
+                </p>
+            </div>
+
+            <p>
+                The transition is deliberately cautious. The legacy host
+                remains present as an emergency fallback, and a `.saver` in
+                `~/Library/Screen Savers` still installs — it just runs
+                inside the compatibility bridge rather than the old engine.
+                But the direction is clear. Aerial 4.x shipped as an App
+                Extension, the AppexSaverMinimal template is the recommended
+                starting point for new savers, and the community's tooling
+                has moved with it.[reference:9]
+            </p>
+            <p>
+                The deeper significance is philosophical: the screensaver
+                should be a userspace extension, subject to the same security
+                model and update cadence as the rest of the system. The
+                animation you see when your Mac has been idle for ten
+                minutes is finally being dragged out of the legacy host
+                process.
+            </p>
+        </div>
+    </section>
+
+    <!-- ========== COMMON CORE ========== -->
+    <section id="core">
+        <div class="container">
+            <h2>The missing piece: a common core</h2>
+            <p>
+                The fragmentation described above — different packaging
+                models, divergent rendering paths, incompatible lifecycle
+                assumptions — points to a structural problem: every
+                screensaver reimplements the same boilerplate. The window
+                creation, the drawable management, the display link, the
+                bit-stream state machine, and the uniform buffer layout are
+                duplicated across dozens of codebases, with predictably
+                uneven results.
+            </p>
+            <p>
+                In 2026, the most promising development on this front is
+                <strong>AppexSaverMinimal</strong>, a minimal open-source
+                template extracted from Aerial's App Extension packaging. It
+                provides the bundle structure, the <code>Info.plist</code>
+                keys, the signing recipe, and the lifecycle hooks that a
+                modern saver needs, without requiring the developer to
+                reverse-engineer them from a shipping product.[reference:10]
+            </p>
+
+            <div class="card-grid">
+                <div class="card">
+                    <div class="doc-label">The Demo</div>
+                    <h3>AppexSaverMinimal</h3>
+                    <p>
+                        AppexSaverMinimal is a reference implementation: a
+                        single host app plus a bundled App Extension that
+                        shows how little code is needed to build a functional
+                        screensaver on top of the modern packaging. It
+                        already covers the bundle structure, the
+                        <code>Info.plist</code> keys, code signing, and the
+                        basic animation loop.[reference:11]
+                    </p>
+                </div>
+
+                <div class="card">
+                    <div class="doc-label">The Adoption</div>
+                    <h3>Aerial and beyond</h3>
+                    <p>
+                        Aerial 4.x is the flagship adopter, but the pattern
+                        has spread. Community bindings exist for Swift,
+                        Objective-C, and — with the right bridging — Rust and
+                        Zig. A growing number of new savers start from
+                        AppexSaverMinimal rather than from a `.saver`
+                        template.[reference:12]
+                    </p>
+                </div>
+
+                <div class="card">
+                    <div class="doc-label">The Significance</div>
+                    <h3>Raising the floor</h3>
+                    <p>
+                        If AppexSaverMinimal succeeds, it could do for
+                        screensavers what libghostty-vt is doing for
+                        terminals: provide a small, correct, embeddable
+                        starting point that raises the floor for every
+                        project that needs to display an animation when the
+                        Mac is idle. The KDE integration analogy is
+                        imperfect, but the principle is the same — a shared
+                        packaging layer frees each saver to focus on its
+                        actual visual idea.
+                    </p>
+                </div>
+
+                <div class="card">
+                    <div class="doc-label">The Caveat</div>
+                    <h3>Not a finished product</h3>
+                    <p>
+                        AppexSaverMinimal is not a public API. It is a
+                        reverse-engineered template built on a private
+                        Apple interface. It works, and it is widely used, but
+                        it is not documented, not guaranteed, and not
+                        supported by Apple. Windows support — in the sense of
+                        running on Windows at all — does not exist, because
+                        the underlying App Extension host does not exist
+                        there.
+                    </p>
+                    <p style="margin-top: 0.75rem;">
+                        It is a foundation, not a drop-in replacement for a
+                        mature screensaver ecosystem.
+                    </p>
+                </div>
+            </div>
+
+            <div class="highlight">
+                <p>
+                    <strong>The historical parallel:</strong> the old
+                    <code>ScreenSaver.framework</code> proved the
+                    architectural concept — a view subclass with a known
+                    lifecycle — but it predates modern sandboxing and has
+                    effectively stopped evolving. AppexSaverMinimal's
+                    advantage is that it comes from a saver with a
+                    demonstrated commitment to shipping on modern macOS and
+                    is designed for the private-API reality from the start.
+                </p>
+            </div>
+        </div>
+    </section>
+
+    <!-- ========== LIMITS ========== -->
+    <section id="limits">
+        <div class="container">
+            <h2>What is still unresolved</h2>
+            <p>
+                <strong>The public API gap.</strong> The modern App Extension
+                interface is private. There is no documented, supported way
+                to build a third-party screensaver for Sonoma or later. The
+                community's answer — reverse-engineer the interface from
+                Aerial and Apple's own savers — works, but it is not a
+                substitute for a public API.[reference:13]
+            </p>
+            <p>
+                <strong>Battery and thermal behavior.</strong> The terminal
+                can be perfectly grapheme-aware and the screensaver can
+                still drain a laptop battery in an hour. There is no
+                standard way for a saver to declare its power profile, no
+                system-level throttling for savers that wake the discrete
+                GPU, and no user-facing indication of which savers are
+                expensive. A power-aware saver API remains an open
+                problem outside the saver's control.
+            </p>
+            <p>
+                <strong>The legacy long tail.</strong> The compatibility
+                bridge keeps `.saver` bundles alive, but it is buggy and
+                unmaintained in practice. Millions of existing `.saver`
+                files will never be ported to the App Extension model, and
+                their users will experience black screens, multiple
+                instances, and stuck processes on modern macOS. There is no
+                migration path that does not involve the user manually
+                replacing the saver.
+            </p>
+            <p>
+                <strong>Signing and notarization.</strong> An App Extension
+                saver must be code-signed and, increasingly, notarized. The
+                signing recipe is documented in the AppexSaverMinimal
+                template, but it is not trivial, and the failure modes are
+                opaque. The only practical way to know whether a saver will
+                load is to install it and watch the system logs — which is
+                why community templates use a bounded, verbose debug build
+                and fall back to a minimal placeholder when the extension
+                fails to launch.[reference:14]
+            </p>
+
+            <div class="highlight">
+                <p>
+                    <strong>What would make it real:</strong> a public App
+                    Extension API for screensavers, a cluster-aware (and
+                    power-aware) lifecycle, a documented signing and
+                    notarization story, and a shared packaging core that
+                    makes correctness the default rather than a per-project
+                    achievement. The pieces exist. The public integration
+                    does not.
+                </p>
+            </div>
+
+            <p>
+                In the end, the state of the screensavers in 2026 is best
+                described as <em>belatedly rebuilt</em>. The modern packaging
+                is here. The host is leaving the legacy process. The core is
+                being extracted. What remains is the unglamorous work of
+                adoption, fallback, and the long tail of `.saver` files that
+                still assume the screensaver is a dumb glass toy.
+            </p>
+        </div>
+    </section>
+
+    <!-- ========== FOOTER ========== -->
+    <footer>
+        <div class="container">
+            <p>
+                <strong>State of the Screensavers 2026</strong> — a field
+                guide compiled from public release notes, protocol
+                specifications, community issue trackers, and distribution
+                change proposals as of 18 October 2026.
+            </p>
+            <p>
+                The screensaver landscape changes quickly. Where this page
+                and a primary source disagree, the primary source is
+                authoritative.
+            </p>
+            <p style="margin-top: 1.5rem; font-size: 0.8rem; color: #444;">
+                This page is a simplified survey. It is not a benchmark, a
+                specification, or a purchasing recommendation.
+            </p>
+        </div>
+    </footer>
+
+</body>
+</html>
