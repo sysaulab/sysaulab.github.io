@@ -1,0 +1,629 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>The State of Open "Libre" AI — A Field Guide</title>
+    <meta name="description" content="A plain-language audit of the open AI landscape as of 2026: the three competing meanings of 'open', the closed American frontier and its Llama decoy, China's open-weight commoditization strategy, and why almost nothing shipping today passes the libre test.">
+    <link href="../text.css" rel="stylesheet">
+</head>
+<body>
+    <!-- ========== NAV ========== -->
+    <nav>
+        <div class="container">
+            <span class="brand">The State of Open "Libre" AI</span>
+            <div class="links">
+                <a href="index.html">Back</a>
+                <a href="#what">What</a>
+                <a href="#wall">Wall</a>
+                <a href="#garden">Garden</a>
+                <a href="#catch">Catch</a>
+                <a href="#test">Test</a>
+                <a href="#watch">Watch</a>
+                <a href="#verify">Verify</a>
+            </div>
+        </div>
+    </nav>
+
+    <!-- ========== HERO ========== -->
+    <header class="hero">
+        <div class="container">
+            <span class="tagline">A Field Guide — 2026</span>
+            <h1>"Open" is doing an enormous amount of unearned work.</h1>
+            <p class="subtitle">
+                For a decade the word "open" in AI meant roughly one thing:
+                you could download the file and run it. In 2026 it means at
+                least three different things, and the people using it rarely
+                say which. Meanwhile the geography has sorted itself with
+                unusual clarity — the American frontier is closed and
+                API-gated, the Chinese frontier is open-weight and
+                strategically distributed, and almost nothing on either side
+                would survive an honest audit against the four freedoms.
+                This guide separates the three meanings, maps the two camps,
+                and applies one test.
+            </p>
+        </div>
+    </header>
+
+    <!-- ========== WHAT ========== -->
+    <section id="what">
+        <div class="container">
+            <h2>What does "open" actually mean?</h2>
+            <p>
+                The open AI conversation is not confused about facts so much
+                as conflated about terms. Three distinct claims travel under
+                the same word, and the slippage between them is where most of
+                the industry's marketing lives. <strong>Open weights</strong>
+                is a distribution property. <strong>Open source</strong> is a
+                licensing and reproducibility property.
+                <strong>Libre</strong> is a freedom property, and it is the
+                strictest of the three.
+            </p>
+            <p>
+                None of these is a moral failing on its own. The failure is
+                letting a model that passes the first test be described with
+                the vocabulary of the third — and then letting the
+                description stand.
+            </p>
+
+            <div class="highlight">
+                <p>
+                    <strong>The core tension:</strong> a model can be
+                    downloadable, modifiable, and redistributable while still
+                    being unauditable, unreproducible, and revocable by
+                    license. Those are not edge cases. That is the default
+                    configuration of nearly every model marketed as open in
+                    2026.
+                </p>
+            </div>
+
+            <div class="metrics">
+                <div class="metric">
+                    <div class="value">3</div>
+                    <div class="label">Definitions of "open" in circulation</div>
+                </div>
+                <div class="metric">
+                    <div class="value">0</div>
+                    <div class="label">US frontier models with downloadable weights</div>
+                </div>
+                <div class="metric">
+                    <div class="value">671B</div>
+                    <div class="label">Parameters in DeepSeek-R1, MIT-licensed</div>
+                </div>
+                <div class="metric">
+                    <div class="value">170</div>
+                    <div class="label">Words in the MIT license</div>
+                </div>
+            </div>
+
+            <div class="card-grid">
+                <div class="card">
+                    <div class="doc-label">Definition One</div>
+                    <h3>Open weights</h3>
+                    <p>
+                        You can download the parameters and run them on your
+                        own hardware. That is the entire claim. The training
+                        data is secret, the training code is partial or
+                        absent, and reproducibility is a rumor. This is what
+                        most "open" releases actually deliver, and it is a
+                        genuine good — you can self-host, you can fine-tune,
+                        you are not renting.
+                    </p>
+                    <p style="margin-top: 0.75rem;">
+                        It is also the weakest of the three claims, and the
+                        one most often dressed up as the strongest.
+                    </p>
+                </div>
+
+                <div class="card">
+                    <div class="doc-label">Definition Two</div>
+                    <h3>Open source (OSI)</h3>
+                    <p>
+                        The Open Source AI Definition 1.0, finalized in late
+                        2024, asks for more than weights. It asks for
+                        <em>data information</em> — enough detail about the
+                        training data that a skilled person could build a
+                        substantially equivalent system — along with the code
+                        and the parameters.
+                    </p>
+                    <p style="margin-top: 0.75rem;">
+                        By this standard, a released checkpoint with a
+                        published paper is not open source. It is a
+                        well-documented artifact.
+                    </p>
+                </div>
+
+                <div class="card">
+                    <div class="doc-label">Definition Three</div>
+                    <h3>Libre</h3>
+                    <p>
+                        The four freedoms: run the program, study it, 
+                        redistribute copies, and improve it and release your
+                        improvements. Applied to a model, this means the
+                        weights, the code, the data information, and a
+                        license that does not revoke any of it.
+                    </p>
+                    <p style="margin-top: 0.75rem;">
+                        Almost nothing in the current landscape passes. A
+                        license with a revenue trigger is not libre. A license
+                        with an attribution mandate is not libre. Both are
+                        business models wearing open-source clothing.
+                    </p>
+                </div>
+
+                <div class="card">
+                    <div class="doc-label">Why It Matters</div>
+                    <h3>The word is the product</h3>
+                    <p>
+                        "Open" is not a technical descriptor in 2026; it is a
+                        market position. It buys goodwill, community
+                        contributions, talent, and press coverage. A lab that
+                        can secure those benefits while retaining practical
+                        control over the model has found the best of both
+                        worlds — and the only thing standing in the way is
+                        precision about terminology.
+                    </p>
+                    <p style="margin-top: 0.75rem;">
+                        Precision is therefore the first casualty. Read the
+                        license, not the launch post.
+                    </p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- ========== WALL ========== -->
+    <section id="wall">
+        <div class="container">
+            <h2>The wall: the American frontier is closed</h2>
+            <p>
+                The American frontier is not "moving toward closed." It is
+                closed. OpenAI, Anthropic, and Google ship API access and
+                nothing else. You cannot download GPT, Claude, or Gemini.
+                You rent them. When the terms change, or the price changes,
+                or the model is deprecated underneath your product, you find
+                out by reading a changelog.
+            </p>
+            <p>
+                This is a coherent business strategy. It is also a moat, and
+                the industry has become fluent in describing moats as safety
+                features. Both things can be true at once; the problem is
+                when only one of them is said out loud.
+            </p>
+
+            <blockquote>
+                <p>
+                    The pattern, in one line: closed flagship, open decoy.
+                    The frontier stays behind the endpoint; the smaller
+                    siblings are donated to the community, where they buy a
+                    talent pipeline and a standards position for free.
+                </p>
+            </blockquote>
+
+            <div class="card-grid">
+                <div class="card">
+                    <div class="doc-label">The Closed Frontier</div>
+                    <h3>OpenAI, Anthropic, Google</h3>
+                    <p>
+                        The three defining American labs all ship
+                        closed-weight models behind APIs. There is no
+                        download, no self-hosting, no fork. The model is a
+                        service, and the service is the product.
+                    </p>
+                    <p style="margin-top: 0.75rem;">
+                        This is the cleanest possible statement of the
+                        position: the weights are the asset, and the asset
+                        does not leave the building.
+                    </p>
+                </div>
+
+                <div class="card">
+                    <div class="doc-label">The Exception</div>
+                    <h3>Meta and the Llama lineage</h3>
+                    <p>
+                        Llama 2 and Llama 3 were the free-world counterweight
+                        — flawed licenses, yes, with acceptable-use policies
+                        and naming clauses, but weights you could hold. Llama
+                        4 arrived in April 2025 under a community license
+                        that is emphatically not open source, and the largest
+                        model in the family was never released at all.
+                    </p>
+                    <p style="margin-top: 0.75rem;">
+                        The trend line points one way: the flagship stays
+                        home, the smaller siblings get donated.
+                    </p>
+                </div>
+
+                <div class="card">
+                    <div class="doc-label">The Honest Holdout</div>
+                    <h3>Anthropic</h3>
+                    <p>
+                        Anthropic has never released an open-weight model.
+                        Not a small one, not a research one, not a community
+                        edition. The most safety-forward lab in the industry
+                        has concluded that the safest place for a model is
+                        behind its own endpoint.
+                    </p>
+                    <p style="margin-top: 0.75rem;">
+                        Whatever one thinks of the conclusion, it is at least
+                        stated without the vocabulary of openness. That
+                        consistency is worth noting.
+                    </p>
+                </div>
+
+                <div class="card">
+                    <div class="doc-label">Why It Matters</div>
+                    <h3>The endpoint is the contract</h3>
+                    <p>
+                        When you build on a closed model, the terms of your
+                        product are set by someone else's terms of service.
+                        Rate limits, deprecations, pricing, and acceptable-use
+                        enforcement are not engineering constraints you can
+                        design around — they are policy you discover.
+                    </p>
+                    <p style="margin-top: 0.75rem;">
+                        The open-weight argument was never primarily about
+                        cost. It was about who holds the kill switch.
+                    </p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- ========== GARDEN ========== -->
+    <section id="garden">
+        <div class="container">
+            <h2>The garden: China commoditizes the layer below</h2>
+            <p>
+                The garden — PyTorch, Hugging Face, the transformer paper,
+                the whole apparatus of modern machine learning — was largely
+                built by American institutions and then fenced off by
+                American corporations. The open commons is the substrate the
+                closed labs were raised on.
+            </p>
+            <p>
+                China noticed. And China is now doing to the American
+                frontier what American software did to every other industry
+                in the 1990s: <strong>commoditizing the layer below it.</strong>
+            </p>
+
+            <div class="card-grid">
+                <div class="card">
+                    <div class="doc-label">The Hinge</div>
+                    <h3>DeepSeek-R1</h3>
+                    <p>
+                        January 2025. 671 billion parameters, 37 billion
+                        active, a genuine reasoning model — and an
+                        <strong>MIT license</strong>. Not "community." Not
+                        "research only." MIT, the most permissive license in
+                        common use, applied to a frontier-class model, with a
+                        technical report attached.
+                    </p>
+                    <p style="margin-top: 0.75rem;">
+                        The market reaction was not subtle. The licensing
+                        reaction was the real story: a frontier lab had
+                        published under terms that permitted anything.
+                    </p>
+                </div>
+
+                <div class="card">
+                    <div class="doc-label">The Slow Win</div>
+                    <h3>Qwen</h3>
+                    <p>
+                        Alibaba's Qwen line has been more consequential,
+                        quietly, for longer. Apache 2.0 on most open sizes, a
+                        sprawl of variants — code, math, vision, tiny — and a
+                        download share on Hugging Face that, by multiple 2025
+                        accounts, overtook the American open-weight field.
+                    </p>
+                    <p style="margin-top: 0.75rem;">
+                        Qwen is not winning benchmarks. It is winning
+                        defaults. That is infrastructure capture, and it
+                        compounds.
+                    </p>
+                </div>
+
+                <div class="card">
+                    <div class="doc-label">The Tell</div>
+                    <h3>Kimi K2</h3>
+                    <p>
+                        Moonshot's Kimi K2, July 2025: a one-trillion-parameter
+                        mixture-of-experts under a <strong>Modified MIT
+                        License</strong> — free, unless your product crosses a
+                        monthly-active-user threshold or a revenue threshold,
+                        at which point you must display "Kimi K2" in your
+                        interface.
+                    </p>
+                    <p style="margin-top: 0.75rem;">
+                        That is not open source. That is advertising,
+                        purchased with weights. But the rent is a logo, not a
+                        per-token invoice.
+                    </p>
+                </div>
+
+                <div class="card">
+                    <div class="doc-label">Why It Matters</div>
+                    <h3>Four cold reasons</h3>
+                    <p>
+                        This is not altruism. Compute export controls
+                        constrain Chinese labs, so distribution is the weapon
+                        they actually have. Every dollar of value that drains
+                        out of the model layer flows to applications, and
+                        they would rather own the base of a huge ecosystem
+                        than the top of a small one. Contributors become
+                        users, users become advocates, advocates become hires.
+                        And openness is national strategy, not corporate
+                        accident.
+                    </p>
+                </div>
+            </div>
+
+            <div class="highlight">
+                <p>
+                    <strong>The asymmetry in one sentence:</strong> America
+                    built the garden, then built walls around it, then put a
+                    sign on the wall that says <em>open</em>. China is
+                    dancing in the garden. It did not build the garden. It is
+                    watering it, though — and it is handing out seeds.
+                </p>
+            </div>
+        </div>
+    </section>
+
+    <!-- ========== CATCH ========== -->
+    <section id="catch">
+        <div class="container">
+            <h2>The catch</h2>
+            <p>
+                The "China open, America closed" framing is accurate as far
+                as it goes, and it is also where most threads on this subject
+                stop. The scare quotes around <em>libre</em> never come off.
+                The Chinese releases are more open than the American
+                frontier, and they are still not libre.
+            </p>
+
+            <div class="card-grid">
+                <div class="card">
+                    <div class="doc-label">Caveat One</div>
+                    <h3>The licenses are not libre</h3>
+                    <p>
+                        Kimi's modified license carries a revenue trigger and
+                        an attribution mandate. That is a business model
+                        wearing an open-source costume. The OSI would not
+                        recognize it, and neither should you.
+                    </p>
+                    <p style="margin-top: 0.75rem;">
+                        It is still vastly more permissive than an API. The
+                        point is not that it is bad. The point is that it is
+                        not what the word "open" is supposed to mean.
+                    </p>
+                </div>
+
+                <div class="card">
+                    <div class="doc-label">Caveat Two</div>
+                    <h3>Nobody is reproducible</h3>
+                    <p>
+                        DeepSeek published a paper. DeepSeek did not publish
+                        the data. Under the Open Source AI Definition's own
+                        text, that fails the data-information requirement. The
+                        weights are open; the recipe is not.
+                    </p>
+                    <p style="margin-top: 0.75rem;">
+                        You can run it and you can fork it, but you cannot
+                        audit it, and you certainly cannot rebuild it. That is
+                        a real difference from Linux, and pretending otherwise
+                        is how the word lost its meaning.
+                    </p>
+                </div>
+
+                <div class="card">
+                    <div class="doc-label">Caveat Three</div>
+                    <h3>The research labs are the actual movement</h3>
+                    <p>
+                        The genuinely libre options are neither American
+                        frontier nor Chinese frontier. They are AI2's
+                        <strong>OLMo</strong>, which ships weights, data, and
+                        code under Apache 2.0, and EleutherAI's
+                        <strong>Pythia</strong>.
+                    </p>
+                    <p style="margin-top: 0.75rem;">
+                        That is the actual open-source AI movement, and it is
+                        orders of magnitude smaller than the models we argue
+                        about.
+                    </p>
+                </div>
+
+                <div class="card">
+                    <div class="doc-label">Caveat Four</div>
+                    <h3>"America" is a sloppy unit</h3>
+                    <p>
+                        Mistral is French and sits in the middle of this
+                        spectrum — permissive on small models, proprietary on
+                        large ones. If you write "America closed, China open,"
+                        a European will correctly point out that the most
+                        interesting middle ground is theirs.
+                    </p>
+                    <p style="margin-top: 0.75rem;">
+                        The useful axis is not nationality. It is license
+                        text.
+                    </p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- ========== TEST ========== -->
+    <section id="test">
+        <div class="container">
+            <h2>The test that actually matters</h2>
+            <p>
+                Forget benchmark deltas. Forget parameter counts. Ask one
+                question of any model claiming the word "open":
+                <strong>can I fork it, and can I prove what is inside?</strong>
+            </p>
+
+            <p>
+                <strong>DeepSeek-R1.</strong> Fork yes, prove no. MIT license,
+                technical report, no data information.
+            </p>
+            <p>
+                <strong>Kimi K2.</strong> Fork yes, prove no, and you may owe
+                them a logo above a usage threshold.
+            </p>
+            <p>
+                <strong>Qwen.</strong> Fork yes, prove no. Apache 2.0, which
+                is the strongest license in the open-weight field and still
+                says nothing about the recipe.
+            </p>
+            <p>
+                <strong>OLMo.</strong> Fork yes, prove yes. Weights, data, and
+                code. The only entry that passes both halves.
+            </p>
+            <p>
+                <strong>GPT, Claude, Gemini.</strong> Fork no. Which at least
+                has the virtue of honesty.
+            </p>
+
+            <div class="highlight">
+                <p>
+                    <strong>The scoreboard:</strong> the Chinese releases win
+                    the fork test and lose the audit test. The American
+                    frontier loses both and markets the result as a safety
+                    feature. The research labs pass both and cannot afford to
+                    compete. Nobody is winning on both axes at frontier scale,
+                    and that is the actual state of open AI.
+                </p>
+            </div>
+        </div>
+    </section>
+
+    <!-- ========== WATCH ========== -->
+    <section id="watch">
+        <div class="container">
+            <h2>What to watch</h2>
+            <p>
+                <strong>Does any top-tier American lab go back to open?</strong>
+                Not a 7B. A flagship, MIT or Apache, no monthly-active-user
+                clause. One such release would reset the entire argument.
+                Nothing in the current incentive structure suggests it is
+                coming.
+            </p>
+            <p>
+                <strong>Does the OSI definition get teeth?</strong> If "open
+                source AI" becomes a certification with consequences — a
+                badge you can lose — the decoy releases get more expensive. If
+                it stays a press-release adjective, the word is dead and we
+                should all say "open weights" and mean it.
+            </p>
+            <p>
+                <strong>Does the license drift run forward or backward?</strong>
+                Watch whether the Chinese licenses get <em>more</em>
+                restrictive as the models get better, or less. Kimi's
+                attribution clause is the tell. If the frontier keeps
+                licensing itself into a soft proprietary regime, "open" was a
+                go-to-market strategy, not a philosophy.
+            </p>
+
+            <div class="highlight">
+                <p>
+                    <strong>What would make it real:</strong> a frontier-class
+                    release under an unmodified permissive license, with data
+                    information sufficient to rebuild it, and no revocation
+                    clause. The pieces exist separately. The combination does
+                    not, anywhere, yet.
+                </p>
+            </div>
+        </div>
+    </section>
+
+    <!-- ========== VERIFY ========== -->
+    <section id="verify">
+        <div class="container">
+            <h2>Verification notes</h2>
+            <p>
+                This guide deliberately excludes specific 2026 model
+                releases, parameter counts, and license changes, because
+                those move faster than any page can be maintained and because
+                several circulating figures are unverifiable. Where a number
+                appears above, it is one of the following.
+            </p>
+
+            <div class="card-grid">
+                <div class="card">
+                    <div class="doc-label">Solid</div>
+                    <h3>Cited figures</h3>
+                    <p>
+                        The MIT license runs roughly 170 words. DeepSeek-R1
+                        shipped in January 2025 at 671B total / 37B active
+                        parameters under an MIT license with a published
+                        technical report. Qwen's open releases are
+                        predominantly Apache 2.0. Kimi K2 shipped in July 2025
+                        at 1T total / 32B active under a Modified MIT License
+                        with usage thresholds. Llama 4 shipped in April 2025
+                        under the Llama 4 Community License, with the largest
+                        model unreleased. Anthropic has never published open
+                        weights. OLMo and Pythia ship data and code alongside
+                        weights.
+                    </p>
+                </div>
+
+                <div class="card">
+                    <div class="doc-label">Check Yourself</div>
+                    <h3>Directional claims</h3>
+                    <p>
+                        The Hugging Face download-share crossover — Chinese
+                        open-weight models overtaking American ones — was
+                        widely reported in 2025, but the specific figure and
+                        date matter enormously to how the claim reads. Pull a
+                        primary source before quoting a number.
+                    </p>
+                </div>
+
+                <div class="card">
+                    <div class="doc-label">Excluded</div>
+                    <h3>Unverified releases</h3>
+                    <p>
+                        Any 2026 model name, parameter count, or license
+                        change not listed in the "Cited figures" card above is
+                        absent on purpose. If you have seen one quoted
+                        elsewhere, treat it as unverified until you have the
+                        model card in front of you.
+                    </p>
+                </div>
+
+                <div class="card">
+                    <div class="doc-label">The Rule</div>
+                    <h3>Read the license</h3>
+                    <p>
+                        Every claim in this guide reduces to one instruction,
+                        and it is not a technical one. The launch post is
+                        marketing. The benchmark chart is marketing. The
+                        license text is the only document that tells you what
+                        you are actually allowed to do.
+                    </p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- ========== FOOTER ========== -->
+    <footer>
+        <div class="container">
+            <p>
+                <strong>The State of Open "Libre" AI</strong> — a field guide
+                compiled from license texts, model cards, release notes, and
+                distribution policy as of 2026.
+            </p>
+            <p>
+                The open AI landscape changes quickly. Where this page and a
+                primary source disagree, the primary source is authoritative.
+            </p>
+            <p style="margin-top: 1.5rem; font-size: 0.8rem; color: #444;">
+                This page is a simplified survey. It is not a benchmark, a
+                specification, or a purchasing recommendation.
+            </p>
+        </div>
+    </footer>
+
+</body>
+</html>
