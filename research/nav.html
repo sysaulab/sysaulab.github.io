@@ -1,0 +1,405 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>The Virtual Caseworker — Architecture Overview</title>
+    <meta name="description" content="An open-source caseworker assistant built from HSDS-shaped data, document intelligence, and a local LLM. The bottleneck was never the model — it was data access.">
+    <link href="../text.css" rel="stylesheet">
+</head>
+<body>
+
+    <!-- ========== NAV ========== -->
+    <nav>
+        <div class="container">
+            <span class="brand">The Virtual Caseworker</span>
+            <div class="links">
+                <a href="index.html">Back</a>
+                <a href="#what">What</a>
+                <a href="#how">How</a>
+                <a href="#access">Access</a>
+                <a href="#cache">Cache</a>
+                <a href="#boundaries">Boundaries</a>
+            </div>
+        </div>
+    </nav>
+
+    <!-- ========== HERO ========== -->
+    <header class="hero">
+        <div class="container">
+            <span class="tagline">Architecture Overview</span>
+            <h1>The virtual caseworker is not a model problem.</h1>
+            <p class="subtitle">
+                It is possible to build an open-source assistant that reads a
+                person's documents, understands their situation, and points them
+                at services near their postal code. The hard part is not the
+                language model. The hard part is getting lawful, timely access
+                to the directory those referrals depend on.
+            </p>
+        </div>
+    </header>
+
+    <!-- ========== WHAT ========== -->
+    <section id="what">
+        <div class="container">
+            <h2>What is this about?</h2>
+            <p>
+                A caseworker assistant has three jobs: understand the person,
+                understand their paperwork, and connect them with a service that
+                can help. The first two are now within reach of a local model and
+                a document pipeline. The third is a data problem.
+            </p>
+            <p>
+                This architecture separates those concerns into three deployable
+                pieces. A <strong>document sanitizer</strong> turns PDFs, scans,
+                Office files, and plain text into one canonical JSON shape — pages,
+                blocks, bounding boxes, confidence scores, and a quality verdict.
+                An <strong>orchestration layer</strong> keeps an ephemeral interview
+                session, assembles a system prompt from the uploaded documents plus
+                a list of nearby services, and proxies chat to a local LLM. A
+                <strong>browser client</strong> provides the location gate, the
+                dropzone, the conversation, and an exportable action plan.
+            </p>
+
+            <div class="highlight">
+                <p>
+                    <strong>The core observation:</strong> the data model is already
+                    shaped like the directory it needs. The tables that describe
+                    organizations, services, and locations are the relational core
+                    of the Human Services Data Specification (HSDS). The integration
+                    seam exists. What does not yet exist is a general, open,
+                    permission-free path to the data itself.
+                </p>
+            </div>
+
+            <p>
+                The rest of this overview describes the architecture as built, the
+                shape of the 211 data ecosystem, and the two realistic ways to
+                connect them. It is written to be honest about what the directory
+                can and cannot tell you.
+            </p>
+        </div>
+    </section>
+
+    <!-- ========== HOW ========== -->
+    <section id="how">
+        <div class="container">
+            <h2>How it works</h2>
+            <p>
+                The orchestrator never lets the model query a database directly.
+                Instead, it builds a system prompt that lists each nearby service
+                by a bracketed index — <code>[07]</code> — alongside its name and
+                location. The model may call one tool,
+                <code>get_service_details(n)</code>, to expand any index into full
+                detail: description, eligibility, application process, fees, and
+                contact information.
+            </p>
+            <p>
+                The index is written once, onto the session row, when the location
+                is set. It is a positional list of identifiers, not a foreign key.
+                That single design decision is what makes the whole system safe:
+                <code>[07]</code> cannot silently rebind to a different service
+                mid-conversation, because nothing recomputes the list. If a
+                service disappears, the tool returns a closure note, and the index
+                stays exactly where it was.
+            </p>
+            <p>
+                The document pipeline is equally conservative. A document that
+                cannot be processed is quarantined, not partially returned.
+                A blank page is valid output — it means the sanitizer looked and
+                found nothing. The pipeline never hands the model a document with
+                a missing page and calls it complete.
+            </p>
+
+            <div class="metrics">
+                <div class="metric">
+                    <div class="value">3</div>
+                    <div class="label">Processes: sanitizer, orchestrator, client</div>
+                </div>
+                <div class="metric">
+                    <div class="value">1</div>
+                    <div class="label">Tool exposed to the model</div>
+                </div>
+                <div class="metric">
+                    <div class="value">0</div>
+                    <div class="label">Direct database access from the LLM</div>
+                </div>
+                <div class="metric">
+                    <div class="value">~15 min</div>
+                    <div class="label">Session idle TTL</div>
+                </div>
+            </div>
+
+            <p>
+                The architecture is deliberately small. It is a single-user
+                workstation design: one ingest at a time, one session at a time,
+                no authentication, no tenant isolation. Those are not oversights.
+                They are the constraints that make the system auditable.
+            </p>
+        </div>
+    </section>
+
+    <!-- ========== ACCESS ========== -->
+    <section id="access">
+        <div class="container">
+            <h2>The real constraint: data access</h2>
+            <p>
+                The 211 ecosystem is not a single API. It is a set of standards
+                and access models that have matured considerably. HSDS describes
+                the data. HSDA describes the HTTP API. The 211 National Data
+                Platform aggregates contributed data and exposes it through search,
+                export, and query surfaces. Connect 211 documents a bulk-replication
+                subset of HSDA endpoints. HL7 has published a FHIR implementation
+                guide that maps HSDS concepts onto health-sector profiles.
+            </p>
+            <p>
+                The standards are open. The <strong>data is not</strong>. Connect 211
+                states this directly: open standards improve interoperability, they
+                do not equal open data. Clients maintain control over their directory
+                data and can withdraw it. The National Data Platform exposes a
+                self-serve trial key — limited in request rate, result count, and
+                daily volume — precisely because production access requires a
+                negotiated agreement and permission from each contributing 211.
+            </p>
+
+            <div class="highlight">
+                <p>
+                    <strong>This is the bottleneck.</strong> Not inference latency.
+                    Not prompt engineering. Not tool-call reliability. The binding
+                    constraint on an open-source virtual caseworker is lawful,
+                    timely, attributable access to a directory that someone else
+                    owns and maintains.
+                </p>
+            </div>
+
+            <p>
+                Two integration patterns follow from that constraint. In
+                <strong>bulk replication</strong>, a sync worker pulls the directory
+                into the local HSDS-shaped tables and the navigator queries SQLite.
+                In <strong>live query with a soft cache</strong>, the navigator calls
+                a search API at location-set time and caches service details on
+                first use. Neither is universally correct; the choice depends on
+                whether the deployment needs offline capability, zero-latency local
+                reads, or complete coverage.
+            </p>
+            <p>
+                The base rates matter here. Studies of U.S. human service nonprofits
+                put annual dissolution at roughly five percent, which is on the
+                order of one in a thousand organizations in any given week. The
+                211 system itself describes annual record verification supplemented
+                by rolling weekly updates. A cache with a one-week life is not
+                introducing a new class of error; it is operating at a cadence the
+                sector already accepts. The residual risk is best managed by
+                preserving the standard “call ahead to confirm” framing, which is
+                good practice regardless of data freshness.
+            </p>
+        </div>
+    </section>
+
+    <!-- ========== CACHE ========== -->
+    <section id="cache">
+        <div class="container">
+            <h2>Cache the details, never the index</h2>
+            <p>
+                The most consequential design decision is what not to cache.
+                The positional index is a <strong>session artifact</strong>. It is
+                written once at location-set time and never recomputed. The detail
+                cache sits downstream of it, keyed by the source's service-at-location
+                identifier.
+            </p>
+            <p>
+                This separation makes a disappeared resource a graceful conversational
+                event rather than an index-integrity problem. When a detail fetch
+                fails because the record is gone, the tool returns a closure note:
+                do not retry this index, tell the user the resource is no longer
+                available, apologize for the stale reference, and note that the
+                other entries are still valid. The index is untouched. The model
+                does not loop. The conversation continues.
+            </p>
+            <p>
+                The cache must distinguish three outcomes, because they warrant
+                different language. A <strong>404</strong> is a closure signal. A
+                record marked <strong>inactive</strong> or <strong>defunct</strong>
+                still has useful contact information — render it with a warning.
+                A <strong>transient failure</strong> — a timeout, a 5xx — is not
+                evidence of closure; the model should say the lookup failed, not
+                that the resource is closed.
+            </p>
+
+            <div class="highlight">
+                <p>
+                    <strong>The shared lesson:</strong> deletion detection is
+                    hard for a replicated cache and trivial for a query-scoped one.
+                    The TTL is the reconciliation. When the cache entry expires,
+                    the next query simply does not return the deleted record. No
+                    tombstone table. No ID-set comparison. No index rebuild.
+                </p>
+            </div>
+
+            <p>
+                A delta feed via <code>modified_after</code> handles everything
+                that changes, but it cannot see a record that was physically
+                removed, because deletion does not produce a modification
+                timestamp. If the source emits a soft-delete status or an explicit
+                deletion marker, delta-only is sufficient. If it does not, the
+                minimum viable supplement is a periodic ID-only existence check —
+                not a full data reconciliation.
+            </p>
+        </div>
+    </section>
+
+    <!-- ========== BOUNDARIES ========== -->
+    <section id="boundaries">
+        <div class="container">
+            <h2>Where the directory ends and the referral begins</h2>
+            <p>
+                Three boundaries are worth naming explicitly. Each is a place
+                where a technology that looks like it should solve the problem
+                turns out to have a narrower guarantee than it appears.
+            </p>
+
+            <h3>Live shelter availability</h3>
+            <p>
+                HSDS has no standard field for current occupancy. The architecture
+                includes a custom table for capacity, current occupancy, and wait
+                time, but it needs a feed that publishes those values on a short
+                interval. In practice, live bed availability is handled outside
+                the 211 directory — through municipal open data, dedicated
+                nonprofit APIs, or coordinated access systems. If no live feed
+                exists for a region, the honest behaviour is to list the shelter
+                from the cached directory and tell the user to call ahead, not to
+                present a stale occupancy number as current.
+            </p>
+
+            <h3>Licensing and attribution</h3>
+            <p>
+                HSDS interoperability does not mean the data is open. A deployment
+                that caches a directory locally must respect the source's terms
+                and attribute the data in the interface. The service-card renderer
+                already has a place for a source line. That is not cosmetic; it is
+                part of the contract with the contributing 211.
+            </p>
+
+            <h3>Geocoding and coordinates</h3>
+            <p>
+                Coordinates should be resolved once, at ingest, and stored. The
+                schema distinguishes whether a location's coordinates came from
+                the source or from the local geocoder, so a future sync does not
+                overwrite source-provided coordinates with a re-geocode. The
+                location gate already accepts pre-resolved candidates, so the
+                front end can offer suggestions from whichever geocoder is
+                appropriate without changing the backend contract.
+            </p>
+
+            <div class="highlight">
+                <p>
+                    <strong>The shared lesson:</strong> in each case, the directory
+                    is not a passive substrate. It has a resolution, a semantic
+                    limit, and a guarantee that is narrower than it might appear.
+                    The interesting failures live at those boundaries.
+                </p>
+            </div>
+        </div>
+    </section>
+
+    <!-- ========== SECURITY ========== -->
+    <section id="security">
+        <div class="container">
+            <h2>What this is — and what it is not</h2>
+            <p>
+                The assistant is a <strong>triage and orientation tool</strong>,
+                not a replacement for a 211 specialist. It reads documents,
+                summarizes a situation, and proposes referrals from a directory.
+                It does not confirm eligibility, it does not reserve a bed, and
+                it does not speak for any agency.
+            </p>
+            <p>
+                <strong>It is not a live availability system.</strong> Unless a
+                region publishes a shelter occupancy feed, the assistant cannot
+                know whether a bed is free. The correct output in that case is a
+                referral with a phone number and a prompt to call ahead — not a
+                confident claim about capacity.
+            </p>
+            <p>
+                <strong>It is not a bulk open dataset.</strong> The standards are
+                open; the data is contributed under permission. A production
+                deployment needs a negotiated key, permission from the contributing
+                211s, and attribution in the interface. The trial key is for
+                development, not for operations.
+            </p>
+            <p>
+                The session is ephemeral by design. Uploaded documents and the
+                chat transcript are discarded when the session ends or expires.
+                A PIN lock protects a session left open on a shared workstation.
+                Those choices are part of the privacy model, not features to be
+                disabled.
+            </p>
+        </div>
+    </section>
+
+    <!-- ========== DOCUMENTS ========== -->
+    <section id="documents">
+        <div class="container">
+            <h2>The pieces of the architecture</h2>
+            <p>
+                The system is documented as three connected components and a
+                data-integration strategy.
+            </p>
+
+            <div class="card-grid">
+                <div class="card">
+                    <div class="doc-label">Component I</div>
+                    <h3>Sanitizer</h3>
+                    <p>The document pipeline. Routes PDFs, scans, Office files,
+                    images, and text through the cheapest viable path and returns
+                    one canonical JSON shape. Quarantines what it cannot trust.</p>
+                </div>
+                <div class="card">
+                    <div class="doc-label">Component II</div>
+                    <h3>Orchestrator</h3>
+                    <p>The HSDS-shaped database, the ephemeral interview session,
+                    the prompt assembler, the tool executor, and the chat proxy.
+                    The integration seam lives here.</p>
+                </div>
+                <div class="card">
+                    <div class="doc-label">Component III</div>
+                    <h3>Client</h3>
+                    <p>The location gate, the dropzone, the conversation, the
+                    service cards, the privacy lock, and the exportable action
+                    plan. The part a caseworker actually uses.</p>
+                </div>
+                <div class="card">
+                    <div class="doc-label">Strategy</div>
+                    <h3>Live query, soft cache</h3>
+                    <p>Search the 211 directory by location at session start.
+                    Cache service details on first use. Never rebuild the
+                    positional index mid-conversation.</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- ========== FOOTER ========== -->
+    <footer>
+        <div class="container">
+            <p>
+                <strong>The Virtual Caseworker</strong> — an architecture overview
+                of the Local Resource Navigator.
+            </p>
+            <p>
+                The HSDS and HSDA standards are stewarded by Open Referral.
+                The 211 National Data Platform is operated by United Way
+                Worldwide. Directory data remains under the control of the
+                contributing 211 organizations.
+            </p>
+            <p style="margin-top: 1.5rem; font-size: 0.8rem; color: #444;">
+                This page is a lay summary. The source code and configuration
+                contain the precise claims, constraints, and caveats. Where this
+                summary and the implementation disagree, the implementation is
+                authoritative.
+            </p>
+        </div>
+    </footer>
+
+</body>
+</html>

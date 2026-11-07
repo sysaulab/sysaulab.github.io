@@ -1,0 +1,682 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>State of Floating Point 2026 — A Field Guide</title>
+    <meta name="description" content="A plain-language survey of floating-point types as of 2026: what float and double actually promise, why long double means three different things on three different platforms, the HexFiend case where Apple Silicon silently hides rows, and the case for a true IEEE binary128 type in Apple Clang.">
+    <link href="../text.css" rel="stylesheet">
+</head>
+<body>
+    <!-- ========== NAV ========== -->
+    <nav>
+        <div class="container">
+            <span class="brand">State of Floating Point 2026</span>
+            <div class="links">
+                <a href="index.html">Back</a>
+                <a href="#what">What</a>
+                <a href="#widths">Widths</a>
+                <a href="#trap">Trap</a>
+                <a href="#case">Case</a>
+                <a href="#ask">Ask</a>
+                <a href="#verify">Verify</a>
+                <a href="#watch">Watch</a>
+            </div>
+        </div>
+    </nav>
+
+    <!-- ========== HERO ========== -->
+    <header class="hero">
+        <div class="container">
+            <span class="tagline">A Field Guide — 2026</span>
+            <h1>A floating-point type is not a number. It is a promise about which numbers you can name.</h1>
+            <p class="subtitle">
+                For decades, <code>double</code> was the safe default and
+                <code>long double</code> was the escape hatch. In 2026 the
+                escape hatch has become a trapdoor. On an Intel Mac,
+                <code>long double</code> carries a 64-bit significand. On an
+                Apple Silicon Mac, it is just a <code>double</code> wearing a
+                longer name. The same source code, compiled for both, can
+                produce different answers — and in at least one shipping hex
+                editor, different answers mean rows disappear. This guide
+                explains the three widths, maps the portability trap, and
+                makes one request: Apple, expose <code>_Float128</code> in
+                Clang.
+            </p>
+        </div>
+    </header>
+
+    <!-- ========== WHAT ========== -->
+    <section id="what">
+        <div class="container">
+            <h2>What is a floating-point number, really?</h2>
+            <p>
+                A floating-point value is a binary fraction with a sliding
+                window. It stores a sign, an exponent, and a significand — the
+                digits that actually carry precision. The exponent decides
+                where the window sits; the significand decides how finely you
+                can cut the interval inside that window. A <strong>float</strong>
+                spends 24 bits on the significand. A <strong>double</strong>
+                spends 53. A <strong>long double</strong> is supposed to
+                spend more — but the C standard never says how much more, and
+                it never says the extra bits have to mean the same thing on
+                every machine.
+            </p>
+            <p>
+                That is the whole story in one sentence:
+                <strong>the name of a floating-point type is not a
+                specification of its precision.</strong> It is a hint. The
+                actual guarantee comes from the platform ABI, and the ABI is
+                allowed to change when the CPU architecture changes.
+            </p>
+
+            <div class="highlight">
+                <p>
+                    <strong>The core tension:</strong> a floating-point type
+                    is a contract about representable values. When the
+                    contract changes underneath you — not at runtime, but at
+                    compile time, because the target architecture changed —
+                    the program still compiles, still links, and still runs.
+                    It just stops meaning the same thing.
+                </p>
+            </div>
+
+            <div class="metrics">
+                <div class="metric">
+                    <div class="value">24</div>
+                    <div class="label">Significand bits in a float</div>
+                </div>
+                <div class="metric">
+                    <div class="value">53</div>
+                    <div class="label">Significand bits in a double</div>
+                </div>
+                <div class="metric">
+                    <div class="value">64</div>
+                    <div class="label">Significand bits in x86 long double</div>
+                </div>
+                <div class="metric">
+                    <div class="value">113</div>
+                    <div class="label">Significand bits in IEEE binary128</div>
+                </div>
+            </div>
+
+            <div class="card-grid">
+                <div class="card">
+                    <div class="doc-label">Width One</div>
+                    <h3>float — binary32</h3>
+                    <p>
+                        One sign bit, eight exponent bits, twenty-three
+                        fraction bits. With the implicit leading one, that is
+                        a 24-bit significand and roughly seven decimal digits
+                        of precision. A float can name about 4.3 billion
+                        distinct values, which sounds like a lot until you
+                        remember that there are infinitely many real numbers
+                        between any two of them.
+                    </p>
+                    <p style="margin-top: 0.75rem;">
+                        Floats are wonderful for graphics, sensors, and
+                        anything where approximate is fine. They are a poor
+                        choice for money, file offsets, or identifiers.
+                    </p>
+                </div>
+
+                <div class="card">
+                    <div class="doc-label">Width Two</div>
+                    <h3>double — binary64</h3>
+                    <p>
+                        One sign bit, eleven exponent bits, fifty-two
+                        fraction bits. With the implicit leading one, that is
+                        a 53-bit significand and roughly fifteen to seventeen
+                        decimal digits. A double can represent every integer
+                        exactly up to 2<sup>53</sup>, which is about nine
+                        quadrillion.
+                    </p>
+                    <p style="margin-top: 0.75rem;">
+                        This is the workhorse. When people say “floating
+                        point” in 2026, they almost always mean binary64.
+                    </p>
+                </div>
+
+                <div class="card">
+                    <div class="doc-label">Width Three</div>
+                    <h3>long double — the chameleon</h3>
+                    <p>
+                        On x86, <code>long double</code> is usually the
+                        80-bit extended format: one sign bit, fifteen
+                        exponent bits, sixty-four significand bits. It is
+                        stored in 16 bytes for alignment, but only 10 of
+                        those bytes carry value.
+                    </p>
+                    <p style="margin-top: 0.75rem;">
+                        On Apple Silicon, <code>long double</code> is
+                        <strong>64-bit double</strong>. Same name, same
+                        source, same compiler flag — 53 bits of precision
+                        instead of 64.
+                    </p>
+                </div>
+
+                <div class="card">
+                    <div class="doc-label">Why It Matters</div>
+                    <h3>The type is the contract</h3>
+                    <p>
+                        A <code>double</code> is portable in the way that a
+                        metre is portable: the definition is stable across
+                        borders. A <code>long double</code> is portable in
+                        the way that a “large coffee” is portable: the word
+                        travels, the size does not.
+                    </p>
+                    <p style="margin-top: 0.75rem;">
+                        Code that treats <code>long double</code> as “a
+                        double with more bits” is making an assumption the
+                        standard never promised and the ABI is free to
+                        revoke.
+                    </p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- ========== WIDTHS ========== -->
+    <section id="widths">
+        <div class="container">
+            <h2>Three widths, three different promises</h2>
+            <p>
+                The confusion is not that people do not know what a float is.
+                The confusion is that the same three names describe three
+                different hardware realities, and the names have not caught
+                up. A <code>float</code> is a 32-bit IEEE binary32 value
+                almost everywhere. A <code>double</code> is a 64-bit IEEE
+                binary64 value almost everywhere. A <code>long double</code>
+                is where the portability story falls apart.
+            </p>
+
+            <blockquote>
+                <p>
+                    On Intel, <code>long double</code> is an 80-bit extended
+                    format. On Apple Silicon, it is a 64-bit double. On
+                    AArch64 Linux, it may be a true 128-bit quad. The C
+                    standard permits all three, and the compiler does not
+                    warn you when you cross the border.
+                </p>
+            </blockquote>
+
+            <div class="card-grid">
+                <div class="card">
+                    <div class="doc-label">The Intel Inheritance</div>
+                    <h3>80-bit extended precision</h3>
+                    <p>
+                        The x87 floating-point unit introduced an 80-bit
+                        format with a 64-bit significand. It was a genuine
+                        upgrade over double in 1980, and it is still what
+                        <code>long double</code> means on x86-64 macOS and
+                        most x86 Unix systems.
+                    </p>
+                    <p style="margin-top: 0.75rem;">
+                        Sixty-four significand bits can represent every
+                        integer exactly up to 2<sup>64</sup>. That is enough
+                        headroom for file offsets, byte counts, and many
+                        display calculations — but only just.
+                    </p>
+                </div>
+
+                <div class="card">
+                    <div class="doc-label">The Apple Silicon Reality</div>
+                    <h3>long double is just double</h3>
+                    <p>
+                        Apple's 64-bit ARM ABI defines <code>long double</code>
+                        as 64-bit. An Apple DTS engineer has said it plainly:
+                        “In Apple Silicon, long doubles are just doubles,”
+                        and there is “no built-in support for floating-point
+                        numbers larger than Float64.”<sup>[reference:0]</sup>
+                    </p>
+                    <p style="margin-top: 0.75rem;">
+                        This is legal C. It is also a silent downgrade for
+                        any code that used <code>long double</code> to get
+                        more than 53 bits.
+                    </p>
+                </div>
+
+                <div class="card">
+                    <div class="doc-label">The Linux Alternative</div>
+                    <h3>Binary128 on AArch64</h3>
+                    <p>
+                        On AArch64 Linux, <code>long double</code> is often
+                        IEEE binary128: 113 significand bits, 15 exponent
+                        bits, 128 bits total. It is a true quad-precision
+                        type, usually implemented in software but exposed as
+                        a first-class C type.
+                    </p>
+                    <p style="margin-top: 0.75rem;">
+                        The same ARM architecture, a different operating
+                        system, and a completely different definition of
+                        <code>long double</code>. The type name is not the
+                        contract; the ABI is.
+                    </p>
+                </div>
+
+                <div class="card">
+                    <div class="doc-label">The Missing Name</div>
+                    <h3>_Float128</h3>
+                    <p>
+                        C23 standardises <code>_Float128</code> as an
+                        optional true quad-precision type. GCC supports it.
+                        Clang supports it on some targets. Apple Clang, on
+                        macOS ARM64, does not: compiling <code>__float128</code>
+                        produces “not supported on this target.”
+                    </p>
+                    <p style="margin-top: 0.75rem;">
+                        The name exists. The precision exists in software.
+                        The portable spelling is what is missing on Apple's
+                        platform.
+                    </p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- ========== TRAP ========== -->
+    <section id="trap">
+        <div class="container">
+            <h2>The portability trap</h2>
+            <p>
+                A portability bug does not usually look like a crash. It
+                looks like a slightly wrong number. And a slightly wrong
+                number in a display calculation can be worse than a crash,
+                because nothing tells you it happened. The program keeps
+                running. The output looks plausible. Only a careful
+                comparison across architectures reveals that one build is
+                quietly dropping data.
+            </p>
+            <p>
+                This is the special danger of <code>long double</code>. It is
+                often chosen precisely because the developer needs more range
+                or more exact integer representation than a double can give.
+                On Intel, the choice works. On Apple Silicon, the choice
+                compiles without a warning and gives the developer a double.
+                The code that depended on 64 significand bits is now running
+                on 53, and the failure is not a build error. It is a behavior
+                change.
+            </p>
+
+            <div class="highlight">
+                <p>
+                    <strong>The rule:</strong> if your code's correctness
+                    depends on the number of significand bits, do not spell
+                    that dependency <code>long double</code>. Spell it with a
+                    type whose width is fixed by the language or the library.
+                    Otherwise you have written a program that is correct on
+                    one architecture and approximate on another.
+                </p>
+            </div>
+
+            <p>
+                The trap has a second jaw. Even on Intel, 80-bit extended
+                precision is not the same as IEEE binary128. It has a
+                64-bit significand and a 15-bit exponent, but it is not a
+                quad type. Code that needs 113 bits of precision cannot get
+                there by asking for <code>long double</code> on any Apple
+                platform. It can only get there by asking for a type that
+                Apple does not currently provide.
+            </p>
+        </div>
+    </section>
+
+    <!-- ========== CASE ========== -->
+    <section id="case">
+        <div class="container">
+            <h2>The case: HexFiend and the disappearing rows</h2>
+            <p>
+                HexFiend is a fast, clever hex editor for macOS. It does not
+                keep entire files in memory; it works with ranges. To draw
+                the visible portion of a large file, it computes a floating
+                point range — a location and a length — and uses that range
+                to decide which rows to display. The struct is called
+                <code>HFFPRange</code>, and it contains two
+                <strong><code>long double</code></strong> values.[reference:1]
+            </p>
+            <p>
+                The choice was deliberate. HexFiend's own documentation
+                explains it: a <code>double</code> has 53 significand bits,
+                “so we would start to have precision problems at the high
+                end of the range we can represent.” A <code>long double</code>
+                has a 64-bit mantissa on Intel, “which means that we would
+                start to run into trouble at the very very end of our range
+                — barely acceptable.”[reference:2]
+            </p>
+
+            <blockquote>
+                <p>
+                    On Intel, the display math holds together for files up to
+                    roughly 2<sup>63</sup> bytes. On Apple Silicon, the same
+                    <code>long double</code> is a double, and rows begin to
+                    vanish at the high end of the file. Same source. Same
+                    editor. Different machine. Different answer.
+                </p>
+            </blockquote>
+
+            <p>
+                The mechanism is straightforward once you see it. A double
+                has 52 explicit fraction bits plus an implicit leading one.
+                At magnitudes near 2<sup>63</sup>, the spacing between
+                adjacent representable doubles is 2<sup>63−52</sup> =
+                2<sup>11</sup> = 2048. If a row is 16 bytes tall, a single
+                step in the floating-point value can skip 128 rows. The
+                editor is not “wrong” in any way a debugger would flag. It is
+                doing exactly what the type allows. The type just allows less
+                on ARM than it did on Intel.
+            </p>
+
+            <div class="card-grid">
+                <div class="card">
+                    <div class="doc-label">The Struct</div>
+                    <h3>HFFPRange</h3>
+                    <p>
+                        Two <code>long double</code> fields, <code>location</code>
+                        and <code>length</code>, used for visible line
+                        ranges and other display primitives. The design
+                        assumes 64 significand bits. On Apple Silicon, it
+                        gets 53.
+                    </p>
+                </div>
+
+                <div class="card">
+                    <div class="doc-label">The Divergence</div>
+                    <h3>Compiles cleanly, behaves differently</h3>
+                    <p>
+                        There is no compiler diagnostic for “this
+                        <code>long double</code> is narrower than you think.”
+                        The source is identical; only the target triple
+                        differs. This is the definition of a portability
+                        bug that survives code review.
+                    </p>
+                </div>
+
+                <div class="card">
+                    <div class="doc-label">The Consequence</div>
+                    <h3>Rows hidden at high offsets</h3>
+                    <p>
+                        At multi-exabyte offsets, the floating-point step
+                        size exceeds the row height. The view can skip
+                        entire ranges of the file without ever showing a
+                        gap. The data is still there; the display primitive
+                        can no longer address it.
+                    </p>
+                </div>
+
+                <div class="card">
+                    <div class="doc-label">The Lesson</div>
+                    <h3>Not a HexFiend bug</h3>
+                    <p>
+                        HexFiend chose <code>long double</code> for a
+                        reason, and that reason was valid on the platform
+                        where it was written. The bug is in the type system:
+                        Apple provides no portable way to ask for more than
+                        53 bits of significand on Apple Silicon.
+                    </p>
+                </div>
+            </div>
+
+            <div class="highlight">
+                <p>
+                    <strong>The uncomfortable part:</strong> this is not a
+                    story about one hex editor. Any macOS application that
+                    used <code>long double</code> as a “bigger double” — for
+                    file offsets, for accumulators, for geometric
+                    calculations, for display coordinates — inherited the
+                    same silent downgrade when it was compiled for Apple
+                    Silicon. Most of those applications will never notice.
+                    The ones that deal in very large numbers will notice at
+                    the worst possible moment.
+                </p>
+            </div>
+        </div>
+    </section>
+
+    <!-- ========== ASK ========== -->
+    <section id="ask">
+        <div class="container">
+            <h2>The ask: give Clang a true quad type</h2>
+            <p>
+                Apple does not need to change <code>long double</code>. The
+                64-bit ABI is already set, and changing it would break
+                existing binaries and existing source code. What Apple can do
+                is add a <strong>new, opt-in</strong> type:
+                <code>_Float128</code>, the C23 spelling for IEEE binary128.
+                It has a 113-bit significand, a 15-bit exponent, and roughly
+                34 decimal digits of precision. It is not a replacement for
+                <code>double</code>. It is a way to say, explicitly, “I need
+                more than a double can give, and I am willing to pay for it
+                in software.”
+            </p>
+            <p>
+                The LLVM project already knows how to lower <code>f128</code>
+                operations on AArch64. The missing piece is the Darwin
+                target's willingness to expose the type. Clang on Apple
+                platforms currently rejects <code>__float128</code> with
+                “not supported on this target,” and the LLVM issue tracker
+                has an open request for <code>_Float128</code> support.
+                [reference:3] This is a compiler policy gap,
+                not a hardware impossibility. Soft-float routines can provide
+                the arithmetic; compiler-rt can provide the helpers.
+            </p>
+
+            <div class="card-grid">
+                <div class="card">
+                    <div class="doc-label">What It Is</div>
+                    <h3>IEEE 754 binary128</h3>
+                    <p>
+                        One sign bit, fifteen exponent bits, one hundred and
+                        twelve fraction bits. With the implicit leading one,
+                        a 113-bit significand. This is true quad precision,
+                        not “extended” precision, and not a double-double
+                        kludge.
+                    </p>
+                </div>
+
+                <div class="card">
+                    <div class="doc-label">What It Is Not</div>
+                    <h3>A replacement for long double</h3>
+                    <p>
+                        <code>long double</code> keeps its current meaning on
+                        every platform. Existing code keeps its current ABI.
+                        <code>_Float128</code> is additive: a new type for
+                        new code, or for code that is willing to be updated
+                        to request exactly what it needs.
+                    </p>
+                </div>
+
+                <div class="card">
+                    <div class="doc-label">The Cost</div>
+                    <h3>Software emulation</h3>
+                    <p>
+                        Apple Silicon has no native 128-bit floating-point
+                        unit. Every quad operation becomes a library call.
+                        That is slower — sometimes much slower — but speed
+                        is not the only correctness criterion. For display
+                        math, accumulators, and scientific code, the right
+                        answer at the wrong speed is still the right answer.
+                    </p>
+                </div>
+
+                <div class="card">
+                    <div class="doc-label">The Precedent</div>
+                    <h3>Apple already ships software floating point</h3>
+                    <p>
+                        Compilers routinely emulate types the hardware does
+                        not implement natively. The existence of a software
+                        implementation is not a reason to withhold the type;
+                        it is the normal mechanism by which new numeric
+                        types arrive.
+                    </p>
+                </div>
+            </div>
+
+            <div class="highlight">
+                <p>
+                    <strong>What Apple should do:</strong> expose
+                    <code>_Float128</code> in Apple Clang on Darwin ARM64
+                    (and, for completeness, x86_64), implemented with
+                    compiler-rt soft-float helpers. Do not change
+                    <code>long double</code>. Do not change the ABI. Add the
+                    type, document it, and let developers choose it
+                    explicitly.
+                </p>
+            </div>
+
+            <p>
+                The alternative is what exists today: developers who need
+                more than 53 bits either ship a third-party multiprecision
+                library, write their own double-double arithmetic, or —
+                worse — use <code>long double</code> and hope the target
+                never changes. Apple can make the correct choice the easy
+                choice by giving the language a name for it.
+            </p>
+        </div>
+    </section>
+
+    <!-- ========== VERIFY ========== -->
+    <section id="verify">
+        <div class="container">
+            <h2>Verification notes</h2>
+            <p>
+                This guide deliberately avoids predicting future Apple
+                releases. It describes the state of the toolchain and the
+                ABI as of 2026, and it separates documented facts from
+                reasonable inference.
+            </p>
+
+            <div class="card-grid">
+                <div class="card">
+                    <div class="doc-label">Solid</div>
+                    <h3>Documented facts</h3>
+                    <p>
+                        A float has a 24-bit significand. A double has a
+                        53-bit significand. x86 <code>long double</code> is
+                        an 80-bit extended format with a 64-bit significand.
+                        Apple's ARM64 ABI defines <code>long double</code>
+                        as 64-bit, and Apple DTS has confirmed that Apple
+                        Silicon has no built-in type larger than Float64.
+                        HexFiend's <code>HFFPRange</code> contains two
+                        <code>long double</code> values and its
+                        documentation explicitly reasons about the 64-bit
+                        mantissa on Intel.
+                    </p>
+                </div>
+
+                <div class="card">
+                    <div class="doc-label">Solid</div>
+                    <h3>The compiler gap</h3>
+                    <p>
+                        Apple Clang rejects <code>__float128</code> on macOS
+                        targets with a “not supported on this target” error.
+                        LLVM's own issue tracker records the missing
+                        <code>_Float128</code> support, and GCC has added
+                        <code>_Float128</code> for Darwin AArch64 in its own
+                        tree. These are toolchain facts, not projections.
+                    </p>
+                </div>
+
+                <div class="card">
+                    <div class="doc-label">Inference</div>
+                    <h3>The HexFiend behavior</h3>
+                    <p>
+                        The arithmetic consequence is straightforward: at
+                        magnitudes near 2<sup>63</sup>, a 53-bit significand
+                        cannot address every row-sized interval. HexFiend's
+                        exact threshold depends on row height, file size, and
+                        the specific display calculation. The direction of
+                        the divergence — fewer distinguishable rows on Apple
+                        Silicon — follows from the ABI, not from a bug
+                        report.
+                    </p>
+                </div>
+
+                <div class="card">
+                    <div class="doc-label">The Rule</div>
+                    <h3>Read the ABI, not the type name</h3>
+                    <p>
+                        Every claim in this guide reduces to one instruction:
+                        when precision matters, verify the significand width
+                        of the type you are using on the target you are
+                        building for. The type name is documentation. The ABI
+                        is the contract.
+                    </p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- ========== WATCH ========== -->
+    <section id="watch">
+        <div class="container">
+            <h2>What to watch</h2>
+            <p>
+                <strong>Does Apple expose <code>_Float128</code>?</strong>
+                The compiler already has the machinery on other targets. The
+                question is whether Darwin's target definitions will allow
+                the type and whether compiler-rt will ship the soft-float
+                helpers. One WWDC session or one LLVM commit would settle it.
+            </p>
+            <p>
+                <strong>Does any major library adopt it?</strong> If a
+                mainstream numerical or display library starts using
+                <code>_Float128</code> for ranges and offsets, the pressure
+                on Apple increases. If everyone quietly switches to
+                double-double arithmetic instead, the platform has chosen a
+                workaround over a type.
+            </p>
+            <p>
+                <strong>Does the <code>long double</code> warning arrive?</strong>
+                A compiler warning for “this target's <code>long double</code>
+                has the same precision as <code>double</code>” would not fix
+                the ABI, but it would make the trap visible. Warnings are how
+                portability bugs become code review findings.
+            </p>
+
+            <div class="highlight">
+                <p>
+                    <strong>What would make it real:</strong> a portable
+                    <code>_Float128</code> in Apple Clang, implemented in
+                    software, available alongside an unchanged
+                    <code>long double</code>. Existing code keeps working.
+                    New code can ask for 113 bits by name. The HexFiend class
+                    of bug becomes a compile-time choice instead of a
+                    runtime surprise.
+                </p>
+            </div>
+
+            <p>
+                In the end, the state of floating point in 2026 is best
+                described as <em>precisely imprecise</em>. The widths are
+                documented, the hardware is capable, and the compiler knows
+                how to emulate what the hardware lacks. What is missing is a
+                name that travels — a type whose meaning does not change when
+                the target triple does. Apple can provide that name without
+                breaking a single existing binary. It should.
+            </p>
+        </div>
+    </section>
+
+    <!-- ========== FOOTER ========== -->
+    <footer>
+        <div class="container">
+            <p>
+                <strong>State of Floating Point 2026</strong> — a field guide
+                compiled from language standards, platform ABI documents,
+                compiler diagnostics, library documentation, and public
+                issue trackers as of 2026.
+            </p>
+            <p>
+                The toolchain landscape changes quickly. Where this page and
+                a primary source disagree, the primary source is
+                authoritative.
+            </p>
+            <p style="margin-top: 1.5rem; font-size: 0.8rem; color: #444;">
+                This page is a simplified survey. It is not a language
+                specification, a benchmark, or a purchasing recommendation.
+            </p>
+        </div>
+    </footer>
+
+</body>
+</html>
